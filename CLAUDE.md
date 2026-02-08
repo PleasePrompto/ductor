@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ductor is a Telegram bot that bridges messages to Claude Code CLI or OpenAI Codex CLI for AI-powered assistance. It streams responses back to Telegram with live editing, manages persistent sessions, runs scheduled cron jobs, handles inbound webhooks, and performs periodic heartbeat checks.
 
-**Stack:** Python 3.12+, aiogram 3.x, Pydantic 2.x, asyncio, hatchling build system.
+**Stack:** Python 3.11+, aiogram 3.x, Pydantic 2.x, asyncio, hatchling build system.
 
 ## Development Commands
 

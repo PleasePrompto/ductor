@@ -2,7 +2,7 @@
 
 ## What you need
 
-1. Python 3.12 or newer
+1. Python 3.11 or newer
 2. pipx (or pip)
 3. At least one CLI installed and authenticated:
    - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code): `npm install -g @anthropic-ai/claude-code && claude auth`
@@ -53,7 +53,7 @@ The setup wizard runs automatically the first time. It detects your CLIs, asks f
 ### Linux (Ubuntu / Debian)
 
 ```bash
-# Python 3.12+
+# Python 3.11+
 sudo apt update && sudo apt install python3 python3-pip python3-venv
 
 # pipx
@@ -81,8 +81,8 @@ ductor
 ### macOS
 
 ```bash
-# Python 3.12+ (via Homebrew)
-brew install python@3.12
+# Python 3.11+ (via Homebrew)
+brew install python@3.11
 
 # pipx
 brew install pipx

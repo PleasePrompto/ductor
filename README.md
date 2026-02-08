@@ -121,7 +121,7 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 
 | Requirement | Details |
 |---|---|
-| **Python 3.12+** | `python3 --version` |
+| **Python 3.11+** | `python3 --version` |
 | **pipx** | `pip install pipx` (recommended) or use pip |
 | **One CLI installed** | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex CLI](https://github.com/openai/codex) |
 | **CLI authenticated** | `claude auth` or `codex auth` |
