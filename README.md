@@ -129,7 +129,7 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 | **Your Telegram User ID** | Get it from [@userinfobot](https://t.me/userinfobot) |
 | Docker *(optional)* | Recommended for sandboxed execution |
 
-> See [docs/installation.md](docs/installation.md) for detailed platform guides (Linux, macOS, WSL, Windows, VPS hosting).
+> See [Installation guide](https://github.com/PleasePrompto/ductor/blob/main/docs/installation.md) for detailed platform guides (Linux, macOS, WSL, Windows, VPS hosting).
 
 ## How it works
 
@@ -195,7 +195,7 @@ Config lives in `~/.ductor/config/config.json`. The wizard creates it on first r
 ductor  # wizard creates config interactively
 ```
 
-The important ones: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), `default_model`, `docker.enabled`, `user_timezone`. Full schema in [docs/config.md](docs/config.md).
+The important ones: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), `default_model`, `docker.enabled`, `user_timezone`. Full schema in [docs/config.md](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md).
 
 ## Commands
 
@@ -217,11 +217,11 @@ The important ones: `telegram_token`, `allowed_user_ids`, `provider` (claude or 
 
 | Document | Description |
 |---|---|
-| [Installation guide](docs/installation.md) | Platform-specific setup (Linux, macOS, WSL, Windows, VPS) |
-| [Automation quickstart](docs/automation.md) | Cron jobs, webhooks, heartbeat - practical guide |
-| [Configuration](docs/config.md) | Full config schema and options |
-| [Architecture](docs/architecture.md) | System design and runtime flow |
-| [Module reference](docs/README.md) | Detailed docs for every subsystem |
+| [Installation guide](https://github.com/PleasePrompto/ductor/blob/main/docs/installation.md) | Platform-specific setup (Linux, macOS, WSL, Windows, VPS) |
+| [Automation quickstart](https://github.com/PleasePrompto/ductor/blob/main/docs/automation.md) | Cron jobs, webhooks, heartbeat - practical guide |
+| [Configuration](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md) | Full config schema and options |
+| [Architecture](https://github.com/PleasePrompto/ductor/blob/main/docs/architecture.md) | System design and runtime flow |
+| [Module reference](https://github.com/PleasePrompto/ductor/blob/main/docs/README.md) | Detailed docs for every subsystem |
 
 ## Disclaimer
 
@@ -247,8 +247,8 @@ ruff check .
 mypy ductor_bot
 ```
 
-Zero warnings, zero errors. See [CLAUDE.md](CLAUDE.md) for conventions.
+Zero warnings, zero errors. See [CLAUDE.md](https://github.com/PleasePrompto/ductor/blob/main/CLAUDE.md) for conventions.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/PleasePrompto/ductor/blob/main/LICENSE)
