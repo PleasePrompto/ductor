@@ -1,0 +1,179 @@
+[build-system]
+requires = ["hatchling>=1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ductor-bot"
+version = "0.1.0"
+description = "Control Claude Code and Codex CLI from Telegram. Live streaming, sessions, cron jobs, webhooks, Docker sandboxing."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "PleasePrompto" }]
+keywords = [
+    "ductor", "ai", "telegram", "bot", "agent",
+    "claude", "codex", "cli", "automation", "streaming",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Chat",
+    "Topic :: Software Development",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.12.5",
+    "aiogram>=3.24.0,<4.0.0",
+    "aiohttp>=3.9.0,<4.0.0",
+    "cronsim>=2.7",
+    "pyyaml>=6.0.3",
+    "rich>=14.3.2",
+    "questionary>=2.1.1",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+    "time-machine>=3.2.0",
+]
+lint = [
+    "ruff>=0.15.0",
+    "mypy>=1.19.1",
+]
+dev = ["ductor-bot[test,lint]"]
+
+[project.urls]
+Homepage = "https://ductor.dev"
+Repository = "https://github.com/PleasePrompto/ductor"
+Documentation = "https://ductor.dev"
+Issues = "https://github.com/PleasePrompto/ductor/issues"
+Changelog = "https://github.com/PleasePrompto/ductor/releases"
+
+[project.scripts]
+ductor-bot = "ductor_bot.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ductor_bot"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"config.example.json" = "ductor_bot/_config_example.json"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "ductor_bot/",
+    "config.example.json",
+    "LICENSE",
+    "README.md",
+    "pyproject.toml",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["ductor_bot/_home_defaults"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "E501",
+    "W191",
+    "COM812",
+    "ISC001",
+    "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",
+    "D203",
+    "D213",
+    "ANN401",
+    "TD002", "TD003",
+    "FIX002",
+    "ERA001",
+    "S101",
+    "TRY003",
+    "EM101", "EM102",
+    "T201",
+    "FBT001", "FBT002",
+    "S603", "S607",
+    "SLF001",
+    "TC001", "TC003",
+    "PLR2004",
+    "PLC0415",
+    "BLE001",
+    "ARG002",
+    "PERF203",
+    "RUF012",
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"ductor_bot/_home_defaults/**" = ["ALL"]
+"**/tests/*" = [
+    "S101", "ANN", "D",
+    "S105", "S106", "S108", "S603",  # test tokens/paths/subprocess are not secrets
+    "PT019",                          # @patch injections look like unused fixtures to ruff
+    "PLR0913", "PLR0915", "PLR0911",  # test helpers need flexible limits
+    "FBT003",                         # boolean positional args in patch/assert calls
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ductor_bot"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+warn_unreachable = true
+disallow_any_generics = true
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_reexport = true
+no_implicit_optional = true
+strict_equality = true
+extra_checks = true
+
+[[tool.mypy.overrides]]
+module = ["aiogram.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["cronsim.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["yaml.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["questionary.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["ductor_bot._home_defaults.*"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

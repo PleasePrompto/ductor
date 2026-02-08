@@ -1,0 +1,63 @@
+{
+  "log_level": "INFO",
+  "provider": "claude",
+  "model": "opus",
+  "ductor_home": "~/.ductor",
+  "idle_timeout_minutes": 1440,
+  "session_age_warning_hours": 12,
+  "daily_reset_hour": 4,
+  "max_budget_usd": null,
+  "max_turns": null,
+  "max_session_messages": null,
+  "permission_mode": "bypassPermissions",
+  "cli_timeout": 600.0,
+  "reasoning_effort": "medium",
+  "file_access": "home",
+  "user_timezone": "",
+  "telegram_token": "YOUR_BOT_TOKEN_HERE",
+  "allowed_user_ids": [],
+
+  "streaming": {
+    "enabled": true,
+    "min_chars": 200,
+    "max_chars": 4000,
+    "idle_ms": 800,
+    "edit_interval_seconds": 2.0,
+    "max_edit_failures": 3,
+    "append_mode": false,
+    "sentence_break": true
+  },
+
+  "docker": {
+    "enabled": false,
+    "image_name": "ductor-sandbox",
+    "container_name": "ductor-sandbox",
+    "auto_build": true
+  },
+
+  "cleanup": {
+    "enabled": true,
+    "telegram_files_days": 30,
+    "output_to_user_days": 30,
+    "check_hour": 3
+  },
+
+  "heartbeat": {
+    "enabled": false,
+    "interval_minutes": 30,
+    "cooldown_minutes": 5,
+    "quiet_start": 21,
+    "quiet_end": 8,
+    "prompt": "You are running as a background heartbeat check. Review the current workspace context:\n- Read memory_system/MAINMEMORY.md for user interests and personality\n- Check cron_tasks/ for active projects\n- Think about what might be useful, interesting, or fun for the user\n\nIf you have a creative idea, suggestion, interesting fact, or something the user might enjoy:\nReply with your message directly.\n\nIf nothing needs attention right now:\nReply exactly: HEARTBEAT_OK",
+    "ack_token": "HEARTBEAT_OK"
+  },
+
+  "webhooks": {
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 8742,
+    "token": "",
+    "max_body_bytes": 262144,
+    "rate_limit_per_minute": 30
+  }
+}

@@ -1,0 +1,41 @@
+# ductor
+
+> Personal AI assistant on Telegram. Runs Claude Code CLI and Codex CLI as subprocesses, streams responses live, persists memory across sessions. Time-based automation (cron jobs), event-based triggers (webhooks), periodic check-ins (heartbeat). Pure Python. Uses only official CLIs - no header spoofing, no API proxying.
+
+ductor bridges Telegram to the Claude Code CLI (Anthropic) and Codex CLI (OpenAI). It spawns the real CLI binary as a child process, parses streaming output, and edits Telegram messages in real time. Everything lives in `~/.ductor/` - config, sessions, memory, cron tasks, tools, logs.
+
+Key design decisions: one Markdown file for agent memory (no RAG, no vector stores), official rule files only (`CLAUDE.md` / `AGENTS.md`), Telegram as the only channel, optional Docker sandboxing for CLI isolation.
+
+Stack: Python 3.12+, aiogram 3.x, Pydantic 2.x, asyncio, hatchling build system.
+
+## Getting started
+
+- [README](https://github.com/PleasePrompto/ductor/blob/main/README.md): Project overview, quick start, features, architecture diagram
+- [Installation guide](https://github.com/PleasePrompto/ductor/blob/main/docs/installation.md): Setup for Linux, macOS, WSL, Windows, VPS hosting with systemd
+- [Automation quickstart](https://github.com/PleasePrompto/ductor/blob/main/docs/automation.md): Cron jobs, webhooks, heartbeat - practical usage guide
+- [Configuration](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md): Full config schema (AgentConfig, StreamingConfig, DockerConfig, HeartbeatConfig, WebhookConfig)
+
+## Architecture
+
+- [Architecture overview](https://github.com/PleasePrompto/ductor/blob/main/docs/architecture.md): Runtime flow, module map, design patterns, background systems
+- [Module index](https://github.com/PleasePrompto/ductor/blob/main/docs/README.md): Links to all module documentation
+
+## Module documentation
+
+- [bot/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/bot.md): Telegram frontend - aiogram handlers, streaming editors, rich sender, middleware
+- [orchestrator/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/orchestrator.md): Central router - command registry, message flows, hooks, model selector
+- [cli/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/cli.md): CLI subprocess management - Claude/Codex providers, stream event parsing
+- [session/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/session.md): Per-chat session lifecycle, JSON persistence
+- [cron/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/cron.md): In-process scheduler - cron expressions, timezone-aware execution, isolated subagents
+- [webhook/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/webhook.md): HTTP ingress - bearer/HMAC auth, wake and cron_task modes, template rendering
+- [heartbeat/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/heartbeat.md): Periodic background checks, quiet hours, cooldown logic
+- [workspace/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/workspace.md): Path resolution (DuctorPaths), home seeding, rule-file sync
+- [infra/](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/infra.md): PID lock, restart sentinel, version checking, Docker manager
+- [logging](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/logging.md): ContextVar-based async logging with operation prefixes
+- [security](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/security.md): Prompt injection detection, path traversal validation
+- [setup wizard](https://github.com/PleasePrompto/ductor/blob/main/docs/modules/setup_wizard.md): Interactive onboarding flow
+
+## Optional
+
+- [pyproject.toml](https://github.com/PleasePrompto/ductor/blob/main/pyproject.toml): Build config, dependencies, tool settings
+- [CLAUDE.md](https://github.com/PleasePrompto/ductor/blob/main/CLAUDE.md): Development conventions, coding standards, project rules
