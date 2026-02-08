@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/ductor_bot/bot/ductor_images/welcome.png" alt="ductor" width="200" />
+  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/ductor_bot/bot/ductor_images/logo_text.png" alt="ductor" width="100%" />
 </p>
-
-<h1 align="center">ductor</h1>
 
 <p align="center">
   <strong>ductor runs Claude Code and Codex CLI as your personal assistant on Telegram.</strong><br>
