@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://ductor.dev/logo.png" alt="ductor" width="200" />
+  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/ductor_bot/bot/ductor_images/welcome.png" alt="ductor" width="200" />
 </p>
 
 <h1 align="center">ductor</h1>
