@@ -68,9 +68,9 @@ async def perform_upgrade() -> tuple[bool, str]:
     if mode == "dev":
         return False, "Running from source (editable install). Use `git pull` to update."
     if mode == "pipx":
-        cmd = ["pipx", "upgrade", "ductor-bot"]
+        cmd = ["pipx", "upgrade", "ductor"]
     else:
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "ductor-bot"]
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "ductor"]
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,

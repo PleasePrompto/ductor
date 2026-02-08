@@ -1,6 +1,6 @@
-# Ductor Bot Docs
+# ductor Docs
 
-Ductor Bot is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI Codex CLI, streams replies back to Telegram, persists sessions in JSON, and runs cron/heartbeat/webhook automation in-process.
+ductor is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI Codex CLI, streams replies back to Telegram, persists sessions in JSON, and runs cron/heartbeat/webhook automation in-process.
 
 ## Onboarding (Read in This Order)
 

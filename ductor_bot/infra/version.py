@@ -10,13 +10,13 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-_PYPI_URL = "https://pypi.org/pypi/ductor-bot/json"
-_PACKAGE_NAME = "ductor-bot"
+_PYPI_URL = "https://pypi.org/pypi/ductor/json"
+_PACKAGE_NAME = "ductor"
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
 def get_current_version() -> str:
-    """Return the installed version of ductor-bot."""
+    """Return the installed version of ductor."""
     try:
         return importlib.metadata.version(_PACKAGE_NAME)
     except importlib.metadata.PackageNotFoundError:

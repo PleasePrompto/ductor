@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/ductor-bot/"><img src="https://img.shields.io/pypi/v/ductor-bot?color=blue" alt="PyPI" /></a>
-  <a href="https://pypi.org/project/ductor-bot/"><img src="https://img.shields.io/pypi/pyversions/ductor-bot" alt="Python" /></a>
+  <a href="https://pypi.org/project/ductor/"><img src="https://img.shields.io/pypi/v/ductor?color=blue" alt="PyPI" /></a>
+  <a href="https://pypi.org/project/ductor/"><img src="https://img.shields.io/pypi/pyversions/ductor" alt="Python" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/PleasePrompto/ductor" alt="License" /></a>
 </p>
 
@@ -31,8 +31,8 @@ If you want a focused, single-user AI assistant that lives on your server and fi
 ## Quick Start
 
 ```bash
-pipx install ductor-bot
-ductor-bot
+pipx install ductor
+ductor
 ```
 
 The setup wizard walks you through the rest.
@@ -192,7 +192,7 @@ You can browse this folder at any time. Everything is plain text, JSON, or Markd
 Config lives in `~/.ductor/config/config.json`. The wizard creates it on first run:
 
 ```bash
-ductor-bot  # wizard creates config interactively
+ductor  # wizard creates config interactively
 ```
 
 The important ones: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), `default_model`, `docker.enabled`, `user_timezone`. Full schema in [docs/config.md](docs/config.md).

@@ -54,8 +54,8 @@ Note: default startup path does not automatically wire `DockerManager.setup()` i
 
 ## Version Check (`version.py`)
 
-- `get_current_version()`: returns installed version via `importlib.metadata.version("ductor-bot")`, falls back to `"0.0.0"`.
-- `check_pypi()`: async HTTP GET to `https://pypi.org/pypi/ductor-bot/json`, returns `VersionInfo(current, latest, update_available, summary)` or `None` on failure.
+- `get_current_version()`: returns installed version via `importlib.metadata.version("ductor")`, falls back to `"0.0.0"`.
+- `check_pypi()`: async HTTP GET to `https://pypi.org/pypi/ductor/json`, returns `VersionInfo(current, latest, update_available, summary)` or `None` on failure.
 - Version comparison: dotted string parsed to int tuple via `_parse_version()`.
 
 ## Update Observer (`updater.py`)
@@ -71,7 +71,7 @@ Note: default startup path does not automatically wire `DockerManager.setup()` i
 `perform_upgrade()`:
 
 - refuses dev/source installs (`detect_install_mode() == "dev"`),
-- otherwise detects `pipx` or falls back to `python -m pip install --upgrade ductor-bot`,
+- otherwise detects `pipx` or falls back to `python -m pip install --upgrade ductor`,
 - returns `(success: bool, output: str)`.
 
 Upgrade sentinel (`upgrade-sentinel.json`):

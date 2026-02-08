@@ -133,14 +133,14 @@ def _show_disclaimer(console: Console) -> None:
     """Display the risk disclaimer and require confirmation."""
     disclaimer = (
         "[bold]Important -- please read before continuing.[/bold]\n\n"
-        "Ductor Bot connects to [bold]Anthropic Claude CLI[/bold] and "
+        "ductor connects to [bold]Anthropic Claude CLI[/bold] and "
         "[bold]OpenAI Codex CLI[/bold] as AI agent backends.\n\n"
         "The bot operates in [bold yellow]full permission bypass mode[/bold yellow]. "
         "The agent can read, write, and delete files, execute commands, "
         "and interact with your system without asking for confirmation.\n\n"
         "While safeguards are in place, [bold red]unintended actions can occur[/bold red] "
         "-- including data loss, unexpected file changes, or unintended command execution.\n\n"
-        "[bold green]We strongly recommend running Ductor Bot inside a Docker container[/bold green] "
+        "[bold green]We strongly recommend running ductor inside a Docker container[/bold green] "
         "to isolate it from your host system."
     )
     console.print(
@@ -230,7 +230,7 @@ def _ask_docker(console: Console) -> bool:
         console.print(
             Panel(
                 "[bold green]Docker detected on your system.[/bold green]\n\n"
-                "Running Ductor Bot inside Docker isolates it from your host.\n"
+                "Running ductor inside Docker isolates it from your host.\n"
                 "This is the recommended setup for safety.",
                 title="[bold]Docker Sandboxing[/bold]",
                 border_style="green",
@@ -365,7 +365,7 @@ def run_onboarding() -> bool:
     console.print(
         Panel(
             "[bold green]Setup complete![/bold green]\n\n"
-            "[bold]Your Ductor Bot files:[/bold]\n\n"
+            "[bold]Your ductor files:[/bold]\n\n"
             f"  Home:       [cyan]{paths.ductor_home}[/cyan]\n"
             f"  Config:     [cyan]{config_path}[/cyan]\n"
             f"  Workspace:  [cyan]{paths.workspace}[/cyan]\n"

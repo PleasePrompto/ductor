@@ -6,7 +6,7 @@ Seed source: `<repo>/config.example.json` (source checkout) or packaged fallback
 
 ## Config Creation
 
-Primary path: `ductor-bot onboarding` (interactive wizard) writes `config.json` with user-provided values merged into `AgentConfig` defaults. See `docs/modules/setup_wizard.md`.
+Primary path: `ductor onboarding` (interactive wizard) writes `config.json` with user-provided values merged into `AgentConfig` defaults. See `docs/modules/setup_wizard.md`.
 
 ## Load & Merge Behavior
 

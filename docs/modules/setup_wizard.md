@@ -14,15 +14,15 @@ Interactive onboarding, CLI lifecycle commands, and the in-bot auto-update syste
 
 | Command | Behavior |
 |---|---|
-| `ductor-bot` | Start bot. If unconfigured, runs onboarding first. |
-| `ductor-bot onboarding` | Run setup wizard. If already configured, runs smart reset first. |
-| `ductor-bot reset` | Same as `onboarding` (alias). |
-| `ductor-bot stop` | Stop running bot (PID kill) and Docker container if active. |
-| `ductor-bot restart` | Stop bot, re-exec process. |
-| `ductor-bot upgrade` | Stop bot, upgrade package (`pipx` or `pip`), re-exec. On dev/source installs: show `git pull` guidance instead of self-upgrade. |
-| `ductor-bot uninstall` | Full removal: stop bot, remove Docker, delete `~/.ductor/`, uninstall package. |
-| `ductor-bot status` | Show running state, provider/model, Docker, error count, all paths. |
-| `ductor-bot help` | Command reference + status panel (if configured). |
+| `ductor` | Start bot. If unconfigured, runs onboarding first. |
+| `ductor onboarding` | Run setup wizard. If already configured, runs smart reset first. |
+| `ductor reset` | Same as `onboarding` (alias). |
+| `ductor stop` | Stop running bot (PID kill) and Docker container if active. |
+| `ductor restart` | Stop bot, re-exec process. |
+| `ductor upgrade` | Stop bot, upgrade package (`pipx` or `pip`), re-exec. On dev/source installs: show `git pull` guidance instead of self-upgrade. |
+| `ductor uninstall` | Full removal: stop bot, remove Docker, delete `~/.ductor/`, uninstall package. |
+| `ductor status` | Show running state, provider/model, Docker, error count, all paths. |
+| `ductor help` | Command reference + status panel (if configured). |
 | `-v`, `--verbose` | Verbose logging (combinable with any command). |
 
 Dispatch uses `_COMMANDS` dict mapping strings to action names. `--help` / `-h` map to `help`. Unknown commands fall through to default (auto-onboard + start).
@@ -62,11 +62,11 @@ Triggered when `onboarding` or `reset` is run on an already-configured system:
 - checks `telegram_token` is non-empty and not `YOUR_*` placeholder,
 - checks `allowed_user_ids` is non-empty.
 
-This drives the auto-onboarding behavior: `ductor-bot` with no arguments runs onboarding if unconfigured, otherwise starts the bot directly.
+This drives the auto-onboarding behavior: `ductor` with no arguments runs onboarding if unconfigured, otherwise starts the bot directly.
 
 ## Status Display
 
-`ductor-bot status` and the status panel in `help`:
+`ductor status` and the status panel in `help`:
 
 - **Running state**: reads PID from `bot.pid`, checks process alive, computes uptime from PID file mtime.
 - **Provider/Model**: reads from `config.json`.
@@ -89,7 +89,7 @@ Pattern follows `CronObserver` / `HeartbeatObserver`:
 
 ### PyPI Version Check (`check_pypi`)
 
-- HTTP GET `https://pypi.org/pypi/ductor-bot/json` via aiohttp (10s timeout).
+- HTTP GET `https://pypi.org/pypi/ductor/json` via aiohttp (10s timeout).
 - Compares installed version (`importlib.metadata.version`) against latest PyPI version.
 - Version comparison uses parsed int tuples (handles dotted version strings).
 
@@ -113,7 +113,7 @@ In `TelegramBot._handle_upgrade_callback()`:
 ### Upgrade Execution (`perform_upgrade`)
 
 - Refuses dev/source installs (`detect_install_mode() == "dev"`).
-- Otherwise uses `pipx upgrade ductor-bot` or falls back to `python -m pip install --upgrade ductor-bot`.
+- Otherwise uses `pipx upgrade ductor` or falls back to `python -m pip install --upgrade ductor`.
 - Returns `(success, output)`.
 
 ### Post-Restart Notification
@@ -124,16 +124,16 @@ Upgrade sentinel (`upgrade-sentinel.json`) in `ductor_home`:
 - Consumed on next startup in `_on_startup()`.
 - Sends "Upgrade complete" message to recorded chat with old -> new version.
 
-## CLI Upgrade (`ductor-bot upgrade`)
+## CLI Upgrade (`ductor upgrade`)
 
 Separate from the Telegram flow. For users who prefer terminal:
 
 1. Stop running bot gracefully.
 2. If install mode is dev/source: print guidance to update with `git pull` and stop.
-3. Otherwise run `pipx upgrade ductor-bot` (or `python -m pip install --upgrade ductor-bot`).
+3. Otherwise run `pipx upgrade ductor` (or `python -m pip install --upgrade ductor`).
 4. `os.execv()` to re-exec with new version.
 
-## Uninstall (`ductor-bot uninstall`)
+## Uninstall (`ductor uninstall`)
 
 1. Warning panel listing all actions.
 2. Questionary confirm (default: No).

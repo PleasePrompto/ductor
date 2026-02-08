@@ -305,7 +305,7 @@ class TestUpgradeCli:
 
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "upgraded ductor-bot 1.0.0 -> 2.0.0"
+        mock_result.stdout = "upgraded ductor 1.0.0 -> 2.0.0"
         mock_result.stderr = ""
 
         with (
@@ -331,7 +331,7 @@ class TestUpgradeCli:
 
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = "installed ductor-bot-2.0.0"
+        mock_result.stdout = "installed ductor-2.0.0"
         mock_result.stderr = ""
 
         with (
@@ -556,7 +556,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "help"]),
+            patch("sys.argv", ["ductor", "help"]),
             patch("ductor_bot.__main__._print_usage") as mock_usage,
         ):
             main()
@@ -567,7 +567,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "status"]),
+            patch("sys.argv", ["ductor", "status"]),
             patch("ductor_bot.__main__._cmd_status") as mock_status,
         ):
             main()
@@ -578,7 +578,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "stop"]),
+            patch("sys.argv", ["ductor", "stop"]),
             patch("ductor_bot.__main__._stop_bot") as mock_stop,
         ):
             main()
@@ -589,7 +589,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot"]),
+            patch("sys.argv", ["ductor"]),
             patch("ductor_bot.__main__._is_configured", return_value=True),
             patch("ductor_bot.__main__._start_bot") as mock_start,
         ):
@@ -601,7 +601,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot"]),
+            patch("sys.argv", ["ductor"]),
             patch("ductor_bot.__main__._is_configured", return_value=False),
             patch("ductor_bot.cli.init_wizard.run_onboarding") as mock_onboard,
             patch("ductor_bot.__main__._start_bot"),
@@ -614,7 +614,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "-v"]),
+            patch("sys.argv", ["ductor", "-v"]),
             patch("ductor_bot.__main__._is_configured", return_value=True),
             patch("ductor_bot.__main__._start_bot") as mock_start,
         ):
@@ -626,7 +626,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "-h"]),
+            patch("sys.argv", ["ductor", "-h"]),
             patch("ductor_bot.__main__._print_usage") as mock_usage,
         ):
             main()
@@ -637,7 +637,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "upgrade"]),
+            patch("sys.argv", ["ductor", "upgrade"]),
             patch("ductor_bot.__main__._upgrade") as mock_upgrade,
         ):
             main()
@@ -648,7 +648,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "onboarding"]),
+            patch("sys.argv", ["ductor", "onboarding"]),
             patch("ductor_bot.__main__._cmd_setup") as mock_setup,
         ):
             main()
@@ -659,7 +659,7 @@ class TestMainDispatch:
         from ductor_bot.__main__ import main
 
         with (
-            patch("sys.argv", ["ductor-bot", "reset"]),
+            patch("sys.argv", ["ductor", "reset"]),
             patch("ductor_bot.__main__._cmd_setup") as mock_setup,
         ):
             main()

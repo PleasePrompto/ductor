@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Ductor Bot is a Telegram bot that bridges messages to Claude Code CLI or OpenAI Codex CLI for AI-powered assistance. It streams responses back to Telegram with live editing, manages persistent sessions, runs scheduled cron jobs, handles inbound webhooks, and performs periodic heartbeat checks.
+ductor is a Telegram bot that bridges messages to Claude Code CLI or OpenAI Codex CLI for AI-powered assistance. It streams responses back to Telegram with live editing, manages persistent sessions, runs scheduled cron jobs, handles inbound webhooks, and performs periodic heartbeat checks.
 
 **Stack:** Python 3.12+, aiogram 3.x, Pydantic 2.x, asyncio, hatchling build system.
 
@@ -16,8 +16,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Run
-ductor-bot                  # Start bot (auto-onboarding if unconfigured)
-ductor-bot -v               # Verbose logging
+ductor                  # Start bot (auto-onboarding if unconfigured)
+ductor -v               # Verbose logging
 
 # Tests
 pytest                                              # All tests

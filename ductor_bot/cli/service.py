@@ -1,6 +1,6 @@
 """CLIService: unified gateway for ALL CLI calls in the project.
 
-Simplified from Ductor: no retry/backoff, no circuit breaker, no dead letters.
+No retry/backoff, no circuit breaker, no dead letters.
 """
 
 from __future__ import annotations

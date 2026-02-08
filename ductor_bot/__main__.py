@@ -129,7 +129,7 @@ async def run_telegram(config: AgentConfig) -> int:
     missing_token = not config.telegram_token or config.telegram_token.startswith("YOUR_")
     if missing_token or not config.allowed_user_ids:
         _console.print(
-            "[bold yellow]Config is incomplete. Run [bold]ductor-bot onboarding[/bold].[/bold yellow]"
+            "[bold yellow]Config is incomplete. Run [bold]ductor onboarding[/bold].[/bold yellow]"
         )
         sys.exit(1)
 
@@ -249,15 +249,15 @@ def _print_usage() -> None:
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column(style="bold green", min_width=24)
     table.add_column()
-    table.add_row("ductor-bot", "Start the bot (runs onboarding if needed)")
-    table.add_row("ductor-bot onboarding", "Setup wizard (resets if already configured)")
-    table.add_row("ductor-bot stop", "Stop running bot and Docker container")
-    table.add_row("ductor-bot restart", "Restart the bot")
-    table.add_row("ductor-bot reset", "Full reset and re-setup")
-    table.add_row("ductor-bot upgrade", "Stop, upgrade to latest, restart")
-    table.add_row("ductor-bot uninstall", "Remove everything and uninstall")
-    table.add_row("ductor-bot status", "Show bot status, paths, and stats")
-    table.add_row("ductor-bot help", "Show this message")
+    table.add_row("ductor", "Start the bot (runs onboarding if needed)")
+    table.add_row("ductor onboarding", "Setup wizard (resets if already configured)")
+    table.add_row("ductor stop", "Stop running bot and Docker container")
+    table.add_row("ductor restart", "Restart the bot")
+    table.add_row("ductor reset", "Full reset and re-setup")
+    table.add_row("ductor upgrade", "Stop, upgrade to latest, restart")
+    table.add_row("ductor uninstall", "Remove everything and uninstall")
+    table.add_row("ductor status", "Show bot status, paths, and stats")
+    table.add_row("ductor help", "Show this message")
     table.add_row("-v, --verbose", "Verbose logging output")
 
     _console.print(
@@ -270,7 +270,7 @@ def _print_usage() -> None:
         _console.print(
             Panel(
                 "[bold yellow]Not configured.[/bold yellow]\n\n"
-                "Run [bold]ductor-bot[/bold] to start the setup wizard.",
+                "Run [bold]ductor[/bold] to start the setup wizard.",
                 title="[bold]Status[/bold]",
                 border_style="yellow",
                 padding=(1, 2),
@@ -410,12 +410,12 @@ def _uninstall() -> None:
     _console.print()
     _console.print(
         Panel(
-            "[bold red]This will permanently remove Ductor Bot from your system.[/bold red]\n\n"
+            "[bold red]This will permanently remove ductor from your system.[/bold red]\n\n"
             "  1. Stop the running bot (if active)\n"
             "  2. Remove Docker container and image (if used)\n"
             "  3. Delete all data in ~/.ductor/\n"
-            "  4. Uninstall the ductor-bot package",
-            title="[bold red]Uninstall Ductor Bot[/bold red]",
+            "  4. Uninstall the ductor package",
+            title="[bold red]Uninstall ductor[/bold red]",
             border_style="red",
             padding=(1, 2),
         ),
@@ -457,24 +457,24 @@ def _uninstall() -> None:
         _console.print(f"[green]Deleted {ductor_home}[/green]")
 
     # 4. Uninstall package
-    _console.print("[dim]Uninstalling ductor-bot package...[/dim]")
+    _console.print("[dim]Uninstalling ductor package...[/dim]")
     if shutil.which("pipx"):
         subprocess.run(
-            ["pipx", "uninstall", "ductor-bot"],
+            ["pipx", "uninstall", "ductor"],
             capture_output=True,
             check=False,
         )
     else:
         subprocess.run(
-            [sys.executable, "-m", "pip", "uninstall", "-y", "ductor-bot"],
+            [sys.executable, "-m", "pip", "uninstall", "-y", "ductor"],
             capture_output=True,
             check=False,
         )
 
     _console.print(
         Panel(
-            "[bold green]Ductor Bot has been completely removed.[/bold green]\n\n"
-            "Thank you for using Ductor Bot!",
+            "[bold green]ductor has been completely removed.[/bold green]\n\n"
+            "Thank you for using ductor!",
             title="[bold green]Uninstalled[/bold green]",
             border_style="green",
             padding=(1, 2),
@@ -509,7 +509,7 @@ def _upgrade() -> None:
     _console.print()
     _console.print(
         Panel(
-            "[bold cyan]Upgrading Ductor Bot...[/bold cyan]\n\n"
+            "[bold cyan]Upgrading ductor...[/bold cyan]\n\n"
             "  1. Stop running bot gracefully\n"
             "  2. Upgrade to latest version\n"
             "  3. Restart",
@@ -526,14 +526,14 @@ def _upgrade() -> None:
     _console.print("[dim]Upgrading package...[/dim]")
     if mode == "pipx":
         result = subprocess.run(
-            ["pipx", "upgrade", "ductor-bot"],
+            ["pipx", "upgrade", "ductor"],
             capture_output=True,
             text=True,
             check=False,
         )
     else:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "ductor-bot"],
+            [sys.executable, "-m", "pip", "install", "--upgrade", "ductor"],
             capture_output=True,
             text=True,
             check=False,
@@ -567,7 +567,7 @@ def _cmd_status() -> None:
         _console.print(
             Panel(
                 "[bold yellow]Not configured.[/bold yellow]\n\n"
-                "Run [bold]ductor-bot[/bold] to start the setup wizard.",
+                "Run [bold]ductor[/bold] to start the setup wizard.",
                 title="[bold]Status[/bold]",
                 border_style="yellow",
                 padding=(1, 2),

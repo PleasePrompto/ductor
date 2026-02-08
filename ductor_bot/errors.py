@@ -2,7 +2,7 @@
 
 
 class DuctorError(Exception):
-    """Base for all ductor-bot exceptions."""
+    """Base for all ductor exceptions."""
 
 
 class CLIError(DuctorError):

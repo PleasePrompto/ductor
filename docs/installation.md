@@ -18,15 +18,15 @@
 ### With pipx (recommended)
 
 ```bash
-pipx install ductor-bot
+pipx install ductor
 ```
 
-This gives you `ductor-bot` as a global command in its own isolated environment.
+This gives you `ductor` as a global command in its own isolated environment.
 
 ### With pip
 
 ```bash
-pip install ductor-bot
+pip install ductor
 ```
 
 ### From source
@@ -41,7 +41,7 @@ pip install -e ".[dev]"
 ### First run
 
 ```bash
-ductor-bot
+ductor
 ```
 
 The setup wizard runs automatically the first time. It detects your CLIs, asks for your Telegram token and user ID, checks for Docker, and sets your timezone. Everything gets saved to `~/.ductor/`.
@@ -74,8 +74,8 @@ sudo usermod -aG docker $USER
 # Log out and back in for group changes to take effect
 
 # ductor
-pipx install ductor-bot
-ductor-bot
+pipx install ductor
+ductor
 ```
 
 ### macOS
@@ -100,8 +100,8 @@ brew install --cask docker
 # Open Docker Desktop to finish setup
 
 # ductor
-pipx install ductor-bot
-ductor-bot
+pipx install ductor
+ductor
 ```
 
 ### Windows (WSL)
@@ -125,8 +125,8 @@ pipx ensurepath
 npm install -g @anthropic-ai/claude-code
 claude auth
 
-pipx install ductor-bot
-ductor-bot
+pipx install ductor
+ductor
 ```
 
 > **Tip:** Docker Desktop for Windows can share its Docker engine with WSL. Enable "Use the WSL 2 based engine" in Docker Desktop settings.
@@ -188,14 +188,14 @@ newgrp docker
 pip install pipx
 pipx ensurepath
 source ~/.bashrc
-pipx install ductor-bot
+pipx install ductor
 
 # Install and authenticate a CLI
 npm install -g @anthropic-ai/claude-code
 claude auth  # Follow the browser-based auth flow
 
 # Run setup wizard
-ductor-bot
+ductor
 ```
 
 ### Keep it running with systemd
@@ -203,7 +203,7 @@ ductor-bot
 A systemd service starts ductor on boot and restarts it if it crashes:
 
 ```bash
-sudo tee /etc/systemd/system/ductor-bot.service > /dev/null << 'EOF'
+sudo tee /etc/systemd/system/ductor.service > /dev/null << 'EOF'
 [Unit]
 Description=ductor Bot
 After=network.target docker.service
@@ -213,7 +213,7 @@ Wants=docker.service
 Type=simple
 User=YOUR_USERNAME
 Environment=PATH=/home/YOUR_USERNAME/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/YOUR_USERNAME/.local/bin/ductor-bot
+ExecStart=/home/YOUR_USERNAME/.local/bin/ductor
 Restart=always
 RestartSec=5
 
@@ -226,14 +226,14 @@ Replace `YOUR_USERNAME` with your actual username, then:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable ductor-bot
-sudo systemctl start ductor-bot
+sudo systemctl enable ductor
+sudo systemctl start ductor
 
 # Check status
-sudo systemctl status ductor-bot
+sudo systemctl status ductor
 
 # View logs
-journalctl -u ductor-bot -f
+journalctl -u ductor -f
 ```
 
 ### Security basics
@@ -242,7 +242,7 @@ journalctl -u ductor-bot -f
 - Disable password auth for SSH, use keys only
 - Enable Docker sandboxing (`docker.enabled: true`)
 - Set `allowed_user_ids` in config so only you can use the bot
-- Update from Telegram with `/upgrade` or via SSH with `pipx upgrade ductor-bot`
+- Update from Telegram with `/upgrade` or via SSH with `pipx upgrade ductor`
 
 ### Resource usage
 
@@ -259,7 +259,7 @@ From Telegram:
 
 From the command line:
 ```bash
-pipx upgrade ductor-bot
+pipx upgrade ductor
 ```
 
 ductor checks PyPI every 60 minutes and pings you in Telegram when there's a new version.
@@ -267,7 +267,7 @@ ductor checks PyPI every 60 minutes and pings you in Telegram when there's a new
 ## Uninstalling
 
 ```bash
-pipx uninstall ductor-bot
+pipx uninstall ductor
 
 # Optional: remove all data
 rm -rf ~/.ductor

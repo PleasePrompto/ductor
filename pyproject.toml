@@ -3,7 +3,7 @@ requires = ["hatchling>=1.28.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ductor-bot"
+name = "ductor"
 version = "0.1.0"
 description = "Control Claude Code and Codex CLI from Telegram. Live streaming, sessions, cron jobs, webhooks, Docker sandboxing."
 readme = "README.md"
@@ -50,7 +50,7 @@ lint = [
     "ruff>=0.15.0",
     "mypy>=1.19.1",
 ]
-dev = ["ductor-bot[test,lint]"]
+dev = ["ductor[test,lint]"]
 
 [project.urls]
 Homepage = "https://ductor.dev"
@@ -60,7 +60,7 @@ Issues = "https://github.com/PleasePrompto/ductor/issues"
 Changelog = "https://github.com/PleasePrompto/ductor/releases"
 
 [project.scripts]
-ductor-bot = "ductor_bot.__main__:main"
+ductor = "ductor_bot.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ductor_bot"]

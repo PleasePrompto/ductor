@@ -13,7 +13,7 @@ class TestDetectInstallMode:
 
     def test_pipx_detected_from_sys_prefix(self) -> None:
         with patch("ductor_bot.infra.install.sys") as mock_sys:
-            mock_sys.prefix = "/home/user/.local/share/pipx/venvs/ductor-bot"
+            mock_sys.prefix = "/home/user/.local/share/pipx/venvs/ductor"
             assert detect_install_mode() == "pipx"
 
     def test_editable_install_detected_as_dev(self) -> None:
@@ -46,7 +46,7 @@ class TestDetectInstallMode:
             patch("ductor_bot.infra.install.sys") as mock_sys,
             patch(
                 "ductor_bot.infra.install.distribution",
-                side_effect=PackageNotFoundError("ductor-bot"),
+                side_effect=PackageNotFoundError("ductor"),
             ),
         ):
             mock_sys.prefix = "/usr"
@@ -62,7 +62,7 @@ class TestDetectInstallMode:
 
     def test_pipx_path_variant_windows(self) -> None:
         with patch("ductor_bot.infra.install.sys") as mock_sys:
-            mock_sys.prefix = "C:\\Users\\me\\AppData\\Local\\pipx\\venvs\\ductor-bot"
+            mock_sys.prefix = "C:\\Users\\me\\AppData\\Local\\pipx\\venvs\\ductor"
             assert detect_install_mode() == "pipx"
 
     def test_non_editable_direct_url_is_pip(self) -> None:

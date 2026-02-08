@@ -34,7 +34,7 @@ Also running in background:
 
 ## Startup Flow
 
-### `ductor-bot` (`ductor_bot/__main__.py`)
+### `ductor` (`ductor_bot/__main__.py`)
 
 CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade`, `uninstall`, `onboarding`/`reset`). Default path:
 
