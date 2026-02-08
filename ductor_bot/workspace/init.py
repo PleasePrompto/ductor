@@ -181,11 +181,37 @@ def _clean_orphan_symlinks(paths: DuctorPaths) -> None:
 # ---------------------------------------------------------------------------
 
 
+_REQUIRED_DIRS = (
+    "workspace",
+    "workspace/memory_system",
+    "workspace/cron_tasks",
+    "workspace/tools",
+    "workspace/tools/user_tools",
+    "workspace/tools/cron_tools",
+    "workspace/tools/telegram_tools",
+    "workspace/tools/webhook_tools",
+    "workspace/output_to_user",
+    "workspace/telegram_files",
+    "config",
+    "logs",
+)
+
+
+def _ensure_required_dirs(paths: DuctorPaths) -> None:
+    """Create any required directories that are missing."""
+    for rel in _REQUIRED_DIRS:
+        d = paths.ductor_home / rel
+        if not d.is_dir():
+            d.mkdir(parents=True, exist_ok=True)
+            logger.info("Created missing directory: %s", d)
+
+
 def init_workspace(paths: DuctorPaths) -> None:
     """Initialize the workspace: defaults sync, rule sync, config merge, cleanup."""
     logger.info("Workspace init started home=%s", paths.ductor_home)
     _migrate_tasks_to_cron_tasks(paths)
     _sync_home_defaults(paths)
+    _ensure_required_dirs(paths)
     sync_rule_files(paths.workspace)
     _smart_merge_config(paths)
     _clean_orphan_symlinks(paths)
@@ -228,11 +254,7 @@ def inject_runtime_environment(paths: DuctorPaths, *, docker_container: str) -> 
 
     Called once after workspace init when the Docker state is known.
     """
-    notice = (
-        _DOCKER_NOTICE.format(container=docker_container)
-        if docker_container
-        else _HOST_NOTICE
-    )
+    notice = _DOCKER_NOTICE.format(container=docker_container) if docker_container else _HOST_NOTICE
     for name in ("CLAUDE.md", "AGENTS.md"):
         target = paths.workspace / name
         if not target.exists():

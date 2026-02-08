@@ -256,6 +256,8 @@ def _print_usage() -> None:
     table.add_row("ductor reset", "Full reset and re-setup")
     table.add_row("ductor upgrade", "Stop, upgrade to latest, restart")
     table.add_row("ductor uninstall", "Remove everything and uninstall")
+    table.add_row("ductor service install", "Run as background service (systemd)")
+    table.add_row("ductor service", "Service management (status/stop/logs/...)")
     table.add_row("ductor status", "Show bot status, paths, and stats")
     table.add_row("ductor help", "Show this message")
     table.add_row("-v, --verbose", "Verbose logging output")
@@ -603,7 +605,82 @@ _COMMANDS: dict[str, str] = {
     "uninstall": "uninstall",
     "onboarding": "setup",
     "reset": "setup",
+    "service": "service",
 }
+
+_SERVICE_SUBCOMMANDS = frozenset({"install", "status", "stop", "start", "logs", "uninstall"})
+
+
+def _parse_service_subcommand(args: list[str]) -> str | None:
+    """Extract the subcommand after 'service' from CLI args."""
+    found_service = False
+    for a in args:
+        if a.startswith("-"):
+            continue
+        if not found_service and a == "service":
+            found_service = True
+            continue
+        if found_service:
+            return a if a in _SERVICE_SUBCOMMANDS else None
+    return None
+
+
+def _print_service_help() -> None:
+    """Print the service subcommand help table."""
+    _console.print()
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column(style="bold green", min_width=30)
+    table.add_column()
+    table.add_row("ductor service install", "Install and start background service")
+    table.add_row("ductor service status", "Show service status")
+    table.add_row("ductor service start", "Start the service")
+    table.add_row("ductor service stop", "Stop the service")
+    table.add_row("ductor service logs", "View live logs")
+    table.add_row("ductor service uninstall", "Remove the service")
+    _console.print(
+        Panel(table, title="[bold]Service Commands[/bold]", border_style="blue", padding=(1, 0)),
+    )
+    _console.print()
+
+
+def _cmd_service(args: list[str]) -> None:
+    """Handle 'ductor service <subcommand>'."""
+    from ductor_bot.infra.service import (
+        install_service,
+        print_service_logs,
+        print_service_status,
+        start_service,
+        stop_service,
+        uninstall_service,
+    )
+
+    sub = _parse_service_subcommand(args)
+    if sub is None:
+        _print_service_help()
+        return
+
+    dispatch: dict[str, object] = {
+        "install": lambda: install_service(_console),
+        "status": lambda: print_service_status(_console),
+        "start": lambda: start_service(_console),
+        "stop": lambda: stop_service(_console),
+        "logs": lambda: print_service_logs(_console),
+        "uninstall": lambda: uninstall_service(_console),
+    }
+    _console.print()
+    dispatch[sub]()  # type: ignore[operator]
+    _console.print()
+
+
+def _default_action(verbose: bool) -> None:
+    """Auto-onboarding if unconfigured, then start bot."""
+    if not _is_configured():
+        from ductor_bot.cli.init_wizard import run_onboarding
+
+        service_installed = run_onboarding()
+        if service_installed:
+            return
+    _start_bot(verbose)
 
 
 def main() -> None:
@@ -618,27 +695,22 @@ def main() -> None:
     # Resolve first matching command
     action = next((_COMMANDS[c] for c in commands if c in _COMMANDS), None)
 
-    if action == "help":
-        _print_usage()
-    elif action == "status":
-        _cmd_status()
-    elif action == "stop":
-        _stop_bot()
-    elif action == "restart":
-        _cmd_restart()
-    elif action == "upgrade":
-        _upgrade()
-    elif action == "uninstall":
-        _uninstall()
-    elif action == "setup":
-        _cmd_setup(verbose)
-    else:
-        # Default: auto-onboarding if unconfigured, then start
-        if not _is_configured():
-            from ductor_bot.cli.init_wizard import run_onboarding
+    dispatch: dict[str, object] = {
+        "help": _print_usage,
+        "status": _cmd_status,
+        "stop": _stop_bot,
+        "restart": _cmd_restart,
+        "upgrade": _upgrade,
+        "uninstall": _uninstall,
+        "setup": lambda: _cmd_setup(verbose),
+        "service": lambda: _cmd_service(args),
+    }
 
-            run_onboarding()
-        _start_bot(verbose)
+    handler = dispatch.get(action) if action else None
+    if handler is not None:
+        handler()  # type: ignore[operator]
+    else:
+        _default_action(verbose)
 
 
 if __name__ == "__main__":

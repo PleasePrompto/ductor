@@ -292,6 +292,35 @@ def _ask_timezone(console: Console) -> str:
         return str(manual)
 
 
+def _offer_service_install(console: Console) -> bool:
+    """Ask whether to install ductor as a background service."""
+    if shutil.which("systemctl") is None:
+        return False
+
+    console.print(
+        Panel(
+            "[bold]Run ductor as a background service?[/bold]\n\n"
+            "This creates a systemd service that:\n\n"
+            "  - Starts ductor on boot\n"
+            "  - Restarts automatically on crash\n"
+            "  - Keeps running after you log out\n\n"
+            "[dim]Recommended for VPS or always-on setups.[/dim]",
+            title="[bold]Background Service[/bold]",
+            border_style="blue",
+            padding=(1, 2),
+        ),
+    )
+
+    enabled: bool | None = questionary.confirm(
+        "Install as background service? (Recommended for VPS)",
+        default=True,
+    ).ask()
+    if enabled is None:
+        _abort()
+    console.print()
+    return bool(enabled)
+
+
 def _write_config(
     *,
     telegram_token: str,
@@ -362,6 +391,10 @@ def run_onboarding() -> bool:
     )
 
     paths = resolve_paths()
+
+    # Offer background service setup on Linux with systemd
+    run_as_service = _offer_service_install(console)
+
     console.print(
         Panel(
             "[bold green]Setup complete![/bold green]\n\n"
@@ -370,14 +403,20 @@ def run_onboarding() -> bool:
             f"  Config:     [cyan]{config_path}[/cyan]\n"
             f"  Workspace:  [cyan]{paths.workspace}[/cyan]\n"
             f"  Logs:       [cyan]{paths.logs_dir}[/cyan]\n\n"
-            "Starting bot...",
+            + ("Installing service..." if run_as_service else "Starting bot..."),
             title="[bold green]Ready[/bold green]",
             border_style="green",
             padding=(1, 2),
         ),
     )
     console.print()
-    return True
+
+    if run_as_service:
+        from ductor_bot.infra.service import install_service
+
+        install_service(console)
+
+    return run_as_service
 
 
 def run_smart_reset(ductor_home: Path) -> None:
