@@ -105,6 +105,7 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 
 ### Infrastructure
 
+- **Background service** with `ductor service install`. Systemd on Linux, launchd instructions for macOS, Task Scheduler for WSL. Starts on boot, restarts on crash
 - **Docker sandbox** using Debian Bookworm. Both CLIs have full file system access by default, so running them in a container keeps your host safe. Auto-builds, persists auth, maps your workspace
 - `/upgrade` checks PyPI and updates with one click. Automatic restart after
 - Supervisor with PID lock. Exit code 42 means "restart me"

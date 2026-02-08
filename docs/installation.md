@@ -167,24 +167,131 @@ ductor builds the image on first use. The container sticks around between calls 
 
 ---
 
-## Hosting on a VPS
+## Running 24/7
 
-A $5/month VPS with 1 GB RAM is enough to keep ductor running around the clock. Any Linux VPS works. Hetzner, DigitalOcean, Vultr, Linode, whatever you have.
+ductor runs in the foreground by default. For always-on setups, you need something to keep it running after you close the terminal.
 
-### Setup
+### Linux (systemd) -- recommended
+
+The setup wizard offers this automatically. You can also do it manually:
 
 ```bash
-# SSH into your VPS
+ductor service install
+```
+
+This creates a systemd user service that starts on boot, restarts on crash, and keeps running after you log out. No manual config files needed.
+
+Management commands:
+
+```bash
+ductor service status      # Is it running?
+ductor service stop        # Stop the service
+ductor service start       # Start it again
+ductor service logs        # Live log output (Ctrl+C to stop)
+ductor service uninstall   # Remove the service completely
+```
+
+Under the hood this creates `~/.config/systemd/user/ductor.service` and enables linger so the service survives SSH logout. Linger requires sudo once (`sudo loginctl enable-linger $USER`), which the installer handles.
+
+### macOS (launchd)
+
+macOS doesn't have systemd. Use a launch agent:
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+
+cat > ~/Library/LaunchAgents/dev.ductor.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.ductor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/ductor</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/ductor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ductor.err</string>
+</dict>
+</plist>
+EOF
+```
+
+Adjust the path to `ductor` if pipx installed it somewhere else (`which ductor`). Then:
+
+```bash
+launchctl load ~/Library/LaunchAgents/dev.ductor.plist     # Start
+launchctl unload ~/Library/LaunchAgents/dev.ductor.plist   # Stop
+```
+
+### Windows (WSL)
+
+WSL doesn't have a real init system. Two options:
+
+**Option A: Windows Task Scheduler (starts with Windows)**
+
+Create a scheduled task that runs at login:
+
+```powershell
+# PowerShell as admin
+$action = New-ScheduledTaskAction -Execute "wsl" -Argument "-d Ubuntu -- bash -lc ductor"
+$trigger = New-ScheduledTaskTrigger -AtLogon
+Register-ScheduledTask -TaskName "ductor" -Action $action -Trigger $trigger -RunLevel Limited
+```
+
+**Option B: screen inside WSL (survives closing the terminal)**
+
+```bash
+screen -dmS ductor ductor    # Start in background
+screen -r ductor             # Reattach to see output
+# Ctrl+A, D to detach again
+```
+
+This survives closing the terminal but not a Windows reboot. Option A handles reboots.
+
+### Quick and dirty (any platform)
+
+If you just need it running temporarily and don't want a proper service:
+
+```bash
+# screen
+screen -S ductor
+ductor
+# Ctrl+A, D to detach
+
+# tmux
+tmux new -s ductor
+ductor
+# Ctrl+B, D to detach
+
+# nohup
+nohup ductor > /tmp/ductor.log 2>&1 &
+```
+
+These survive closing the terminal but not a reboot.
+
+---
+
+## Hosting on a VPS
+
+A $5/month VPS with 1 GB RAM is enough. Any Linux VPS works -- Hetzner, DigitalOcean, Vultr, Linode, whatever you have.
+
+```bash
 ssh user@your-vps-ip
 
-# Install dependencies
+# Dependencies
 sudo apt update && sudo apt install python3 python3-pip python3-venv nodejs npm docker.io
-
-# Add user to docker group
 sudo usermod -aG docker $USER
 newgrp docker
 
-# Install pipx + ductor
+# Install ductor
 pip install pipx
 pipx ensurepath
 source ~/.bashrc
@@ -192,49 +299,13 @@ pipx install ductor
 
 # Install and authenticate a CLI
 npm install -g @anthropic-ai/claude-code
-claude auth  # Follow the browser-based auth flow
+claude auth
 
-# Run setup wizard
+# Run setup wizard (offers background service at the end)
 ductor
 ```
 
-### Keep it running with systemd
-
-A systemd service starts ductor on boot and restarts it if it crashes:
-
-```bash
-sudo tee /etc/systemd/system/ductor.service > /dev/null << 'EOF'
-[Unit]
-Description=ductor Bot
-After=network.target docker.service
-Wants=docker.service
-
-[Service]
-Type=simple
-User=YOUR_USERNAME
-Environment=PATH=/home/YOUR_USERNAME/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/YOUR_USERNAME/.local/bin/ductor
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-Replace `YOUR_USERNAME` with your actual username, then:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable ductor
-sudo systemctl start ductor
-
-# Check status
-sudo systemctl status ductor
-
-# View logs
-journalctl -u ductor -f
-```
+The wizard asks whether to install the systemd service. If you skip it, run `ductor service install` later.
 
 ### Security basics
 
