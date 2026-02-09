@@ -72,9 +72,7 @@ async def test_session_expires_after_idle_timeout(tmp_path: Path) -> None:
 
 @time_machine.travel("2025-06-15 03:30:00+00:00", tick=False)
 async def test_session_expires_at_daily_reset(tmp_path: Path) -> None:
-    mgr = _make_manager(
-        tmp_path, idle_timeout_minutes=120, daily_reset_hour=4, user_timezone="UTC"
-    )
+    mgr = _make_manager(tmp_path, idle_timeout_minutes=120, daily_reset_hour=4, user_timezone="UTC")
     s1, _ = await mgr.resolve_session(chat_id=1)
     await _simulate_cli_response(mgr, s1, "cli-id-1")
 

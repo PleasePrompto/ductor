@@ -92,6 +92,10 @@ class DuctorPaths:
         return self.workspace / "memory_system"
 
     @property
+    def skills_dir(self) -> Path:
+        return self.workspace / "skills"
+
+    @property
     def mainmemory_path(self) -> Path:
         return self.memory_system_dir / "MAINMEMORY.md"
 

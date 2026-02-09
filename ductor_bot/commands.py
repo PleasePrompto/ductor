@@ -9,6 +9,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("model", "Show/switch model"),
     ("memory", "Show main memory"),
     ("cron", "Show scheduled cron jobs"),
+    ("info", "Docs, links & about"),
     ("upgrade", "Check for updates"),
     ("restart", "Restart bot"),
     ("diagnose", "Show system diagnostics"),

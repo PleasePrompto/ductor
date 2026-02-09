@@ -1,4 +1,4 @@
-"""Package version checking against PyPI."""
+"""Package version checking against PyPI and GitHub Releases."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 _PYPI_URL = "https://pypi.org/pypi/ductor/json"
+_GITHUB_RELEASES_URL = "https://api.github.com/repos/PleasePrompto/ductor/releases"
 _PACKAGE_NAME = "ductor"
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
 
@@ -72,3 +73,28 @@ async def check_pypi() -> VersionInfo | None:
         update_available=update_available,
         summary=summary,
     )
+
+
+async def fetch_changelog(version: str) -> str | None:
+    """Fetch release notes for *version* from GitHub Releases.
+
+    Tries ``v{version}`` tag first, then ``{version}`` without prefix.
+    Returns the release body (Markdown) or ``None`` on failure.
+    """
+    headers = {"Accept": "application/vnd.github+json"}
+    for tag in (f"v{version}", version):
+        url = f"{_GITHUB_RELEASES_URL}/tags/{tag}"
+        try:
+            async with (
+                aiohttp.ClientSession(timeout=_TIMEOUT, headers=headers) as session,
+                session.get(url) as resp,
+            ):
+                if resp.status != 200:
+                    continue
+                data = await resp.json()
+                body: str = data.get("body", "")
+                if body:
+                    return body.strip()
+        except (aiohttp.ClientError, TimeoutError, ValueError):
+            logger.debug("GitHub release fetch failed for tag %s", tag, exc_info=True)
+    return None

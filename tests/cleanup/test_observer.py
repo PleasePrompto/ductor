@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from ductor_bot.cleanup.observer import CleanupObserver, _delete_old_files
 from ductor_bot.config import AgentConfig, CleanupConfig
 from ductor_bot.workspace.paths import DuctorPaths
-
 
 # -- _delete_old_files (sync helper) --
 
@@ -86,7 +83,7 @@ async def test_start_disabled_does_not_spawn_task(tmp_path: Path) -> None:
     config = _make_config(enabled=False)
     observer = CleanupObserver(config, _make_paths(tmp_path))
     await observer.start()
-    assert observer._task is None  # noqa: SLF001
+    assert observer._task is None
     await observer.stop()
 
 
@@ -94,10 +91,10 @@ async def test_start_and_stop(tmp_path: Path) -> None:
     config = _make_config()
     observer = CleanupObserver(config, _make_paths(tmp_path))
     await observer.start()
-    assert observer._task is not None  # noqa: SLF001
-    assert observer._running  # noqa: SLF001
+    assert observer._task is not None
+    assert observer._running
     await observer.stop()
-    assert not observer._running  # noqa: SLF001
+    assert not observer._running
 
 
 async def test_execute_deletes_files(tmp_path: Path) -> None:
@@ -121,7 +118,7 @@ async def test_execute_deletes_files(tmp_path: Path) -> None:
 
     config = _make_config()
     observer = CleanupObserver(config, paths)
-    await observer._execute()  # noqa: SLF001
+    await observer._execute()
 
     assert not old_tg.exists()
     assert not old_out.exists()
@@ -132,15 +129,15 @@ async def test_maybe_run_skips_wrong_hour(tmp_path: Path) -> None:
     config = _make_config(check_hour=3)
     observer = CleanupObserver(config, _make_paths(tmp_path))
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    fake_now = datetime(2025, 6, 1, 10, 0, tzinfo=timezone.utc)
+    fake_now = datetime(2025, 6, 1, 10, 0, tzinfo=UTC)
     with patch("ductor_bot.cleanup.observer.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
-        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-        await observer._maybe_run()  # noqa: SLF001
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)  # noqa: DTZ001, PLW0108
+        await observer._maybe_run()
 
-    assert observer._last_run_date == ""  # noqa: SLF001
+    assert observer._last_run_date == ""
 
 
 async def test_maybe_run_skips_duplicate_same_day(tmp_path: Path) -> None:
@@ -150,15 +147,15 @@ async def test_maybe_run_skips_duplicate_same_day(tmp_path: Path) -> None:
     paths.output_to_user_dir.mkdir(parents=True, exist_ok=True)
     observer = CleanupObserver(config, paths)
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    fake_now = datetime(2025, 6, 1, 3, 30, tzinfo=timezone.utc)
+    fake_now = datetime(2025, 6, 1, 3, 30, tzinfo=UTC)
     with patch("ductor_bot.cleanup.observer.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
-        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
-        await observer._maybe_run()  # noqa: SLF001
-        assert observer._last_run_date == "2025-06-01"  # noqa: SLF001
+        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)  # noqa: DTZ001, PLW0108
+        await observer._maybe_run()
+        assert observer._last_run_date == "2025-06-01"
 
         # Second call same day: should not run again.
-        await observer._maybe_run()  # noqa: SLF001
-        assert observer._last_run_date == "2025-06-01"  # noqa: SLF001
+        await observer._maybe_run()
+        assert observer._last_run_date == "2025-06-01"

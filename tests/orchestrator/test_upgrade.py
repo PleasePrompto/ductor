@@ -25,16 +25,15 @@ class TestCmdUpgrade:
         assert "Update available" in result.text
         assert "1.0.0" in result.text
         assert "2.0.0" in result.text
-        assert "Big update" in result.text
         assert result.reply_markup is not None
 
-        # Check button callback data
-        buttons = result.reply_markup.inline_keyboard[0]
-        callback_values = [b.callback_data for b in buttons]
+        all_buttons = [b for row in result.reply_markup.inline_keyboard for b in row]
+        callback_values = [b.callback_data for b in all_buttons]
         assert "upg:yes:2.0.0" in callback_values
         assert "upg:no" in callback_values
+        assert "upg:cl:2.0.0" in callback_values
 
-    async def test_shows_up_to_date(self, orch: Orchestrator) -> None:
+    async def test_shows_up_to_date_with_changelog_button(self, orch: Orchestrator) -> None:
         info = VersionInfo(current="2.0.0", latest="2.0.0", update_available=False, summary="")
         with (
             patch("ductor_bot.infra.install.detect_install_mode", return_value="pip"),
@@ -44,7 +43,9 @@ class TestCmdUpgrade:
 
         assert "up to date" in result.text.lower()
         assert "2.0.0" in result.text
-        assert result.reply_markup is None
+        assert result.reply_markup is not None
+        buttons = result.reply_markup.inline_keyboard[0]
+        assert any(b.callback_data == "upg:cl:2.0.0" for b in buttons)
 
     async def test_handles_pypi_failure(self, orch: Orchestrator) -> None:
         with (
@@ -64,10 +65,11 @@ class TestCmdUpgrade:
         ):
             result = await cmd_upgrade(orch, 1, "/upgrade")
 
-        buttons = result.reply_markup.inline_keyboard[0]
-        labels = [b.text for b in buttons]
+        all_buttons = [b for row in result.reply_markup.inline_keyboard for b in row]
+        labels = [b.text for b in all_buttons]
         assert any("upgrade" in label.lower() or "yes" in label.lower() for label in labels)
         assert any("not" in label.lower() or "no" in label.lower() for label in labels)
+        assert any("changelog" in label.lower() for label in labels)
 
     async def test_version_info_in_up_to_date(self, orch: Orchestrator) -> None:
         info = VersionInfo(current="3.5.1", latest="3.5.1", update_available=False, summary="")
@@ -79,6 +81,18 @@ class TestCmdUpgrade:
 
         assert "3.5.1" in result.text
         assert "latest" in result.text.lower()
+
+    async def test_update_available_has_changelog_button(self, orch: Orchestrator) -> None:
+        info = VersionInfo(current="1.0.0", latest="2.0.0", update_available=True, summary="Update")
+        with (
+            patch("ductor_bot.infra.install.detect_install_mode", return_value="pipx"),
+            patch("ductor_bot.orchestrator.commands.check_pypi", return_value=info),
+        ):
+            result = await cmd_upgrade(orch, 1, "/upgrade")
+
+        all_buttons = [b for row in result.reply_markup.inline_keyboard for b in row]
+        assert any(b.callback_data == "upg:cl:2.0.0" for b in all_buttons)
+        assert any(b.callback_data == "upg:yes:2.0.0" for b in all_buttons)
 
     async def test_dev_mode_rejects_upgrade(self, orch: Orchestrator) -> None:
         with patch("ductor_bot.infra.install.detect_install_mode", return_value="dev"):

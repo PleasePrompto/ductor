@@ -4,7 +4,7 @@ Routing layer between Telegram bot UI and CLI providers. Owns command dispatch, 
 
 ## Files
 
-- `core.py`: `Orchestrator` lifecycle, routing, error boundary.
+- `core.py`: `Orchestrator` lifecycle, routing, error boundary, `active_provider_name` property.
 - `registry.py`: `CommandRegistry`, `OrchestratorResult`.
 - `commands.py`: slash command handlers.
 - `flows.py`: `normal`, `normal_streaming`, `heartbeat_flow`.
@@ -122,6 +122,8 @@ Wizard callback namespace: `ms:`.
 - model step: `ms:m:<model_id>`
 - reasoning step (Codex): `ms:r:<effort>:<model_id>`
 - back: `ms:b:root` or `ms:b:<provider>`
+
+`/model` is a quick command (bypasses the per-chat lock). When the chat is busy (agent running or messages queued), the bot returns an immediate "agent is working" message instead of the wizard. When idle, the bot acquires the lock for an atomic model switch.
 
 `switch_model()` behavior:
 

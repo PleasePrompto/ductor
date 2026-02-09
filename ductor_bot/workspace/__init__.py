@@ -14,6 +14,8 @@ from ductor_bot.workspace.loader import read_file as read_file
 from ductor_bot.workspace.loader import read_mainmemory as read_mainmemory
 from ductor_bot.workspace.paths import DuctorPaths as DuctorPaths
 from ductor_bot.workspace.paths import resolve_paths as resolve_paths
+from ductor_bot.workspace.skill_sync import sync_skills as sync_skills
+from ductor_bot.workspace.skill_sync import watch_skill_sync as watch_skill_sync
 
 __all__ = [
     "DuctorPaths",
@@ -27,5 +29,7 @@ __all__ = [
     "render_task_description_md",
     "resolve_paths",
     "sync_rule_files",
+    "sync_skills",
     "watch_rule_files",
+    "watch_skill_sync",
 ]

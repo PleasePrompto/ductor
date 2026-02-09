@@ -33,8 +33,12 @@ async def handle_abort(
 
     killed = await orchestrator.abort(chat_id)
     logger.info("Abort requested killed=%d", killed)
-    suffix = f" ({killed} process{'es' if killed != 1 else ''} killed)" if killed else ""
-    await send_rich(bot, chat_id, f"Agent stopped.{suffix}", reply_to=message)
+    if killed:
+        provider = orchestrator.active_provider_name
+        text = f"**{provider} has been terminated!** All queued messages will be discarded."
+    else:
+        text = "Nothing running right now."
+    await send_rich(bot, chat_id, text, reply_to=message)
     return True
 
 

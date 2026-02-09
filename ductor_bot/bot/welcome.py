@@ -14,16 +14,26 @@ _WELCOME_PREFIX = "w:"
 
 WELCOME_CALLBACKS: dict[str, str] = {
     "w:1": (
-        "Hey, I just set up ductor.dev. What do you need to know about me so we can get started?"
+        "Hey, I just set up ductor.dev and I want you to get to know me. "
+        "Ask me everything you need to know so we can work well together -- "
+        "my name, what I do, what I'm working on, how I like to communicate. "
+        "Save what you learn to your memory."
     ),
-    "w:2": "What can you do? Walk me through your capabilities!",
-    "w:3": "Give me a tour of the system you're running on!",
+    "w:2": (
+        "Take a look around the system you're running on. "
+        "Check the OS, installed tools, project folders, whatever you find interesting. "
+        "Give me a quick summary of what you see."
+    ),
+    "w:3": (
+        "Let's get started! Introduce yourself -- who are you, what can you do for me? "
+        "Then ask me who I am and what I need help with."
+    ),
 }
 
 _BUTTON_LABELS: dict[str, str] = {
-    "w:1": "What do you need to know about me?",
-    "w:2": "Show me what you can do!",
-    "w:3": "Give me a system tour!",
+    "w:1": "Let's get to know each other!",
+    "w:2": "Check out the system!",
+    "w:3": "Who are you? Who am I?",
 }
 
 
@@ -33,17 +43,20 @@ def build_welcome_text(
     config: AgentConfig,
 ) -> str:
     """Build the welcome message with auth status block."""
-    greeting = f"Welcome to ductor.dev, {user_name}!" if user_name else "Welcome to ductor.dev!"
+    name = f", {user_name}" if user_name else ""
 
     auth_block = _build_auth_block(auth_results, config)
 
     return (
-        f"{greeting}\n\n"
-        "Deploy from your pocket. Automate recurring tasks.\n"
-        "Powered by Claude Code and OpenAI Codex -- right from Telegram.\n\n"
+        f"**Welcome to ductor.dev{name}!**\n\n"
+        "Deploy from your pocket. Automate from your couch.\n"
+        "Claude Code & OpenAI Codex -- straight from Telegram.\n\n"
+        "\u2500\u2500\u2500\n\n"
         f"{auth_block}\n\n"
-        "/model -- switch models | /help -- all commands\n\n"
-        "Let's go!"
+        "\u2500\u2500\u2500\n\n"
+        "/model \u2014 switch models\n"
+        "/info \u2014 docs & links\n"
+        "/help \u2014 all commands"
     )
 
 
@@ -79,15 +92,15 @@ def _build_auth_block(auth_results: dict[str, AuthResult], config: AgentConfig) 
     claude_ok = claude is not None and claude.is_authenticated
     codex_ok = codex is not None and codex.is_authenticated
 
-    if claude_ok and codex_ok:
-        return (
-            "Claude Code + Codex are authenticated.\n"
-            f"Default model: Claude {config.model.capitalize()}."
-        )
+    providers: list[str] = []
     if claude_ok:
-        return f"Claude Code is authenticated.\nDefault model: {config.model.capitalize()}."
+        providers.append("Claude Code")
     if codex_ok:
-        return (
-            f"Codex is authenticated.\nDefault model: {config.model} ({config.reasoning_effort})."
-        )
-    return "No CLI provider authenticated. Run `claude auth` or `codex auth` to get started."
+        providers.append("Codex")
+
+    if not providers:
+        return "No CLI authenticated yet. Run `claude auth` or `codex auth` to get started."
+
+    auth_line = " + ".join(providers) + " authenticated."
+    model_name = config.model.capitalize() if config.provider == "claude" else config.model
+    return f"{auth_line}\nModel: **{model_name}**"

@@ -9,7 +9,9 @@ from ductor_bot.workspace.paths import DuctorPaths
 
 def _paths(tmp_path: Path) -> DuctorPaths:
     fw = tmp_path / "fw"
-    return DuctorPaths(ductor_home=tmp_path / "home", home_defaults=fw / "workspace", framework_root=fw)
+    return DuctorPaths(
+        ductor_home=tmp_path / "home", home_defaults=fw / "workspace", framework_root=fw
+    )
 
 
 def test_cron_tasks_dir(tmp_path: Path) -> None:

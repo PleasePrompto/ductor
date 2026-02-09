@@ -113,6 +113,9 @@ async def normal(
     logger.info("Normal flow starting")
     request, session = await _prepare_normal(orch, chat_id, text, model_override=model_override)
     response = await orch._cli_service.execute(request)
+    if orch._process_registry.was_aborted(chat_id):
+        logger.info("Normal flow aborted by user")
+        return OrchestratorResult(text="")
     if response.is_error and request.resume_session:
         # Resume failed -- reset session and retry with a fresh one.
         logger.warning(
@@ -123,6 +126,9 @@ async def normal(
         request, session = await _prepare_normal(orch, chat_id, text, model_override=model_override)
         response = await orch._cli_service.execute(request)
     if response.is_error:
+        if orch._process_registry.was_aborted(chat_id):
+            logger.info("Normal flow aborted by user (after retry)")
+            return OrchestratorResult(text="")
         return await _reset_on_error(orch, chat_id, model_override)
     await _update_session(orch, session, response)
     logger.info("Normal flow completed")
@@ -148,6 +154,9 @@ async def normal_streaming(  # noqa: PLR0913
         on_tool_activity=on_tool_activity,
         on_system_status=on_system_status,
     )
+    if orch._process_registry.was_aborted(chat_id):
+        logger.info("Streaming flow aborted by user")
+        return OrchestratorResult(text="")
     if response.is_error and request.resume_session:
         # Resume failed -- reset session and retry with a fresh one.
         logger.warning(
@@ -163,6 +172,9 @@ async def normal_streaming(  # noqa: PLR0913
             on_system_status=on_system_status,
         )
     if response.is_error:
+        if orch._process_registry.was_aborted(chat_id):
+            logger.info("Streaming flow aborted by user (after retry)")
+            return OrchestratorResult(text="")
         return await _reset_on_error(orch, chat_id, model_override)
     await _update_session(orch, session, response)
     logger.info("Streaming flow completed")

@@ -71,13 +71,13 @@ async def _send_text_chunks(
             logger.debug("Network error sending message (likely shutdown), skipping")
             return last_msg
         except TelegramBadRequest:
-            logger.warning("HTML send failed, falling back to plain text")
-            plain_chunks = split_html_message(clean_text)
-            for j, pc in enumerate(plain_chunks):
-                if reply_to and i == 0 and j == 0:
-                    last_msg = await reply_to.answer(pc, parse_mode=None)
-                else:
-                    last_msg = await bot.send_message(chat_id=chat_id, text=pc, parse_mode=None)
+            logger.warning(
+                "HTML send failed at chunk %d/%d, falling back to plain text", i, len(chunks)
+            )
+            remaining = split_html_message(clean_text)
+            # Skip chunks already sent successfully as HTML.
+            for pc in remaining[i:]:
+                last_msg = await bot.send_message(chat_id=chat_id, text=pc, parse_mode=None)
             break
     return last_msg
 
@@ -132,14 +132,15 @@ async def send_file(
     """Send a local file as photo (images) or document (everything else)."""
     if allowed_roots is not None and not is_path_safe(path, allowed_roots):
         logger.warning("File path blocked (outside allowed roots): %s", path)
-        root_list = ", ".join(str(r) for r in allowed_roots)
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"[File blocked: {path.name}]\n"
-                f"Path '{path}' is outside the allowed directories ({root_list})."
+                f"Could not send <code>{path.name}</code> — "
+                f"file is outside the allowed directory.\n\n"
+                f'Fix: set <code>"file_access": "all"</code> in '
+                f"<code>config.json</code>, then <b>/restart</b>."
             ),
-            parse_mode=None,
+            parse_mode="HTML",
         )
         return
 

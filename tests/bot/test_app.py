@@ -756,7 +756,7 @@ class TestCallbackQueryHandler:
 
         call_kwargs = bot_instance.edit_message_text.call_args
         text = call_kwargs.kwargs["text"]
-        assert "What do you need to know about me?" in text
+        assert "Let&#x27;s get to know each other!" in text
         assert "w:1" not in text
 
     async def test_welcome_callback_unknown_key_returns_early(self) -> None:
@@ -787,11 +787,14 @@ class TestHandleModelSelector:
         ):
             await tg_bot._handle_model_selector(chat_id=1, message_id=50, data="ms:p:claude")
 
+        from aiogram.enums import ParseMode
+
         bot_instance.edit_message_text.assert_called_once_with(
             text="Pick a model:",
             chat_id=1,
             message_id=50,
             reply_markup=keyboard,
+            parse_mode=ParseMode.HTML,
         )
 
     async def test_suppresses_bad_request(self) -> None:
@@ -1120,3 +1123,44 @@ class TestSyncCommands:
         await tg_bot._sync_commands()
 
         bot_instance.set_my_commands.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _file_roots
+# ---------------------------------------------------------------------------
+
+
+class TestFileRoots:
+    def test_all_mode_returns_none(self) -> None:
+        config = _make_config()
+        config.file_access = "all"
+        tg_bot, _ = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator()
+        assert tg_bot._file_roots(tg_bot._orch.paths) is None
+
+    def test_home_mode_returns_home_dir(self) -> None:
+        config = _make_config()
+        config.file_access = "home"
+        tg_bot, _ = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator()
+        roots = tg_bot._file_roots(tg_bot._orch.paths)
+        assert roots == [Path.home()]
+
+    def test_workspace_mode_returns_workspace(self) -> None:
+        config = _make_config()
+        config.file_access = "workspace"
+        tg_bot, _ = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator()
+        roots = tg_bot._file_roots(tg_bot._orch.paths)
+        assert roots == [tg_bot._orch.paths.workspace]
+
+    def test_unknown_mode_returns_none(self) -> None:
+        config = _make_config()
+        config.file_access = "something_invalid"
+        tg_bot, _ = _make_tg_bot(config)
+        tg_bot._orchestrator = _make_orchestrator()
+        assert tg_bot._file_roots(tg_bot._orch.paths) is None
+
+    def test_default_config_is_all(self) -> None:
+        config = AgentConfig()
+        assert config.file_access == "all"

@@ -37,8 +37,10 @@ async def cmd_stop(orch: Orchestrator, chat_id: int, _text: str) -> Orchestrator
     logger.info("Stop requested")
     killed = await orch._process_registry.kill_all(chat_id)
     if killed:
-        suffix = f"{killed} process{'es' if killed != 1 else ''} stopped"
-        return OrchestratorResult(text=f"**Agent stopped.** {suffix}.")
+        provider = orch.active_provider_name
+        return OrchestratorResult(
+            text=f"**{provider} has been terminated!** All queued messages will be discarded.",
+        )
     return OrchestratorResult(text="Nothing running right now.")
 
 
@@ -110,6 +112,16 @@ async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
         )
 
     if not info.update_available:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=f"Changelog v{info.current}",
+                        callback_data=f"upg:cl:{info.current}",
+                    ),
+                ],
+            ],
+        )
         return OrchestratorResult(
             text=(
                 f"**Already up to date**\n\n"
@@ -117,10 +129,17 @@ async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
                 f"Latest:    `{info.latest}`\n\n"
                 f"You're running the latest version."
             ),
+            reply_markup=keyboard,
         )
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"Changelog v{info.latest}",
+                    callback_data=f"upg:cl:{info.latest}",
+                ),
+            ],
             [
                 InlineKeyboardButton(
                     text="Yes, upgrade now", callback_data=f"upg:yes:{info.latest}"
@@ -135,7 +154,6 @@ async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
             f"**Update available**\n\n"
             f"Installed: `{info.current}`\n"
             f"New:       `{info.latest}`\n\n"
-            f"_{info.summary}_\n\n"
             f"Upgrade now?"
         ),
         reply_markup=keyboard,

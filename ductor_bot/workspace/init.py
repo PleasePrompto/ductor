@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 from ductor_bot.workspace.paths import DuctorPaths
+from ductor_bot.workspace.skill_sync import sync_skills
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +193,7 @@ _REQUIRED_DIRS = (
     "workspace/tools/webhook_tools",
     "workspace/output_to_user",
     "workspace/telegram_files",
+    "workspace/skills",
     "config",
     "logs",
 )
@@ -215,6 +217,7 @@ def init_workspace(paths: DuctorPaths) -> None:
     sync_rule_files(paths.workspace)
     _smart_merge_config(paths)
     _clean_orphan_symlinks(paths)
+    sync_skills(paths)
     logger.info("Workspace init completed")
 
 

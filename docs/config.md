@@ -41,7 +41,7 @@ Runtime edits from `/model` and webhook token auto-generation are persisted via 
 | `permission_mode` | `str` | `"bypassPermissions"` | Provider sandbox/approval behavior |
 | `cli_timeout` | `float` | `600.0` | Timeout per CLI call (seconds) |
 | `reasoning_effort` | `str` | `"medium"` | Codex reasoning level |
-| `file_access` | `str` | `"home"` | Currently unused in runtime logic |
+| `file_access` | `str` | `"all"` | File send restriction: `"all"` (no limit), `"home"` (user home dir), `"workspace"` (ductor workspace only) |
 | `telegram_token` | `str` | `""` | Telegram bot token |
 | `allowed_user_ids` | `list[int]` | `[]` | Telegram allowlist |
 | `streaming` | `StreamingConfig` | see below | Streaming tuning |

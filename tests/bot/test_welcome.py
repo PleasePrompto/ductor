@@ -47,8 +47,8 @@ class TestBuildWelcomeText:
         text = build_welcome_text("Alice", auth_results, _config(model="sonnet"))
 
         assert "Welcome to ductor.dev, Alice!" in text
-        assert "Claude Code + Codex are authenticated" in text
-        assert "Default model: Claude Sonnet." in text
+        assert "Claude Code + Codex authenticated" in text
+        assert "Sonnet" in text
 
     def test_only_claude_authenticated(self) -> None:
         from ductor_bot.bot.welcome import build_welcome_text
@@ -59,10 +59,9 @@ class TestBuildWelcomeText:
         }
         text = build_welcome_text("Bob", auth_results, _config(model="haiku"))
 
-        assert "Claude Code is authenticated" in text
-        assert "Default model: Haiku." in text
-        # Auth block should NOT mention Codex auth status
-        assert "Codex is authenticated" not in text
+        assert "Claude Code authenticated" in text
+        assert "Haiku" in text
+        assert "Codex authenticated" not in text
 
     def test_only_codex_authenticated(self) -> None:
         from ductor_bot.bot.welcome import build_welcome_text
@@ -71,12 +70,11 @@ class TestBuildWelcomeText:
             "claude": _auth("claude", authenticated=False),
             "codex": _auth("codex"),
         }
-        cfg = _config(model="gpt-5.2-codex", reasoning_effort="high")
+        cfg = _config(model="gpt-5.2-codex", provider="codex", reasoning_effort="high")
         text = build_welcome_text("Carol", auth_results, cfg)
 
-        assert "Codex is authenticated" in text
+        assert "Codex authenticated" in text
         assert "gpt-5.2-codex" in text
-        assert "(high)" in text
 
     def test_no_providers_authenticated(self) -> None:
         from ductor_bot.bot.welcome import build_welcome_text
@@ -87,7 +85,7 @@ class TestBuildWelcomeText:
         }
         text = build_welcome_text("Dave", auth_results, _config())
 
-        assert "No CLI provider authenticated" in text
+        assert "No CLI authenticated" in text
         assert "claude auth" in text
         assert "codex auth" in text
 
@@ -96,7 +94,7 @@ class TestBuildWelcomeText:
 
         text = build_welcome_text("Eve", {}, _config())
 
-        assert "No CLI provider authenticated" in text
+        assert "No CLI authenticated" in text
 
     def test_user_name_present(self) -> None:
         from ductor_bot.bot.welcome import build_welcome_text
@@ -117,10 +115,10 @@ class TestBuildWelcomeText:
         text = build_welcome_text("X", {}, _config())
 
         assert "Deploy from your pocket" in text
-        assert "Powered by Claude Code and OpenAI Codex" in text
+        assert "Claude Code" in text
         assert "/model" in text
         assert "/help" in text
-        assert "Let's go!" in text
+        assert "/info" in text
 
     @pytest.mark.parametrize(
         ("model", "expected_fragment"),
@@ -160,28 +158,28 @@ class TestBuildAuthBlock:
         block = _build_auth_block(auth_results, _config(model="opus"))
 
         assert "Claude Code + Codex" in block
-        assert "Claude Opus" in block
+        assert "Opus" in block
 
-    def test_codex_only_shows_reasoning_effort(self) -> None:
+    def test_codex_only_shows_model(self) -> None:
         from ductor_bot.bot.welcome import _build_auth_block
 
         auth_results = {
             "claude": _auth("claude", authenticated=False),
             "codex": _auth("codex"),
         }
-        cfg = _config(model="gpt-5.1-codex-mini", reasoning_effort="low")
+        cfg = _config(model="gpt-5.1-codex-mini", provider="codex", reasoning_effort="low")
         block = _build_auth_block(auth_results, cfg)
 
-        assert "Codex is authenticated" in block
-        assert "(low)" in block
+        assert "Codex authenticated" in block
+        assert "gpt-5.1-codex-mini" in block
 
     def test_claude_missing_from_dict(self) -> None:
         from ductor_bot.bot.welcome import _build_auth_block
 
         auth_results: dict[str, AuthResult] = {"codex": _auth("codex")}
-        block = _build_auth_block(auth_results, _config())
+        block = _build_auth_block(auth_results, _config(provider="codex"))
 
-        assert "Codex is authenticated" in block
+        assert "Codex authenticated" in block
 
     def test_codex_missing_from_dict(self) -> None:
         from ductor_bot.bot.welcome import _build_auth_block
@@ -189,7 +187,7 @@ class TestBuildAuthBlock:
         auth_results: dict[str, AuthResult] = {"claude": _auth("claude")}
         block = _build_auth_block(auth_results, _config(model="sonnet"))
 
-        assert "Claude Code is authenticated" in block
+        assert "Claude Code authenticated" in block
         assert "Sonnet" in block
 
 
@@ -285,8 +283,8 @@ class TestResolveWelcomeCallback:
         ("key", "expected_substring"),
         [
             ("w:1", "ductor.dev"),
-            ("w:2", "capabilities"),
-            ("w:3", "tour"),
+            ("w:2", "system"),
+            ("w:3", "introduce"),
         ],
     )
     def test_known_keys_return_prompt(self, key: str, expected_substring: str) -> None:

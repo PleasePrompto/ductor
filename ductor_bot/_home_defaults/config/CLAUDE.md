@@ -63,6 +63,20 @@ Edit config only when the user explicitly asks for behavior changes.
 - `docker.image_name`, `docker.container_name`
 - `docker.auto_build`
 
+### File Access
+
+- `file_access`: controls which files the bot can send to Telegram via `<file:...>` tags.
+  - `"all"` (default): no restriction, files from anywhere on the system can be sent.
+  - `"home"`: only files under the user's home directory.
+  - `"workspace"`: only files inside `~/.ductor/workspace`.
+
+### Cleanup
+
+- `cleanup.enabled`: daily cleanup of old temporary files.
+- `cleanup.telegram_files_days`: max age for received Telegram files (days).
+- `cleanup.output_to_user_days`: max age for generated output files (days).
+- `cleanup.check_hour`: hour of day (UTC) to run cleanup.
+
 ### Access Control
 
 - `allowed_user_ids`: whitelist for Telegram users

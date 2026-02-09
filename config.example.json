@@ -12,7 +12,7 @@
   "permission_mode": "bypassPermissions",
   "cli_timeout": 600.0,
   "reasoning_effort": "medium",
-  "file_access": "home",
+  "file_access": "all",
   "user_timezone": "",
   "telegram_token": "YOUR_BOT_TOKEN_HERE",
   "allowed_user_ids": [],

@@ -119,7 +119,8 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 - First-run wizard detects your CLIs, walks through config, seeds the workspace
 - New config fields merge automatically on upgrade
 - `/diagnose` dumps recent logs, `/status` shows session stats
-- `/stop` kills whatever is running, `/new` clears the session
+- `/stop` terminates the agent and discards all queued messages, `/new` clears the session
+- Messages sent while the agent is working show `[Message in queue...]` with a cancel button
 
 ## Prerequisites
 
@@ -144,7 +145,7 @@ You (Telegram)
 ductor (aiogram)
     |
     ├── AuthMiddleware (user allowlist)
-    ├── SequentialMiddleware (per-chat lock)
+    ├── SequentialMiddleware (per-chat lock + queue tracking)
     |
     v
 Orchestrator
@@ -205,7 +206,7 @@ Key fields: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), 
 | Command | Description |
 |---|---|
 | `/new` | Start a fresh session |
-| `/stop` | Abort running CLI processes |
+| `/stop` | Terminate agent and discard queued messages |
 | `/model` | Switch AI model (interactive keyboard) |
 | `/model opus` | Switch directly to a specific model |
 | `/status` | Session info, tokens, cost, auth status |

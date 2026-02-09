@@ -156,6 +156,14 @@ Use these tools to manage webhook endpoints (do not edit `webhooks.json` manuall
 Each hook has its own auth: `bearer` (token auto-generated) or `hmac` (external signing).
 See `tools/webhook_tools/CLAUDE.md` for full webhook rules, auth modes, and examples.
 
+## Skills
+
+The `skills/` directory syncs automatically with `~/.claude/skills/` and `~/.codex/skills/`. Any skill added anywhere appears everywhere within 30 seconds via symlinks.
+
+- To add a skill: create a subdirectory with a `SKILL.md` file in `skills/`.
+- Skills from Claude Code or Codex CLI are synced here as symlinks.
+- Read `skills/CLAUDE.md` for full sync rules.
+
 ## Scheduling (Cron Jobs)
 
 When the user wants recurring tasks ("remind me", "do this daily"):

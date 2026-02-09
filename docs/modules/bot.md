@@ -6,7 +6,7 @@ Telegram interface layer (aiogram 3.x). Handles incoming updates, middleware, we
 
 - `app.py`: `TelegramBot` lifecycle, handler registration, startup/shutdown, restart watcher, webhook wake bridge.
 - `handlers.py`: helper handlers for abort, orchestrator command routing, new session reset.
-- `middleware.py`: `AuthMiddleware`, `SequentialMiddleware`, quick-command bypass, per-chat lock.
+- `middleware.py`: `AuthMiddleware`, `SequentialMiddleware`, quick-command bypass, per-chat lock, queue entry tracking with cancel buttons.
 - `welcome.py`: `/start` welcome text + quick-start keyboard (`w:*` callbacks).
 - `streaming.py`: append-mode stream editor + `create_stream_editor()` factory.
 - `edit_streaming.py`: default in-place edit stream editor.
@@ -37,10 +37,18 @@ Registered in `TelegramBot._register_handlers()`:
 
 `SequentialMiddleware` order (message updates only):
 
-1. abort trigger check (`/stop` + bare abort words), handled before lock.
-2. quick command check (`/status`, `/memory`, `/cron`, `/diagnose`), bypasses lock.
+1. abort trigger check (`/stop` + bare abort words), handled before lock. On abort: kills processes **and** drains the pending message queue (edits all indicators to `[Message discarded.]`).
+2. quick command check (`/status`, `/memory`, `/cron`, `/diagnose`, `/model`), bypasses lock. `/model` has a busy-check: when agent is active or messages are queued, returns immediate feedback instead of the wizard.
 3. dedupe by `chat_id:message_id`.
-4. per-chat `asyncio.Lock` for regular messages.
+4. per-chat `asyncio.Lock` for regular messages. When the lock is held, queued messages get a `[Message in queue...]` indicator (reply to the user's message) with a "Cancel message" inline button (`mq:<entry_id>` callback).
+5. after lock acquisition: cancelled entries skip handler execution; otherwise the indicator is deleted and the handler runs normally.
+
+Queue management methods:
+
+- `is_busy(chat_id)`: True if lock is held or pending entries exist.
+- `has_pending(chat_id)`: True if pending entries exist.
+- `cancel_entry(chat_id, entry_id)`: cancel a single queued message, edit indicator to `[Message cancelled.]`.
+- `drain_pending(chat_id)`: cancel all pending messages, edit indicators to `[Message discarded.]`.
 
 Callback queries are not processed through `SequentialMiddleware.__call__`; `TelegramBot` acquires the same lock explicitly for callback execution paths.
 
@@ -109,6 +117,7 @@ Bot currently passes `allowed_roots=[paths.workspace]`.
 
 - always calls `answer()`.
 - `w:*` callbacks -> resolved via `welcome.py` into full prompt text.
+- `mq:*` callbacks -> queue cancel: parses entry ID and calls `SequentialMiddleware.cancel_entry()`.
 - `upg:*` callbacks -> upgrade flow (`upg:yes:<version>` triggers upgrade + restart, `upg:no` dismisses).
 - `ms:*` callbacks -> model selector wizard (edits message in place).
 - all other callbacks:

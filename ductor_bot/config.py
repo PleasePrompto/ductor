@@ -142,7 +142,7 @@ class AgentConfig(BaseModel):
     permission_mode: str = "bypassPermissions"
     cli_timeout: float = 600.0
     reasoning_effort: str = "medium"
-    file_access: str = "home"
+    file_access: str = "all"
     streaming: StreamingConfig = Field(default_factory=StreamingConfig)
     docker: DockerConfig = Field(default_factory=DockerConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)

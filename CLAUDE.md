@@ -37,7 +37,7 @@ mypy ductor_bot
 ### Runtime Flow
 
 ```
-Telegram Update → aiogram Router → AuthMiddleware → SequentialMiddleware (per-chat lock)
+Telegram Update → aiogram Router → AuthMiddleware → SequentialMiddleware (per-chat lock + queue tracking)
   → TelegramBot handler → Orchestrator → CLIService → Claude/Codex subprocess
   → Streamed response → Telegram
 ```
@@ -53,7 +53,7 @@ Telegram Update → aiogram Router → AuthMiddleware → SequentialMiddleware (
 | `cron/` | In-process scheduler: cron expression evaluation, timezone-aware execution |
 | `heartbeat/` | Periodic background checks in active sessions during non-quiet hours |
 | `webhook/` | HTTP ingress (`/hooks/{hook_id}`): bearer/HMAC auth, wake and cron_task modes |
-| `workspace/` | Path resolution (`DuctorPaths`), home seeding from `_home_defaults/`, rule-file sync |
+| `workspace/` | Path resolution (`DuctorPaths`), home seeding from `_home_defaults/`, rule-file sync, skill directory sync |
 | `security/` | Prompt injection detection, path traversal validation |
 | `infra/` | PID lock, restart sentinel, version checking, auto-updater |
 
@@ -64,6 +64,7 @@ Telegram Update → aiogram Router → AuthMiddleware → SequentialMiddleware (
 - **Stream fallback**: Streaming auto-falls-back to non-streaming on error. No data loss.
 - **ContextVar logging** (`log_context.py`): Async-safe log enrichment with `[op:chat_id:session_id]` prefix. Operations: `msg`, `cb`, `cron`, `hb`, `wh`.
 - **Process registry** (`cli/process_registry.py`): Tracks active subprocesses per chat_id for abort/kill.
+- **Message queue tracking** (`bot/middleware.py`): Tracks pending messages per chat with `[Message in queue...]` indicators, individual cancel buttons (`mq:` callbacks), and bulk drain on `/stop`.
 - **Message hooks** (`orchestrator/hooks.py`): Condition-based prompt suffixes (e.g., memory reminder every 6th message) without modifying core flow.
 - **Provider abstraction** (`cli/claude_provider.py`, `cli/codex_provider.py`): Same CLIService interface for both Claude Code and Codex CLI.
 
@@ -75,6 +76,7 @@ All run in-process as asyncio tasks, managed by the Orchestrator:
 - **WebhookObserver**: aiohttp server with per-hook auth and rate limiting.
 - **UpdateObserver**: PyPI version check every 60 minutes.
 - **Rule sync task**: Mirrors CLAUDE.md/AGENTS.md by mtime.
+- **Skill sync task**: Three-way symlink sync between ductor/Claude/Codex skill directories (30s interval).
 
 ### Error Hierarchy
 

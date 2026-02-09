@@ -348,9 +348,7 @@ class TestPerHookTokenAuth:
         )
         assert resp.status == 202
 
-    async def test_per_hook_token_rejects_global(
-        self, server_client: TestClient[Any, Any]
-    ) -> None:
+    async def test_per_hook_token_rejects_global(self, server_client: TestClient[Any, Any]) -> None:
         resp = await server_client.post(
             "/hooks/hook-with-token",
             headers=_auth_headers(_TOKEN),
@@ -385,9 +383,7 @@ class TestPerHookTokenAuth:
 
 
 class TestHmacAuth:
-    async def test_hmac_valid_signature_accepted(
-        self, server_client: TestClient[Any, Any]
-    ) -> None:
+    async def test_hmac_valid_signature_accepted(self, server_client: TestClient[Any, Any]) -> None:
         body = json.dumps({"msg": "event"}).encode()
         sig = _hmac_sign(body, "hmac-test-secret")
         resp = await server_client.post(
@@ -414,9 +410,7 @@ class TestHmacAuth:
         )
         assert resp.status == 401
 
-    async def test_hmac_hook_ignores_bearer(
-        self, server_client: TestClient[Any, Any]
-    ) -> None:
+    async def test_hmac_hook_ignores_bearer(self, server_client: TestClient[Any, Any]) -> None:
         resp = await server_client.post(
             "/hooks/hmac-hook",
             headers=_auth_headers(_TOKEN),

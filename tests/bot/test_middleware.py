@@ -261,7 +261,8 @@ class TestIsQuickCommand:
             ("/diagnose", True),
             ("/STATUS", True),
             ("  /status  ", True),
-            ("/model", False),
+            ("/model", True),
+            ("/model sonnet", True),
             ("/new", False),
             ("/stop", False),
             ("/restart", False),
@@ -273,3 +274,171 @@ class TestIsQuickCommand:
         from ductor_bot.bot.middleware import is_quick_command
 
         assert is_quick_command(text) == expected
+
+
+class TestQueueManagement:
+    """Tests for queue entry tracking and cancellation."""
+
+    async def test_is_busy_when_lock_held(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware
+
+        mw = SequentialMiddleware()
+        lock = mw.get_lock(1)
+
+        assert not mw.is_busy(1)
+
+        acquired = asyncio.Event()
+        release = asyncio.Event()
+
+        async def hold_lock() -> None:
+            async with lock:
+                acquired.set()
+                await release.wait()
+
+        task = asyncio.create_task(hold_lock())
+        await acquired.wait()
+        assert mw.is_busy(1)
+
+        release.set()
+        await task
+        assert not mw.is_busy(1)
+
+    async def test_has_pending_empty(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware
+
+        mw = SequentialMiddleware()
+        assert not mw.has_pending(1)
+
+    async def test_cancel_entry_marks_cancelled(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware, _QueueEntry
+
+        mw = SequentialMiddleware()
+        entry = _QueueEntry(entry_id=1, chat_id=10, message_id=100, text_preview="test")
+        mw._pending.setdefault(10, []).append(entry)
+
+        assert not entry.cancelled
+        result = await mw.cancel_entry(10, 1)
+        assert result is True
+        assert entry.cancelled
+
+    async def test_cancel_entry_unknown_returns_false(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware
+
+        mw = SequentialMiddleware()
+        result = await mw.cancel_entry(10, 999)
+        assert result is False
+
+    async def test_drain_pending_cancels_all(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware, _QueueEntry
+
+        mw = SequentialMiddleware()
+        entries = [
+            _QueueEntry(entry_id=i, chat_id=10, message_id=100 + i, text_preview=f"msg{i}")
+            for i in range(3)
+        ]
+        mw._pending[10] = list(entries)
+
+        count = await mw.drain_pending(10)
+        assert count == 3
+        assert all(e.cancelled for e in entries)
+
+    async def test_drain_pending_skips_already_cancelled(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware, _QueueEntry
+
+        mw = SequentialMiddleware()
+        e1 = _QueueEntry(entry_id=1, chat_id=10, message_id=101, text_preview="a")
+        e2 = _QueueEntry(entry_id=2, chat_id=10, message_id=102, text_preview="b", cancelled=True)
+        mw._pending[10] = [e1, e2]
+
+        count = await mw.drain_pending(10)
+        assert count == 1
+
+    async def test_cancelled_entry_skips_handler(self) -> None:
+        """When a queued message is cancelled, the handler is not invoked."""
+        from ductor_bot.bot.middleware import SequentialMiddleware
+
+        mw = SequentialMiddleware()
+        bot = AsyncMock()
+        bot.send_message = AsyncMock(return_value=MagicMock(message_id=999))
+        bot.delete_message = AsyncMock()
+        mw.set_bot(bot)
+
+        acquired = asyncio.Event()
+        release = asyncio.Event()
+        handler_calls: list[str] = []
+
+        async def slow_handler(_event: object, _data: dict[str, object]) -> None:
+            acquired.set()
+            await release.wait()
+            handler_calls.append("slow")
+
+        async def normal_handler(_event: object, _data: dict[str, object]) -> None:
+            handler_calls.append("normal")
+
+        msg1 = _make_message(chat_id=1, text="first")
+        msg1.message_id = 1
+        task1 = asyncio.create_task(mw(slow_handler, msg1, {}))
+        await acquired.wait()
+
+        msg2 = _make_message(chat_id=1, text="second")
+        msg2.message_id = 2
+        task2 = asyncio.create_task(mw(normal_handler, msg2, {}))
+        await asyncio.sleep(0.01)
+
+        assert mw.has_pending(1)
+        entries = mw._pending.get(1, [])
+        assert len(entries) == 1
+        await mw.cancel_entry(1, entries[0].entry_id)
+
+        release.set()
+        await task1
+        await task2
+
+        assert handler_calls == ["slow"]
+
+    async def test_abort_drains_pending(self) -> None:
+        """Abort trigger drains the pending queue."""
+        from ductor_bot.bot.middleware import SequentialMiddleware
+
+        mw = SequentialMiddleware()
+        bot = AsyncMock()
+        bot.send_message = AsyncMock(return_value=MagicMock(message_id=999))
+        bot.edit_message_text = AsyncMock()
+        bot.delete_message = AsyncMock()
+        mw.set_bot(bot)
+
+        abort_handler = AsyncMock(return_value=True)
+        mw.set_abort_handler(abort_handler)
+
+        acquired = asyncio.Event()
+        release = asyncio.Event()
+        handler_calls: list[str] = []
+
+        async def slow_handler(_event: object, _data: dict[str, object]) -> None:
+            acquired.set()
+            await release.wait()
+            handler_calls.append("slow")
+
+        async def queued_handler(_event: object, _data: dict[str, object]) -> None:
+            handler_calls.append("queued")
+
+        msg1 = _make_message(chat_id=1, text="first")
+        msg1.message_id = 1
+        task1 = asyncio.create_task(mw(slow_handler, msg1, {}))
+        await acquired.wait()
+
+        msg2 = _make_message(chat_id=1, text="second")
+        msg2.message_id = 2
+        task2 = asyncio.create_task(mw(queued_handler, msg2, {}))
+        await asyncio.sleep(0.01)
+
+        stop_msg = _make_message(chat_id=1, text="stop")
+        stop_msg.message_id = 3
+        await mw(AsyncMock(), stop_msg, {})
+
+        release.set()
+        await task1
+        await task2
+
+        assert handler_calls == ["slow"]
+        abort_handler.assert_called_once()

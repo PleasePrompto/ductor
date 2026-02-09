@@ -177,7 +177,9 @@ class TestSendFile:
         # allowed_roots is empty list = nothing allowed
         await send_file(bot, chat_id=1, path=f, allowed_roots=[Path("/nonexistent")])
         bot.send_message.assert_called_once()
-        assert "blocked" in bot.send_message.call_args.kwargs["text"].lower()
+        text = bot.send_message.call_args.kwargs["text"].lower()
+        assert "outside" in text
+        assert "file_access" in text
 
 
 class TestExtractFilePaths:

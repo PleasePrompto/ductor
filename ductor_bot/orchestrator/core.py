@@ -53,6 +53,7 @@ from ductor_bot.workspace.init import (
     watch_rule_files,
 )
 from ductor_bot.workspace.paths import DuctorPaths, resolve_paths
+from ductor_bot.workspace.skill_sync import watch_skill_sync
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ class Orchestrator:
         )
         self._cleanup_observer = CleanupObserver(config, paths)
         self._rule_sync_task: asyncio.Task[None] | None = None
+        self._skill_sync_task: asyncio.Task[None] | None = None
         self._hook_registry = MessageHookRegistry()
         self._hook_registry.register(MAINMEMORY_REMINDER)
         self._command_registry = CommandRegistry()
@@ -173,6 +175,8 @@ class Orchestrator:
         await orch._cleanup_observer.start()
         orch._rule_sync_task = asyncio.create_task(watch_rule_files(paths.workspace))
         logger.info("Rule file watcher started (CLAUDE.md <-> AGENTS.md)")
+        orch._skill_sync_task = asyncio.create_task(watch_skill_sync(paths))
+        logger.info("Skill sync watcher started")
 
         return orch
 
@@ -335,6 +339,11 @@ class Orchestrator:
         """Set the webhook wake handler (provided by the bot layer)."""
         self._webhook_observer.set_wake_handler(handler)
 
+    @property
+    def active_provider_name(self) -> str:
+        """Human-readable name for the active CLI provider."""
+        return "Claude Code" if self._config.provider == "claude" else "Codex"
+
     def is_chat_busy(self, chat_id: int) -> bool:
         """Check if a chat has active CLI processes."""
         return self._process_registry.has_active(chat_id)
@@ -352,10 +361,11 @@ class Orchestrator:
 
     async def shutdown(self) -> None:
         """Cleanup on bot shutdown."""
-        if self._rule_sync_task and not self._rule_sync_task.done():
-            self._rule_sync_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._rule_sync_task
+        for task in (self._rule_sync_task, self._skill_sync_task):
+            if task and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
         await self._heartbeat.stop()
         await self._webhook_observer.stop()
         await self._cron_observer.stop()

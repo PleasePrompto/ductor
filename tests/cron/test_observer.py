@@ -21,7 +21,9 @@ from ductor_bot.workspace.paths import DuctorPaths
 
 def _make_paths(tmp_path: Path) -> DuctorPaths:
     fw = tmp_path / "fw"
-    paths = DuctorPaths(ductor_home=tmp_path / "home", home_defaults=fw / "workspace", framework_root=fw)
+    paths = DuctorPaths(
+        ductor_home=tmp_path / "home", home_defaults=fw / "workspace", framework_root=fw
+    )
     paths.cron_tasks_dir.mkdir(parents=True)
     return paths
 

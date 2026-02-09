@@ -24,7 +24,7 @@ from ductor_bot.bot.handlers import (
     strip_mention,
 )
 from ductor_bot.bot.media import has_media, is_media_addressed, resolve_media_text
-from ductor_bot.bot.middleware import AuthMiddleware, SequentialMiddleware
+from ductor_bot.bot.middleware import MQ_PREFIX, AuthMiddleware, SequentialMiddleware
 from ductor_bot.bot.sender import send_files_from_text, send_rich
 from ductor_bot.bot.streaming import create_stream_editor
 from ductor_bot.bot.typing import TypingContext
@@ -102,6 +102,7 @@ class TelegramBot:
 
         allowed = set(config.allowed_user_ids)
         self._sequential = SequentialMiddleware()
+        self._sequential.set_bot(self._bot)
         self._sequential.set_abort_handler(self._on_abort)
         self._sequential.set_quick_command_handler(self._on_quick_command)
         self._router.message.outer_middleware(AuthMiddleware(allowed))
@@ -119,9 +120,22 @@ class TelegramBot:
             raise RuntimeError(msg)
         return self._orchestrator
 
-    def _file_roots(self, paths: DuctorPaths) -> list[Path]:
-        """Allowed root directories for ``<file:...>`` tag sends."""
-        return [paths.workspace]
+    def _file_roots(self, paths: DuctorPaths) -> list[Path] | None:
+        """Allowed root directories for ``<file:...>`` tag sends.
+
+        Controlled by ``config.file_access``:
+        - ``"all"``: no restriction (returns ``None``).
+        - ``"home"``: user home directory.
+        - ``"workspace"``: only ``~/.ductor/workspace``.
+        """
+        mode = self._config.file_access
+        if mode == "all":
+            return None
+        if mode == "home":
+            return [Path.home()]
+        if mode == "workspace":
+            return [paths.workspace]
+        return None
 
     async def _on_startup(self) -> None:
         from ductor_bot.orchestrator.core import Orchestrator
@@ -176,6 +190,7 @@ class TelegramBot:
         r = self._router
         r.message(CommandStart())(self._on_start)
         r.message(Command("help"))(self._on_help)
+        r.message(Command("info"))(self._on_info)
         r.message(Command("stop"))(self._on_stop)
         r.message(Command("restart"))(self._on_restart)
         r.message(Command("new"))(self._on_new)
@@ -250,6 +265,23 @@ class TelegramBot:
         """Handle /help: show command reference."""
         await send_rich(self._bot, message.chat.id, _HELP_TEXT, reply_to=message)
 
+    async def _on_info(self, message: Message) -> None:
+        """Handle /info: show project links and version."""
+        version = get_current_version()
+        text = (
+            "**ductor.dev**\n\n"
+            f"Version: `{version}`\n\n"
+            "\u2500\u2500\u2500\n\n"
+            "Claude Code & OpenAI Codex as your Telegram agent.\n"
+            "Persistent memory, cron jobs, webhooks, live streaming.\n\n"
+            "\u2500\u2500\u2500\n\n"
+            "[Website & Docs](https://ductor.dev)\n"
+            "[GitHub](https://github.com/PleasePrompto/ductor)\n"
+            "[Changelog](https://ductor.dev/en/changelog/)\n"
+            "[PyPI](https://pypi.org/project/ductor/)"
+        )
+        await send_rich(self._bot, message.chat.id, text, reply_to=message)
+
     # -- Abort, commands, sessions ---------------------------------------------
 
     async def _on_abort(self, chat_id: int, message: Message) -> bool:
@@ -261,9 +293,29 @@ class TelegramBot:
         )
 
     async def _on_quick_command(self, chat_id: int, message: Message) -> bool:
-        """Handle a read-only command without the sequential lock."""
+        """Handle a read-only command without the sequential lock.
+
+        ``/model`` is special: when the chat is busy it returns an immediate
+        "agent is working" message; otherwise it acquires the lock for an
+        atomic model switch.
+        """
         if self._orchestrator is None:
             return False
+
+        text_lower = (message.text or "").strip().lower()
+        if text_lower.startswith("/model"):
+            if self._sequential.is_busy(chat_id) or self._orch.is_chat_busy(chat_id):
+                await send_rich(
+                    self._bot,
+                    chat_id,
+                    "**Agent is working.** Use /stop to terminate first, then switch models.",
+                    reply_to=message,
+                )
+                return True
+            async with self._sequential.get_lock(chat_id):
+                await handle_command(self._orchestrator, self._bot, message)
+            return True
+
         await handle_command(self._orchestrator, self._bot, message)
         return True
 
@@ -326,6 +378,10 @@ class TelegramBot:
                 return
             data = resolved
 
+        if data.startswith(MQ_PREFIX):
+            await self._handle_queue_cancel(chat_id, data)
+            return
+
         if data.startswith("upg:"):
             await self._handle_upgrade_callback(chat_id, msg.message_id, data)
             return
@@ -359,11 +415,20 @@ class TelegramBot:
             text, keyboard = await handle_model_callback(self._orch, chat_id, data)
         with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_text(
-                text=text,
+                text=markdown_to_telegram_html(text),
                 chat_id=chat_id,
                 message_id=message_id,
                 reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
             )
+
+    async def _handle_queue_cancel(self, chat_id: int, data: str) -> None:
+        """Handle a ``mq:<entry_id>`` callback to cancel a queued message."""
+        try:
+            entry_id = int(data[len(MQ_PREFIX) :])
+        except (ValueError, IndexError):
+            return
+        await self._sequential.cancel_entry(chat_id, entry_id)
 
     async def _mark_button_choice(self, chat_id: int, msg: Message, label: str) -> None:
         """Edit the bot message to append ``[USER ANSWER] label`` and remove the keyboard.
@@ -546,6 +611,12 @@ class TelegramBot:
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
+                        text=f"Changelog v{info.latest}",
+                        callback_data=f"upg:cl:{info.latest}",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
                         text="Upgrade now",
                         callback_data=f"upg:yes:{info.latest}",
                     ),
@@ -554,16 +625,17 @@ class TelegramBot:
             ],
         )
         text = (
-            f"**New version available**\n\n"
-            f"Installed: `{info.current}`\n"
-            f"New:       `{info.latest}`\n\n"
-            f"_{info.summary}_"
+            f"**New version available**\n\nInstalled: `{info.current}`\nNew:       `{info.latest}`"
         )
         for uid in self._config.allowed_user_ids:
             await send_rich(self._bot, uid, text, reply_markup=keyboard)
 
     async def _handle_upgrade_callback(self, chat_id: int, message_id: int, data: str) -> None:
-        """Handle ``upg:yes:<version>`` and ``upg:no`` callbacks."""
+        """Handle ``upg:yes:<version>``, ``upg:no``, and ``upg:cl:<version>`` callbacks."""
+        if data.startswith("upg:cl:"):
+            await self._handle_changelog_callback(chat_id, message_id, data)
+            return
+
         with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_reply_markup(
                 chat_id=chat_id, message_id=message_id, reply_markup=None
@@ -610,6 +682,34 @@ class TelegramBot:
         await self._bot.send_message(chat_id, "Bot is restarting...", parse_mode=None)
         self._exit_code = EXIT_RESTART
         asyncio.create_task(self._dp.stop_polling())  # noqa: RUF006
+
+    async def _handle_changelog_callback(self, chat_id: int, message_id: int, data: str) -> None:
+        """Fetch and display changelog for ``upg:cl:<version>``."""
+        from ductor_bot.infra.version import fetch_changelog
+
+        version = data.split(":", 2)[2] if data.count(":") >= 2 else ""
+        if not version:
+            return
+
+        # Remove the changelog button to prevent repeated fetches
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_reply_markup(
+                chat_id=chat_id, message_id=message_id, reply_markup=None
+            )
+
+        body = await fetch_changelog(version)
+        if not body:
+            await self._bot.send_message(
+                chat_id,
+                f"No changelog found for v{version}.",
+                parse_mode=None,
+            )
+            return
+
+        roots = self._file_roots(self._orch.paths)
+        await send_rich(
+            self._bot, chat_id, f"**Changelog v{version}**\n\n{body}", allowed_roots=roots
+        )
 
     async def _sync_commands(self) -> None:
         current = await self._bot.get_my_commands()

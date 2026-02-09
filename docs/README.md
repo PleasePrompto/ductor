@@ -22,7 +22,7 @@ ductor is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI C
 - `ductor_bot/cron/`: in-process scheduler for `cron_jobs.json`.
 - `ductor_bot/heartbeat/`: periodic checks in active sessions.
 - `ductor_bot/webhook/`: HTTP ingress (`/hooks/{hook_id}`) with per-hook auth (`bearer` or `hmac`) and `wake`/`cron_task` modes.
-- `ductor_bot/workspace/`: path resolution, home seeding from `ductor_bot/_home_defaults/`, `CLAUDE.md`/`AGENTS.md` sync.
+- `ductor_bot/workspace/`: path resolution, home seeding from `ductor_bot/_home_defaults/`, `CLAUDE.md`/`AGENTS.md` sync, cross-platform skill directory sync.
 - `ductor_bot/infra/`: PID lock, restart sentinel, Docker helper, auto-update observer (upgradeable installs), version check.
 - `ductor_bot/cli/init_wizard.py`: interactive onboarding wizard, smart reset.
 - `ductor_bot/log_context.py` + `ductor_bot/logging_config.py`: context-aware logging and log sinks.
@@ -37,6 +37,7 @@ ductor is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI C
   - [cli](modules/cli.md)
   - [orchestrator](modules/orchestrator.md)
   - [workspace](modules/workspace.md)
+  - [skill_system](modules/skill_system.md)
   - [session](modules/session.md)
   - [cron](modules/cron.md)
   - [heartbeat](modules/heartbeat.md)

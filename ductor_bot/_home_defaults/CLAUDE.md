@@ -39,6 +39,7 @@ Common keys only (short list). For current full behavior, see `config/CLAUDE.md`
 | `max_turns` | `null` | Max agent turns per request |
 | `max_budget_usd` | `null` | Max cost per request |
 | `cli_timeout` | `600.0` | CLI subprocess timeout (seconds) |
+| `file_access` | `"all"` | File send restriction: `"all"` (unrestricted), `"home"` (user home), `"workspace"` (workspace only) |
 | `streaming.enabled` | `true` | Live-stream responses to Telegram |
 | `docker.enabled` | `false` | Run CLI in Docker sandbox |
 

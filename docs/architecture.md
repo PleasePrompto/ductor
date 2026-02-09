@@ -7,9 +7,9 @@ Telegram Update
   -> aiogram Dispatcher/Router
   -> AuthMiddleware (allowlist)
   -> SequentialMiddleware (message updates only)
-       - /stop or bare abort keyword: kill active CLI process(es)
-       - quick command (/status /memory /cron /diagnose): lock bypass
-       - otherwise: dedupe + per-chat lock
+       - /stop or bare abort keyword: kill active CLI process(es) + drain pending queue
+       - quick command (/status /memory /cron /diagnose /model): lock bypass
+       - otherwise: dedupe + per-chat lock (with queue tracking when lock is held)
   -> TelegramBot handler
        - /start -> welcome screen (+ quick-start buttons)
        - /help -> command reference
@@ -31,6 +31,7 @@ Also running in background:
 - `WebhookObserver`: HTTP ingress for external triggers.
 - `UpdateObserver`: periodic PyPI version check + Telegram notification (upgradeable installs only).
 - rule-sync task: keeps `CLAUDE.md` and `AGENTS.md` mirrored.
+- skill-sync task: three-way symlink sync between `~/.ductor/workspace/skills/`, `~/.claude/skills/`, and `~/.codex/skills/` (30s interval).
 
 ## Startup Flow
 
@@ -71,6 +72,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 7. Start `HeartbeatObserver`.
 8. Start `WebhookObserver`.
 9. Start `watch_rule_files(paths.workspace)` task.
+10. Start `watch_skill_sync(paths)` task.
 
 `init_workspace()` is called in both `__main__.py` and `Orchestrator.create()`; this is safe because initialization is idempotent and rule-driven.
 
@@ -81,7 +83,8 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 - Bot-level handlers: `/start`, `/help`, `/stop`, `/restart`, `/new`.
 - Orchestrator command registry: `/new`, `/stop`, `/status`, `/model`, `/memory`, `/cron`, `/diagnose`, `/upgrade`.
 - In regular chat usage, `/status`, `/memory`, `/model`, `/cron`, `/diagnose`, `/upgrade` are routed via `handle_command()`.
-- Quick-command bypass in middleware applies only to `/status`, `/memory`, `/cron`, `/diagnose`.
+- Quick-command bypass in middleware applies to `/status`, `/memory`, `/cron`, `/diagnose`, and `/model`.
+- `/model` bypass has a busy-check: when agent is active or messages are queued, it returns an immediate "agent is working" message instead of the model wizard.
 
 ### Directives (`ductor_bot/orchestrator/directives.py`)
 
@@ -139,9 +142,10 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 
 1. `answer()` callback query.
 2. Welcome shortcut callbacks (`w:*`) are expanded to full prompt text.
-3. Upgrade callbacks (`upg:*`) run upgrade flow (`upg:yes:<version>` -> upgrade + restart, `upg:no` -> dismiss).
-4. If callback data starts with `ms:` -> route to model selector wizard and edit message in place.
-5. Otherwise:
+3. Queue cancel callbacks (`mq:*`) cancel a specific pending message via `SequentialMiddleware.cancel_entry()`.
+4. Upgrade callbacks (`upg:*`) run upgrade flow (`upg:yes:<version>` -> upgrade + restart, `upg:no` -> dismiss).
+5. If callback data starts with `ms:` -> route to model selector wizard and edit message in place.
+6. Otherwise:
    - remove keyboard from original message,
    - acquire per-chat lock via `SequentialMiddleware.get_lock(chat_id)`,
    - route callback data as a new message through orchestrator,
@@ -239,5 +243,5 @@ Copy rules in `ductor_bot/workspace/init.py` (`_walk_and_copy`):
 
 - JSON files over DB: transparent and easy to debug, but no query/transaction layer.
 - In-process cron/heartbeat/webhook: simple deployment, lifecycle tied to bot process.
-- Per-chat lock: prevents race conditions and duplicate execution, limits chat-level parallelism.
+- Per-chat lock with queue tracking: prevents race conditions and duplicate execution, limits chat-level parallelism. Pending messages are tracked with visual indicators and individual cancel buttons. `/stop` drains the entire queue.
 - Streaming with coalescing and edit mode: better UX with controlled message churn.

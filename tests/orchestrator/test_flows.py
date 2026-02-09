@@ -442,3 +442,78 @@ async def test_update_session_no_session_id_in_response(orch: Orchestrator) -> N
     )
     await _update_session(orch, session, response)
     assert session.session_id == "original"
+
+
+# ---------------------------------------------------------------------------
+# Gap 5: Abort discards response -- /stop should suppress ALL output
+# ---------------------------------------------------------------------------
+
+
+async def test_normal_abort_skips_retry(orch: Orchestrator) -> None:
+    """When process is aborted (via /stop), normal() returns empty instead of retrying."""
+    await _establish_session(orch)
+
+    mock_execute = AsyncMock(
+        return_value=_mock_response(is_error=True, result="killed"),
+    )
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    orch._process_registry._aborted.add(1)
+
+    result = await normal(orch, 1, "Hello")
+    assert result.text == ""
+    assert mock_execute.call_count == 1  # No retry
+
+
+async def test_streaming_abort_skips_retry(orch: Orchestrator) -> None:
+    """When process is aborted (via /stop), normal_streaming() returns empty instead of retrying."""
+    mock_exec = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute_streaming", mock_exec)
+    await normal_streaming(orch, 1, "Setup")
+
+    mock_streaming = AsyncMock(
+        return_value=_mock_response(is_error=True, result="killed"),
+    )
+    object.__setattr__(orch._cli_service, "execute_streaming", mock_streaming)
+    orch._process_registry._aborted.add(1)
+
+    result = await normal_streaming(orch, 1, "Hello")
+    assert result.text == ""
+    assert mock_streaming.call_count == 1  # No retry
+
+
+async def test_normal_abort_discards_successful_response(orch: Orchestrator) -> None:
+    """Even when CLI responds successfully, abort flag causes empty result."""
+    mock_execute = AsyncMock(
+        return_value=_mock_response(is_error=False, result="Agent replied"),
+    )
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    orch._process_registry._aborted.add(1)
+
+    result = await normal(orch, 1, "Hello")
+    assert result.text == ""
+
+
+async def test_streaming_abort_discards_successful_response(orch: Orchestrator) -> None:
+    """Even when streaming CLI responds successfully, abort flag causes empty result."""
+    mock_streaming = AsyncMock(
+        return_value=_mock_response(is_error=False, result="Agent replied via stream"),
+    )
+    object.__setattr__(orch._cli_service, "execute_streaming", mock_streaming)
+    orch._process_registry._aborted.add(1)
+
+    result = await normal_streaming(orch, 1, "Hello")
+    assert result.text == ""
+
+
+async def test_normal_abort_on_new_session_returns_empty(orch: Orchestrator) -> None:
+    """Abort on a new session (no resume) also returns empty, not reset error."""
+    mock_execute = AsyncMock(
+        return_value=_mock_response(is_error=True, result="killed"),
+    )
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+    orch._process_registry._aborted.add(1)
+
+    result = await normal(orch, 1, "Hello")
+    assert result.text == ""

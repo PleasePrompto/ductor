@@ -7,7 +7,13 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from ductor_bot.infra.version import VersionInfo, _parse_version, check_pypi, get_current_version
+from ductor_bot.infra.version import (
+    VersionInfo,
+    _parse_version,
+    check_pypi,
+    fetch_changelog,
+    get_current_version,
+)
 
 
 class TestParseVersion:
@@ -153,3 +159,40 @@ class TestCheckPypi:
         info = VersionInfo(current="1.0.0", latest="2.0.0", update_available=True, summary="test")
         assert info.current == "1.0.0"
         assert info.update_available is True
+
+
+class TestFetchChangelog:
+    """Test GitHub Releases changelog fetching."""
+
+    async def test_returns_body_for_v_prefixed_tag(self) -> None:
+        mock = _mock_pypi_session(json_data={"body": "## What's new\n\n- Feature A"})
+        with patch("ductor_bot.infra.version.aiohttp.ClientSession", mock):
+            result = await fetch_changelog("1.0.0")
+        assert result is not None
+        assert "Feature A" in result
+
+    async def test_returns_none_on_404(self) -> None:
+        mock = _mock_pypi_session(status=404)
+        with patch("ductor_bot.infra.version.aiohttp.ClientSession", mock):
+            result = await fetch_changelog("99.0.0")
+        assert result is None
+
+    async def test_returns_none_on_network_error(self) -> None:
+        import aiohttp
+
+        mock = _mock_pypi_session(error=aiohttp.ClientError())
+        with patch("ductor_bot.infra.version.aiohttp.ClientSession", mock):
+            result = await fetch_changelog("1.0.0")
+        assert result is None
+
+    async def test_returns_none_on_empty_body(self) -> None:
+        mock = _mock_pypi_session(json_data={"body": ""})
+        with patch("ductor_bot.infra.version.aiohttp.ClientSession", mock):
+            result = await fetch_changelog("1.0.0")
+        assert result is None
+
+    async def test_strips_whitespace(self) -> None:
+        mock = _mock_pypi_session(json_data={"body": "  changelog text  \n\n"})
+        with patch("ductor_bot.infra.version.aiohttp.ClientSession", mock):
+            result = await fetch_changelog("1.0.0")
+        assert result == "changelog text"
