@@ -31,6 +31,15 @@ ductor runs on your machine, uses your existing Claude or Codex subscription, an
 
 You can schedule cron jobs, set up webhooks, and let the agent check in on its own with heartbeat prompts. Responses stream live into Telegram. Sessions survive restarts.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/docs/images/ductor-start.jpeg" alt="ductor /start screen" width="380" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/PleasePrompto/ductor/main/docs/images/ductor-quick-actions.jpeg" alt="ductor quick action buttons" width="380" />
+</p>
+<p align="center">
+  <sub>Left: <code>/start</code> onboarding screen &mdash; Right: Quick action buttons generated dynamically by the agent</sub>
+</p>
+
 ## Quick start
 
 ```bash
