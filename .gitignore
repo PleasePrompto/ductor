@@ -55,7 +55,4 @@ desktop.ini
 # Personal / dev-only (not part of the project)
 start_bot.sh
 python_best_practice.md
-
-# Runtime workspace data (top-level only, not ductor_bot/workspace/)
-/workspace/
 run.py
