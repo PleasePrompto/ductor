@@ -41,6 +41,7 @@ Runtime edits from `/model` switches (model/provider/reasoning) and webhook toke
 | `permission_mode` | `str` | `"bypassPermissions"` | Provider sandbox/approval behavior |
 | `cli_timeout` | `float` | `600.0` | Timeout per CLI call (seconds) |
 | `reasoning_effort` | `str` | `"medium"` | Codex reasoning level |
+| `cli_parameters` | `CLIParametersConfig` | see below | Provider-specific extra CLI flags for the main agent (`claude`/`codex`) |
 | `file_access` | `str` | `"all"` | File send restriction: `"all"` (no limit), `"home"` (user home dir), `"workspace"` (ductor workspace only) |
 | `telegram_token` | `str` | `""` | Telegram bot token |
 | `allowed_user_ids` | `list[int]` | `[]` | Telegram allowlist |
@@ -49,6 +50,15 @@ Runtime edits from `/model` switches (model/provider/reasoning) and webhook toke
 | `heartbeat` | `HeartbeatConfig` | see below | Background heartbeat config |
 | `cleanup` | `CleanupConfig` | see below | Daily file-retention cleanup |
 | `webhooks` | `WebhookConfig` | see below | Webhook HTTP server config |
+
+## `CLIParametersConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `claude` | `list[str]` | `[]` | Extra args appended to Claude CLI commands (before `--`) |
+| `codex` | `list[str]` | `[]` | Extra args appended to Codex CLI commands (before `--`) |
+
+Used by `CLIServiceConfig` for main-chat calls. Cron/webhook runs use task-level `cli_parameters` from `cron_jobs.json` / `webhooks.json`.
 
 ## `StreamingConfig`
 
@@ -155,3 +165,16 @@ Flow:
 `AgentConfig` -> `CLIServiceConfig` -> `CLIConfig` -> `CodexCLI._build_command()` (`-c model_reasoning_effort=<value>`).
 
 Changed by model selector wizard and persisted to `config.json`.
+
+For cron/webhook `cron_task` executions, reasoning effort is resolved per task via `resolve_cli_config()` and only passed when supported by the selected Codex model in cache.
+
+## Codex Model Cache
+
+Path: `~/.ductor/config/codex_models.json`.
+
+Behavior:
+
+- loaded at orchestrator startup (`CodexCacheObserver.start()`),
+- checked every 60 minutes in background,
+- `load_or_refresh()` uses cache if age `< 24h`, otherwise re-discovers via `codex app-server`,
+- consumed by `/model` wizard, `resolve_cli_config()` for cron/webhook validation, and `/diagnose` cache status output.

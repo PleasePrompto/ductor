@@ -32,6 +32,7 @@ Also running in background:
 - `HeartbeatObserver`: periodic checks in existing sessions.
 - `WebhookObserver`: HTTP ingress for external triggers.
 - `CleanupObserver`: daily retention cleanup for Telegram file directories.
+- `CodexCacheObserver`: periodic Codex model-cache refresh (`~/.ductor/config/codex_models.json`).
 - `UpdateObserver`: periodic PyPI version check + Telegram notification (upgradeable installs only).
 - rule-sync task: keeps `CLAUDE.md` and `AGENTS.md` mirrored.
 - skill-sync task: three-way symlink sync between `~/.ductor/workspace/skills/`, `~/.claude/skills/`, and `~/.codex/skills/` (30s interval).
@@ -73,12 +74,14 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 5. Inject runtime environment notice into workspace rule files (`inject_runtime_environment`).
 6. Check provider auth (`check_all_auth`).
 7. Set authenticated provider set in `CLIService`.
-8. Start `CronObserver`.
-9. Start `HeartbeatObserver`.
-10. Start `WebhookObserver`.
-11. Start `CleanupObserver`.
-12. Start `watch_rule_files(paths.workspace)` task.
-13. Start `watch_skill_sync(paths)` task.
+8. Start `CodexCacheObserver` (loads/refreshes `config/codex_models.json`).
+9. Create `CronObserver` and `WebhookObserver` with shared Codex cache.
+10. Start `CronObserver`.
+11. Start `HeartbeatObserver`.
+12. Start `WebhookObserver`.
+13. Start `CleanupObserver`.
+14. Start `watch_rule_files(paths.workspace)` task.
+15. Start `watch_skill_sync(paths)` task.
 
 `init_workspace()` is called in both `__main__.py` and `Orchestrator.create()`; this is safe because initialization is idempotent and rule-driven.
 
@@ -174,7 +177,8 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 4. On file change: `reload()` + cancel/reschedule all jobs.
 5. Execution (`_execute_job`):
    - ensure task folder exists under `workspace/cron_tasks/`,
-   - snapshot `model/provider/permission_mode`,
+   - build `TaskOverrides` from job fields (`provider`, `model`, `reasoning_effort`, `cli_parameters`),
+   - resolve final execution config via `resolve_cli_config(base_config, codex_cache, task_overrides=...)`,
    - enrich instruction with `<task_folder>_MEMORY.md` reminder,
    - build provider command (`build_cmd`),
    - run subprocess with timeout,
@@ -213,7 +217,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
      - acquires per-chat lock via `SequentialMiddleware.get_lock()`,
      - processes through `Orchestrator.handle_message()`,
      - sends response to Telegram via `send_rich()`.
-   - `cron_task`: run fresh CLI process in `cron_tasks/<task_folder>/` (reuses `cron/execution.py`).
+   - `cron_task`: run fresh CLI process in `cron_tasks/<task_folder>/` (reuses `cron/execution.py`) with per-hook `TaskOverrides` resolved through `resolve_cli_config(...)`.
 7. Record trigger count and error status in `webhooks.json`.
 8. Result callback receives `WebhookResult`; bot forwards only `cron_task` results (`wake` is already sent by wake handler).
 
@@ -251,9 +255,17 @@ Repo template source:
 Copy rules in `ductor_bot/workspace/init.py` (`_walk_and_copy`):
 
 - Zone 2 (always overwritten): `CLAUDE.md`, `AGENTS.md`.
-  - additionally: every copied `CLAUDE.md` auto-copies to sibling `AGENTS.md`.
 - Zone 3 (seed once): all other files (never overwritten if target exists).
+- `RULES*.md` template files are skipped here and deployed separately by `RulesSelector`.
 - Skips hidden and ignored dirs (`.venv`, `.git`, `.mypy_cache`, `__pycache__`, `node_modules`).
+
+Rule deployment (`ductor_bot/workspace/rules_selector.py`):
+
+- discovers directories containing `RULES*.md` in `_home_defaults/`,
+- selects best variant by auth status (`claude-only`, `codex-only`, `claude-and-codex`, fallback `RULES.md`),
+- deploys to runtime names (`CLAUDE.md` and/or `AGENTS.md`),
+- removes stale files post-deploy (`AGENTS.md` when only Claude is authenticated, `CLAUDE.md` when only Codex is authenticated),
+- `watch_rule_files()` then keeps existing pairs synchronized by mtime.
 
 ## Logging Context
 

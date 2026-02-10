@@ -115,6 +115,10 @@ class CodexCLI(BaseCLI):
         for img in cfg.images:
             cmd += ["--image", img]
 
+        # Add extra CLI parameters before the separator
+        if cfg.cli_parameters:
+            cmd.extend(cfg.cli_parameters)
+
         cmd.append("--")
         cmd.append(final_prompt)
         return cmd

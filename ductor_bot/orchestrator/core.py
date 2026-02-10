@@ -9,6 +9,8 @@ import os
 from collections.abc import Awaitable, Callable
 
 from ductor_bot.cleanup import CleanupObserver
+from ductor_bot.cli.codex_cache import CodexModelCache
+from ductor_bot.cli.codex_cache_observer import CodexCacheObserver
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.config import _CLAUDE_MODELS, AgentConfig, ModelRegistry
@@ -86,31 +88,26 @@ class Orchestrator:
                 permission_mode=config.permission_mode,
                 reasoning_effort=config.reasoning_effort,
                 docker_container=docker_container,
+                claude_cli_parameters=tuple(config.cli_parameters.claude),
+                codex_cli_parameters=tuple(config.cli_parameters.codex),
             ),
             models=self._models,
             available_providers=frozenset(),
             process_registry=self._process_registry,
         )
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
-        self._cron_observer = CronObserver(
-            paths,
-            self._cron_manager,
-            config=config,
-            models=self._models,
-        )
+        self._cron_observer: CronObserver | None = None  # Created in create() after cache init
         self._heartbeat = HeartbeatObserver(config)
         self._heartbeat.set_heartbeat_handler(self.handle_heartbeat)
         self._heartbeat.set_busy_check(self._process_registry.has_active)
         stale_max = config.cli_timeout * 2
         self._heartbeat.set_stale_cleanup(lambda: self._process_registry.kill_stale(stale_max))
         self._webhook_manager = WebhookManager(hooks_path=paths.webhooks_path)
-        self._webhook_observer = WebhookObserver(
-            paths,
-            self._webhook_manager,
-            config=config,
-            models=self._models,
+        self._webhook_observer: WebhookObserver | None = (
+            None  # Created in create() after cache init
         )
         self._cleanup_observer = CleanupObserver(config, paths)
+        self._codex_cache_observer: CodexCacheObserver | None = None
         self._rule_sync_task: asyncio.Task[None] | None = None
         self._skill_sync_task: asyncio.Task[None] | None = None
         self._hook_registry = MessageHookRegistry()
@@ -168,6 +165,34 @@ class Orchestrator:
             logger.error("No authenticated providers found! CLI calls will fail.")
         else:
             logger.info("Available providers: %s", ", ".join(sorted(orch._available_providers)))
+
+        # Initialize Codex cache observer
+        codex_cache_path = paths.config_path.parent / "codex_models.json"
+        codex_cache_observer = CodexCacheObserver(codex_cache_path)
+        await codex_cache_observer.start()
+        orch._codex_cache_observer = codex_cache_observer
+        codex_cache = codex_cache_observer.get_cache()
+
+        if not codex_cache or not codex_cache.models:
+            logger.warning("Codex cache is empty after startup (Codex may not be authenticated)")
+
+        # Create observers that need the cache
+        # Use empty cache if load failed (they'll use global config fallback)
+        safe_codex_cache = codex_cache or CodexModelCache("", [])
+        orch._cron_observer = CronObserver(
+            paths,
+            orch._cron_manager,
+            config=config,
+            models=orch._models,
+            codex_cache=safe_codex_cache,
+        )
+        orch._webhook_observer = WebhookObserver(
+            paths,
+            orch._webhook_manager,
+            config=config,
+            models=orch._models,
+            codex_cache=safe_codex_cache,
+        )
 
         await orch._cron_observer.start()
         await orch._heartbeat.start()
@@ -311,7 +336,8 @@ class Orchestrator:
         handler: Callable[[str, str, str], Awaitable[None]],
     ) -> None:
         """Forward cron job results to an external handler (e.g. Telegram)."""
-        self._cron_observer.set_result_handler(handler)
+        if self._cron_observer:
+            self._cron_observer.set_result_handler(handler)
 
     def set_heartbeat_handler(
         self,
@@ -330,14 +356,16 @@ class Orchestrator:
         handler: Callable[[WebhookResult], Awaitable[None]],
     ) -> None:
         """Forward webhook results to an external handler (e.g. Telegram)."""
-        self._webhook_observer.set_result_handler(handler)
+        if self._webhook_observer:
+            self._webhook_observer.set_result_handler(handler)
 
     def set_webhook_wake_handler(
         self,
         handler: Callable[[int, str], Awaitable[str | None]],
     ) -> None:
         """Set the webhook wake handler (provided by the bot layer)."""
-        self._webhook_observer.set_wake_handler(handler)
+        if self._webhook_observer:
+            self._webhook_observer.set_wake_handler(handler)
 
     @property
     def active_provider_name(self) -> str:
@@ -368,9 +396,14 @@ class Orchestrator:
                     await task
         await asyncio.to_thread(cleanup_ductor_links, self._paths)
         await self._heartbeat.stop()
-        await self._webhook_observer.stop()
-        await self._cron_observer.stop()
+        if self._webhook_observer:
+            await self._webhook_observer.stop()
+        if self._cron_observer:
+            await self._cron_observer.stop()
         await self._cleanup_observer.stop()
+        if self._codex_cache_observer:
+            await self._codex_cache_observer.stop()
+            self._codex_cache_observer = None
         if self._docker:
             await self._docker.teardown()
         logger.info("Orchestrator shutdown")

@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from ductor_bot.cli.auth import AuthStatus, check_all_auth
-from ductor_bot.cli.codex_discovery import discover_codex_models
 from ductor_bot.config import update_config_file_async
 
 if TYPE_CHECKING:
+    from ductor_bot.cli.codex_cache import CodexModelCache
     from ductor_bot.orchestrator.core import Orchestrator
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,8 @@ async def model_selector_start(
 
     if len(authed) == 1:
         provider = authed[0]
-        return await _build_model_step(provider, header)
+        codex_cache = orch._codex_cache_observer.get_cache() if orch._codex_cache_observer else None
+        return await _build_model_step(provider, header, codex_cache)
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -91,11 +92,13 @@ async def handle_model_callback(
     payload = parts[1] if len(parts) > 1 else ""
     extra = parts[2] if len(parts) > 2 else ""
 
+    codex_cache = orch._codex_cache_observer.get_cache() if orch._codex_cache_observer else None
+
     if action == "p":
-        return await _build_model_step(payload, _status_line(orch))
+        return await _build_model_step(payload, _status_line(orch), codex_cache)
 
     if action == "m":
-        return await _handle_model_selected(orch, chat_id, payload)
+        return await _handle_model_selected(orch, chat_id, payload, codex_cache)
 
     if action == "r":
         return await _handle_reasoning_selected(orch, chat_id, effort=payload, model_id=extra)
@@ -103,7 +106,7 @@ async def handle_model_callback(
     if action == "b":
         if payload == "root":
             return await model_selector_start(orch, chat_id)
-        return await _build_model_step(payload, _status_line(orch))
+        return await _build_model_step(payload, _status_line(orch), codex_cache)
 
     logger.warning("Unknown model selector callback: %s", data)
     return "Unknown action.", None
@@ -185,6 +188,7 @@ def _status_line(orch: Orchestrator) -> str:
 async def _build_model_step(
     provider: str,
     header: str,
+    codex_cache: CodexModelCache | None = None,
 ) -> tuple[str, InlineKeyboardMarkup]:
     """Build the model selection keyboard for a provider."""
     if provider == "claude":
@@ -199,7 +203,8 @@ async def _build_model_step(
         )
         return f"{header}\n\nSelect Claude model:", keyboard
 
-    codex_models = await discover_codex_models(deadline=10.0)
+    # Use cache instead of live discovery
+    codex_models = codex_cache.models if codex_cache else []
     if not codex_models:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -222,6 +227,7 @@ async def _handle_model_selected(
     orch: Orchestrator,
     chat_id: int,
     model_id: str,
+    codex_cache: CodexModelCache | None = None,
 ) -> tuple[str, InlineKeyboardMarkup | None]:
     """Handle a model button press. Claude: switch immediately. Codex: show reasoning."""
     provider = orch._models.provider_for(model_id)
@@ -230,8 +236,8 @@ async def _handle_model_selected(
         result = await switch_model(orch, chat_id, model_id)
         return result, None
 
-    codex_models = await discover_codex_models(deadline=10.0)
-    codex_info = next((m for m in codex_models if m.id == model_id), None)
+    # Use cache instead of live discovery
+    codex_info = codex_cache.get_model(model_id) if codex_cache else None
     efforts = codex_info.supported_efforts if codex_info else ("low", "medium", "high", "xhigh")
 
     buttons = [

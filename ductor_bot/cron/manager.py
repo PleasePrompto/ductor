@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +34,12 @@ class CronJob:
     last_run_at: str | None = None
     last_run_status: str | None = None
 
+    # Per-task execution overrides
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    cli_parameters: list[str] = field(default_factory=list)
+
     def __post_init__(self) -> None:
         if not self.created_at:
             self.created_at = datetime.now(UTC).isoformat()
@@ -50,6 +56,10 @@ class CronJob:
             "created_at": self.created_at,
             "last_run_at": self.last_run_at,
             "last_run_status": self.last_run_status,
+            "provider": self.provider,
+            "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
+            "cli_parameters": self.cli_parameters,
         }
         if self.timezone:
             result["timezone"] = self.timezone
@@ -69,6 +79,10 @@ class CronJob:
             created_at=data.get("created_at", ""),
             last_run_at=data.get("last_run_at"),
             last_run_status=data.get("last_run_status"),
+            provider=data.get("provider"),
+            model=data.get("model"),
+            reasoning_effort=data.get("reasoning_effort"),
+            cli_parameters=data.get("cli_parameters", []),
         )
 
 

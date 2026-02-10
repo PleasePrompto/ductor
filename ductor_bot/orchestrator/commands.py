@@ -193,6 +193,22 @@ async def cmd_diagnose(orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
         f"Version: `{version}`\nProvider: {orch._config.provider}\nModel: {orch._config.model}"
     )
 
+    # Codex model cache status
+    cache_lines: list[str] = []
+    if orch._codex_cache_observer:
+        cache = orch._codex_cache_observer.get_cache()
+        if cache and cache.models:
+            cache_lines.append("\n🔄 Codex Model Cache:")
+            cache_lines.append(f"  Last updated: {cache.last_updated}")
+            cache_lines.append(f"  Models cached: {len(cache.models)}")
+            default_model = next((m.id for m in cache.models if m.is_default), "N/A")
+            cache_lines.append(f"  Default model: {default_model}")
+        else:
+            cache_lines.append("\n🔄 Codex Model Cache: Not loaded")
+    else:
+        cache_lines.append("\n🔄 Codex Model Cache: Observer not initialized")
+    cache_block = "\n".join(cache_lines)
+
     log_path = orch.paths.logs_dir / "agent.log"
     log_tail = await _read_log_tail(log_path)
     if log_tail:
@@ -201,7 +217,7 @@ async def cmd_diagnose(orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
         log_block = "No log file found."
 
     return OrchestratorResult(
-        text=fmt("**System Diagnostics**", SEP, info_block, SEP, log_block),
+        text=fmt("**System Diagnostics**", SEP, info_block, cache_block, SEP, log_block),
     )
 
 

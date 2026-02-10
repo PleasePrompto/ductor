@@ -1,6 +1,6 @@
 # cli/
 
-Provider-agnostic CLI layer for Claude Code and Codex. Owns subprocess execution, stream normalization, auth checks, process tracking, and fallback logic.
+Provider-agnostic CLI layer for Claude Code and Codex. Owns subprocess execution, stream normalization, auth checks, process tracking, provider-specific CLI parameter routing, and Codex model-cache primitives.
 
 ## Files
 
@@ -15,7 +15,10 @@ Provider-agnostic CLI layer for Claude Code and Codex. Owns subprocess execution
 - `coalescer.py`: stream text coalescing helper.
 - `process_registry.py`: active subprocess tracking and termination.
 - `auth.py`: provider auth-state detection.
-- `codex_discovery.py`: Codex model discovery via `codex app-server` JSON-RPC.
+- `param_resolver.py`: `TaskOverrides` + `TaskExecutionConfig` resolution for cron/webhook `cron_task` runs.
+- `codex_cache.py`: persistent Codex model cache (`CodexModelCache`).
+- `codex_cache_observer.py`: background cache lifecycle (`CodexCacheObserver`).
+- `codex_discovery.py`: low-level Codex discovery via `codex app-server` JSON-RPC.
 
 ## Public API (`cli/__init__.py`)
 
@@ -25,13 +28,53 @@ Provider-agnostic CLI layer for Claude Code and Codex. Owns subprocess execution
 - streaming helper: `StreamCoalescer`, `CoalesceConfig`
 - process/auth: `ProcessRegistry`, `check_all_auth`, `AuthResult`, `AuthStatus`
 
-## Request Path (non-streaming)
+## Request Path (main chat, non-streaming)
 
 1. Orchestrator builds `AgentRequest`.
 2. `CLIService._make_cli()` resolves `(model, provider)` from request + available providers.
-3. Factory creates provider wrapper.
-4. Provider executes subprocess and returns `CLIResponse`.
-5. Service converts to `AgentResponse`.
+3. Service maps provider to CLI parameters via `CLIServiceConfig.cli_parameters_for_provider(provider)`.
+4. Factory creates provider wrapper with `CLIConfig`.
+5. Provider executes subprocess and returns `CLIResponse`.
+6. Service converts to `AgentResponse`.
+
+## CLI Parameter Routing
+
+Main-agent CLI flags are configured per provider:
+
+- `CLIServiceConfig.claude_cli_parameters`
+- `CLIServiceConfig.codex_cli_parameters`
+
+`CLIService._make_cli()` injects them into `CLIConfig.cli_parameters`. Both providers append `cli_parameters` **before** the `--` separator.
+
+## Task Execution Resolution (cron/webhook)
+
+`param_resolver.py` provides a shared resolution path for unattended task runs:
+
+- `TaskOverrides`: optional per-task fields (`provider`, `model`, `reasoning_effort`, `cli_parameters`).
+- `TaskExecutionConfig`: resolved immutable execution settings.
+- `resolve_cli_config(base_config, codex_cache, task_overrides=...)`:
+  - provider/model fallback to global config when override is missing,
+  - Claude model validation against hardcoded set (`haiku`, `sonnet`, `opus`),
+  - Codex model validation against `CodexModelCache`,
+  - reasoning effort allowed only for Codex models that support it,
+  - task `cli_parameters` passed through to command builders.
+
+Current behavior: task-level `cli_parameters` are task-specific (no merge with global `AgentConfig.cli_parameters`).
+
+## Codex Model Cache
+
+`CodexModelCache` (`codex_cache.py`):
+
+- persisted as JSON (`last_updated`, model metadata, supported efforts, defaults),
+- `load_or_refresh(cache_path)` uses cache when fresh (`<24h`) and re-discovers when missing/stale/corrupt,
+- `_refresh_and_save()` writes atomically (`.tmp` + replace),
+- discovery source: `discover_codex_models()` in `codex_discovery.py`.
+
+`CodexCacheObserver` (`codex_cache_observer.py`):
+
+- loads cache at startup,
+- runs an hourly loop and re-runs `load_or_refresh()`,
+- exposes `get_cache()` for orchestrator/model-selector/diagnose paths.
 
 ## Stream Event Types
 
@@ -42,22 +85,18 @@ Normalized events parsed from Claude `stream-json` output (`stream_events.py`):
 - `ResultEvent`: final result with session ID, cost, usage.
 - `SystemInitEvent`: session initialization with `session_id`.
 - `SystemStatusEvent`: status changes (e.g. `status="compacting"` for context compaction start, `status=null` for end).
-- `CompactBoundaryEvent`: context compaction boundary marker with `trigger` (`auto`/`manual`) and `pre_tokens` count.
+- `CompactBoundaryEvent`: context compaction boundary marker with `trigger` (`auto`/`manual`) and `pre_tokens`.
 - `ThinkingEvent`: reasoning/thinking block events.
 
-Codex emits no client-side compaction events (handled server-side).
-Codex streaming additionally applies `CodexThinkingFilter`: assistant text emitted right before tool events is buffered and dropped so only meaningful response text reaches the Telegram stream.
+Codex emits no client-side compaction events (handled server-side). Codex streaming applies `CodexThinkingFilter`: text emitted directly before tool events is buffered/dropped to reduce noisy stream output.
 
 ## Streaming Path
 
 `CLIService.execute_streaming()`:
 
-1. consume provider stream events via `_StreamCallbacks` dispatcher,
-2. forward text deltas, tool events, and system status through callbacks,
-3. `SystemStatusEvent` -> `on_system_status` callback (compaction indicator),
-4. `ThinkingEvent` -> `on_system_status("thinking")`,
-5. `CompactBoundaryEvent` -> logged at INFO level + `on_system_status(None)` to clear indicator,
-6. capture final `ResultEvent`.
+1. consume provider stream events via `_StreamCallbacks`,
+2. forward text deltas/tool events/system status to callbacks,
+3. capture final `ResultEvent`.
 
 Fallback handling:
 
@@ -79,12 +118,13 @@ claude -p --output-format json \
   [--system-prompt ...] [--append-system-prompt ...] \
   [--max-turns ...] [--max-budget-usd ...] \
   [--resume <session_id> | --continue] \
-  <prompt>
+  [<cli_parameters...>] \
+  -- <prompt>
 ```
 
 Streaming mode:
 
-- switches to `--output-format stream-json`,
+- switches `--output-format` to `stream-json`,
 - adds `--verbose`.
 
 ### Codex (`CodexCLI`)
@@ -94,8 +134,8 @@ Base command:
 ```bash
 codex exec --json --color never --skip-git-repo-check \
   <sandbox_flags> [--model ...] [-c model_reasoning_effort=...] \
-  [--instructions ...] [--image ...] \
-  <final_prompt>
+  [--instructions ...] [--image ...] [<cli_parameters...>] \
+  -- <final_prompt>
 ```
 
 Prompt composition for Codex:
@@ -115,11 +155,9 @@ Resume behavior:
 - `kill_all(chat_id)` with SIGTERM -> grace period -> SIGKILL -> reap
 - abort marker API: `was_aborted()` / `clear_abort()`
 - activity check: `has_active(chat_id)`
-- `kill_stale(max_age_seconds)`: kills processes older than threshold in wall-clock time (`time.time()`). Used by heartbeat to clean up processes that survived system suspend (where monotonic-based `asyncio.timeout` did not fire).
+- `kill_stale(max_age_seconds)`: kills wall-clock-stale processes (`time.time()`), used by heartbeat after suspend/resume scenarios.
 
-Each `TrackedProcess` records `registered_at` (wall-clock) for stale detection.
-
-This registry is shared across providers and consumed by middleware/orchestrator/heartbeat.
+Each `TrackedProcess` records `registered_at` (wall clock).
 
 ## Auth Detection (`auth.py`)
 
@@ -142,10 +180,12 @@ Status enum:
 
 ## Model Discovery Note
 
-`codex_discovery.py` returns dynamic Codex model metadata for the `/model` wizard. If discovery fails, the wizard shows no Codex models (no static fallback list is injected there).
+`codex_discovery.py` is now a low-level source for cache refresh. The `/model` wizard reads models from `CodexModelCache` (through orchestrator), not from live discovery per request.
 
 ## Key Design Choices
 
-- One service boundary (`CLIService`) for all orchestrator calls.
-- Normalized stream events decouple bot/orchestrator from provider-specific JSON formats.
-- Centralized subprocess control (`ProcessRegistry`) for robust abort/cleanup behavior.
+- Single service boundary (`CLIService`) for orchestrator calls.
+- Normalized stream events decouple bot/orchestrator from provider JSON formats.
+- Shared `param_resolver` keeps unattended execution logic in one place.
+- Cached Codex model metadata removes repeated discovery latency from the model selector.
+- Centralized subprocess control (`ProcessRegistry`) supports robust abort and stale-process cleanup.

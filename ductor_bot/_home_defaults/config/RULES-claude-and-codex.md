@@ -17,7 +17,16 @@ Edit only when the user asks for behavior changes.
 
 - `provider`: `claude` or `codex`
 - `model`: default model id
-- `reasoning_effort`: `low|medium|high|xhigh` (Codex)
+  - Claude models: `haiku`, `sonnet`, `opus`
+  - Codex models:
+    - `gpt-5.2-codex` - Frontier agentic coding model
+    - `gpt-5.3-codex` - Latest frontier agentic coding model
+    - `gpt-5.1-codex-max` - Codex-optimized for deep and fast reasoning
+    - `gpt-5.2` - Latest frontier model
+    - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+- `reasoning_effort`: `low|medium|high|xhigh` (Codex only)
+  - Most models support: `low`, `medium`, `high`, `xhigh`
+  - `gpt-5.1-codex-mini` only: `medium`, `high`
 - `permission_mode`: CLI permission behavior
 
 ### Time and Scheduling
@@ -63,6 +72,24 @@ For user-facing schedules, set `user_timezone` explicitly.
   - `all` (default)
   - `home`
   - `workspace`
+
+### CLI Parameters
+
+- `cli_parameters.claude`: List of extra CLI flags for Claude main agent (e.g., `["--chrome"]`)
+- `cli_parameters.codex`: List of extra CLI flags for Codex main agent (e.g., `["--chrome"]`)
+
+These parameters are appended to every CLI invocation for the respective provider.
+Parameters are inserted before the `--` separator in commands.
+
+**Example:**
+```json
+{
+  "cli_parameters": {
+    "claude": ["--chrome"],
+    "codex": ["--chrome"]
+  }
+}
+```
 
 ### Access Control
 

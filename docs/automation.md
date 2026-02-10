@@ -61,6 +61,23 @@ To change **what** the job does: edit `TASK_DESCRIPTION.md` in the task folder, 
 
 To change **when** it runs: tell the agent "change the weather-report schedule to 8:00" or "disable the weather-report job".
 
+### Advanced execution overrides (per job)
+
+Each cron job can optionally override execution settings in `cron_jobs.json`:
+
+```json
+{
+  "provider": "codex",
+  "model": "gpt-5.2-codex",
+  "reasoning_effort": "high",
+  "cli_parameters": ["--chrome"]
+}
+```
+
+- Omit a field to use the global config value.
+- `reasoning_effort` is only used for Codex models that support it.
+- `cli_parameters` are passed to that job's command before `--`.
+
 ### Timezones
 
 Cron schedules run in your timezone. ductor asks for it during setup and stores it in config as `user_timezone`. If you move or want to change it, tell the agent or edit `config.json`.
@@ -117,6 +134,8 @@ Good for: notifications, quick questions, anything where you want the agent to h
 Same endpoint, but the webhook points to a task folder. A fresh subagent session starts, reads its `TASK_DESCRIPTION.md`, processes the payload, and posts the result to your chat.
 
 Good for: heavy processing, data analysis, tasks that don't need conversation context.
+
+In `cron_task` mode, a webhook can also override execution settings (`provider`, `model`, `reasoning_effort`, `cli_parameters`) exactly like cron jobs.
 
 ### Prompt templates
 
@@ -256,6 +275,11 @@ All automation settings live in `~/.ductor/config/config.json`:
     "host": "127.0.0.1",
     "port": 8742,
     "rate_limit_per_minute": 30
+  },
+
+  "cli_parameters": {
+    "claude": [],
+    "codex": ["--chrome"]
   }
 }
 ```

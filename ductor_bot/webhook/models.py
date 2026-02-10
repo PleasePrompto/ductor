@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -35,6 +35,12 @@ class WebhookEntry:
     last_triggered_at: str | None = None
     last_error: str | None = None
 
+    # Per-webhook execution overrides
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    cli_parameters: list[str] = field(default_factory=list)
+
     def __post_init__(self) -> None:
         if not self.created_at:
             self.created_at = datetime.now(UTC).isoformat()
@@ -61,6 +67,10 @@ class WebhookEntry:
             "trigger_count": self.trigger_count,
             "last_triggered_at": self.last_triggered_at,
             "last_error": self.last_error,
+            "provider": self.provider,
+            "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
+            "cli_parameters": self.cli_parameters,
         }
 
     @classmethod
@@ -86,6 +96,10 @@ class WebhookEntry:
             trigger_count=data.get("trigger_count", 0),
             last_triggered_at=data.get("last_triggered_at"),
             last_error=data.get("last_error"),
+            provider=data.get("provider"),
+            model=data.get("model"),
+            reasoning_effort=data.get("reasoning_effort"),
+            cli_parameters=data.get("cli_parameters", []),
         )
 
 

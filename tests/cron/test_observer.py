@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from ductor_bot.cli.codex_cache import CodexModelCache
+from ductor_bot.cli.codex_discovery import CodexModelInfo
 from ductor_bot.config import AgentConfig, ModelRegistry
 from ductor_bot.cron.execution import (
     enrich_instruction,
@@ -41,11 +43,27 @@ def _make_models() -> ModelRegistry:
     return ModelRegistry()
 
 
+def _make_codex_cache() -> CodexModelCache:
+    """Return a mock CodexModelCache."""
+    cache = MagicMock(spec=CodexModelCache)
+    cache.validate_model.return_value = True
+    cache.get_model.return_value = CodexModelInfo(
+        id="gpt-5.2-codex",
+        display_name="GPT-5.2 Codex",
+        description="Codex model",
+        supported_efforts=("low", "medium", "high"),
+        default_effort="medium",
+        is_default=True,
+    )
+    return cache
+
+
 def _make_observer(
     paths: DuctorPaths,
     mgr: CronManager,
     *,
     models: ModelRegistry | None = None,
+    codex_cache: CodexModelCache | None = None,
     **config_overrides: Any,
 ) -> CronObserver:
     return CronObserver(
@@ -53,6 +71,7 @@ def _make_observer(
         mgr,
         config=_make_config(**config_overrides),
         models=models or _make_models(),
+        codex_cache=codex_cache or _make_codex_cache(),
     )
 
 
@@ -224,7 +243,26 @@ class TestCronObserverExecution:
         task_folder = paths.cron_tasks_dir / "daily"
         task_folder.mkdir()
 
-        observer = _make_observer(paths, mgr, models=_make_models(), model="gpt-5.2")
+        # Mock cache for Codex model
+        codex_cache = _make_codex_cache()
+        codex_cache.validate_model.return_value = True
+        codex_cache.get_model.return_value = CodexModelInfo(
+            id="gpt-5.2",
+            display_name="GPT-5.2",
+            description="Codex model",
+            supported_efforts=("low", "medium", "high"),
+            default_effort="medium",
+            is_default=True,
+        )
+
+        observer = _make_observer(
+            paths,
+            mgr,
+            models=_make_models(),
+            codex_cache=codex_cache,
+            model="gpt-5.2",
+            provider="codex",  # Set provider to match model
+        )
 
         mock_proc = AsyncMock()
         mock_proc.returncode = 0

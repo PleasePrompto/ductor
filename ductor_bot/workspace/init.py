@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 from ductor_bot.workspace.paths import DuctorPaths
+from ductor_bot.workspace.rules_selector import RulesSelector
 from ductor_bot.workspace.skill_sync import sync_bundled_skills, sync_skills
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,21 @@ logger = logging.getLogger(__name__)
 # Files that are ALWAYS overwritten on every start (Zone 2).
 # Everything else is seeded only once (Zone 3).
 _ZONE2_FILES = frozenset({"CLAUDE.md", "AGENTS.md"})
+
+# Directories where ALL .py files are Zone 2 (framework-managed).
+# User-owned scripts should go in tools/user_tools/ (Zone 3).
+# Paths are relative to home_defaults root (include workspace/ prefix).
+_ZONE2_PY_DIRS = frozenset({"workspace/tools/cron_tools", "workspace/tools/webhook_tools"})
+
+# Rule templates are deployed separately by RulesSelector
+_SKIP_FILES = frozenset(
+    {
+        "RULES-claude-only.md",
+        "RULES-codex-only.md",
+        "RULES-claude-and-codex.md",
+        "RULES.md",  # Static templates also handled by RulesSelector
+    }
+)
 
 _SKIP_DIRS = frozenset({".venv", ".git", ".mypy_cache", "__pycache__", "node_modules"})
 
@@ -45,18 +61,27 @@ def _sync_home_defaults(paths: DuctorPaths) -> None:
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
 
 
-def _walk_and_copy(src: Path, dst: Path) -> None:
-    """Recursively copy *src* tree into *dst* with zone-based overwrite rules."""
+def _walk_and_copy(src: Path, dst: Path, root_src: Path | None = None) -> None:
+    """Recursively copy *src* tree into *dst* with zone-based overwrite rules.
+
+    Args:
+        src: Source directory to copy from
+        dst: Destination directory to copy to
+        root_src: Root source directory (for calculating relative paths). Defaults to src.
+    """
+    if root_src is None:
+        root_src = src
+
     dst.mkdir(parents=True, exist_ok=True)
     for entry in sorted(src.iterdir()):
-        if entry.name.startswith(".") or entry.name in _SKIP_DIRS:
+        if entry.name.startswith(".") or entry.name in _SKIP_DIRS or entry.name in _SKIP_FILES:
             continue
         target = dst / entry.name
         if entry.is_dir():
             if target.is_symlink():
                 logger.debug("Skip symlinked target: %s", target)
                 continue
-            _walk_and_copy(entry, target)
+            _walk_and_copy(entry, target, root_src)
         elif entry.name in _ZONE2_FILES:
             # Zone 2: always overwrite (framework-controlled)
             if target.is_symlink():
@@ -70,12 +95,29 @@ def _walk_and_copy(src: Path, dst: Path) -> None:
                     agents_target.unlink()
                 shutil.copy2(entry, agents_target)
                 logger.debug("Zone 2 copy: %s", agents_target)
-        elif not target.exists():
-            # Zone 3: seed only (user-owned, never overwritten)
-            shutil.copy2(entry, target)
-            logger.debug("Zone 3 seed: %s", target)
         else:
-            logger.debug("Zone 3 skip: %s (exists)", target)
+            # Check if this .py file is in a Zone 2 directory
+            try:
+                rel_dir = src.relative_to(root_src)
+                is_zone2_py = (
+                    entry.suffix == ".py"
+                    and str(rel_dir) in _ZONE2_PY_DIRS
+                )
+            except ValueError:
+                is_zone2_py = False
+
+            if is_zone2_py:
+                # Zone 2 .py file: always overwrite (framework-controlled)
+                if target.is_symlink():
+                    target.unlink()
+                shutil.copy2(entry, target)
+                logger.debug("Zone 2 copy (framework tool): %s", target)
+            elif not target.exists():
+                # Zone 3: seed only (user-owned, never overwritten)
+                shutil.copy2(entry, target)
+                logger.debug("Zone 3 seed: %s", target)
+            else:
+                logger.debug("Zone 3 skip: %s (exists)", target)
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +260,14 @@ def init_workspace(paths: DuctorPaths) -> None:
     sync_bundled_skills(paths)
     _sync_home_defaults(paths)
     _ensure_required_dirs(paths)
+
+    # Deploy provider-specific rule files based on CLI auth status
+    try:
+        selector = RulesSelector(paths)
+        selector.deploy_rules()
+    except Exception:
+        logger.exception("Failed to deploy rule files")
+
     sync_rule_files(paths.workspace)
     _smart_merge_config(paths)
     _clean_orphan_symlinks(paths)

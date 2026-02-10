@@ -1,6 +1,6 @@
 # webhook/
 
-HTTP ingress for external event triggers (Zapier, GitHub, Gmail, etc.).
+HTTP ingress for external event triggers (GitHub, Stripe, CI, monitoring, etc.).
 
 ## Files
 
@@ -34,6 +34,13 @@ Auth fields:
 - `hmac_sig_prefix`
 - `hmac_sig_regex`
 - `hmac_payload_prefix_regex`
+
+Per-hook execution overrides (`cron_task` mode):
+
+- `provider` (`"claude"`/`"codex"` or `null`)
+- `model` (`str` or `null`)
+- `reasoning_effort` (`str` or `null`, Codex only)
+- `cli_parameters` (`list[str]`, default `[]`)
 
 ## Persistence (`WebhookManager`)
 
@@ -73,10 +80,10 @@ Watcher behavior:
 
 ## Server (`WebhookServer`)
 
-aiohttp-based. Two routes:
+aiohttp routes:
 
-- `GET /health` -- returns `{ "status": "ok" }`.
-- `POST /hooks/{hook_id}` -- catch-all webhook endpoint.
+- `GET /health` -> `{ "status": "ok" }`
+- `POST /hooks/{hook_id}` -> webhook endpoint
 
 ### Request Validation Chain (Actual Order)
 
@@ -86,7 +93,7 @@ aiohttp-based. Two routes:
 4. hook must exist -> `404`
 5. hook must be enabled -> `403`
 6. per-hook auth (`validate_hook_auth`) -> `401`
-7. if dispatch handler exists, run it via `asyncio.create_task(...)` -> `202 Accepted`
+7. if dispatch handler exists, run via `asyncio.create_task(...)` -> `202 Accepted`
 
 ## Authentication Modes
 
@@ -98,12 +105,12 @@ aiohttp-based. Two routes:
 
 ### `hmac` mode
 
-Signature validation is fully configurable from hook fields:
+Signature validation is configurable from hook fields:
 
 - algorithm: `sha256`/`sha1`/`sha512`
 - output encoding: `hex` or `base64`
 - signature extraction via prefix or regex
-- optional payload-prefix extraction (`{prefix}.{body}` style providers)
+- optional payload-prefix extraction (`{prefix}.{body}` pattern providers)
 
 ## Dispatch Flow
 
@@ -121,7 +128,7 @@ Signature validation is fully configurable from hook fields:
 
 ### Wake Mode
 
-Injects the rendered prompt into the normal message pipeline via per-chat lock.
+Injects rendered prompt into normal message flow via per-chat lock.
 
 - observer calls wake handler (`TelegramBot._handle_webhook_wake`) for each `allowed_user_id`
 - handler acquires `SequentialMiddleware` lock
@@ -134,19 +141,17 @@ Injects the rendered prompt into the normal message pipeline via per-chat lock.
 
 Spawns a fresh CLI session in `cron_tasks/<task_folder>/`.
 
-Reuses `cron/execution.py`:
-
-- `build_cmd()` for provider-specific CLI commands
-- `enrich_instruction()` for memory file references
-- `parse_claude_result()` / `parse_codex_result()` for output parsing
-
-Execution:
+Execution path:
 
 1. validate `task_folder` exists.
-2. snapshot model/provider/permission mode from config.
-3. build CLI command and run subprocess with `stdin=DEVNULL`.
-4. enforce `cli_timeout`.
-5. parse result and return `WebhookResult`.
+2. build `TaskOverrides` from webhook entry.
+3. resolve `TaskExecutionConfig` via `resolve_cli_config(config, codex_cache, task_overrides=...)`.
+4. build command with `build_cmd(exec_config, prompt)`.
+5. run subprocess with timeout.
+6. parse output via `parse_claude_result` / `parse_codex_result`.
+7. return `WebhookResult`.
+
+Current behavior: webhook `cli_parameters` are taken from the hook entry itself (no merge with global `AgentConfig.cli_parameters`).
 
 ## Status Codes
 
@@ -191,7 +196,7 @@ cloudflared tunnel --url http://localhost:8742
 
 ## Wiring
 
-Wake mode is wired through the bot layer (not directly through orchestrator message entrypoints):
+Wake mode is wired through the bot layer (not direct observer -> orchestrator calls):
 
 - `TelegramBot._on_startup` calls `orchestrator.set_webhook_wake_handler(self._handle_webhook_wake)`
 - `_handle_webhook_wake` acquires per-chat lock and routes prompt through `Orchestrator.handle_message()`
@@ -203,4 +208,5 @@ Wake mode is wired through the bot layer (not directly through orchestrator mess
 - fire-and-forget HTTP dispatch: fast `202` responses for long-running tasks
 - single route `/hooks/{hook_id}`: no dynamic route management
 - `cron_task` path reuses cron execution helpers
+- per-hook execution overrides reuse shared `param_resolver` logic
 - global token auto-generation: secure defaults when webhooks are enabled

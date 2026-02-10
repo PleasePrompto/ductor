@@ -8,6 +8,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
 from ductor_bot.cron.execution import (
     build_cmd,
     enrich_instruction,
@@ -19,6 +20,8 @@ from ductor_bot.webhook.models import WebhookResult, render_template
 from ductor_bot.webhook.server import WebhookServer
 
 if TYPE_CHECKING:
+    from ductor_bot.cli.codex_cache import CodexModelCache
+    from ductor_bot.cli.param_resolver import TaskExecutionConfig
     from ductor_bot.config import AgentConfig, ModelRegistry
     from ductor_bot.webhook.manager import WebhookManager
     from ductor_bot.workspace.paths import DuctorPaths
@@ -49,11 +52,13 @@ class WebhookObserver:
         *,
         config: AgentConfig,
         models: ModelRegistry,
+        codex_cache: CodexModelCache,
     ) -> None:
         self._paths = paths
         self._manager = manager
         self._config = config
         self._models = models
+        self._codex_cache = codex_cache
         self._server: WebhookServer | None = None
         self._on_result: WebhookResultCallback | None = None
         self._handle_wake: WakeHandler | None = None
@@ -155,8 +160,19 @@ class WebhookObserver:
             if hook.mode == "wake":
                 result = await self._dispatch_wake(hook_id, hook.title, safe_prompt)
             elif hook.mode == "cron_task":
+                # Build TaskOverrides from hook
+                overrides = TaskOverrides(
+                    provider=hook.provider,
+                    model=hook.model,
+                    reasoning_effort=hook.reasoning_effort,
+                    cli_parameters=hook.cli_parameters,
+                )
                 result = await self._dispatch_cron_task(
-                    hook_id, hook.title, hook.task_folder, safe_prompt
+                    hook_id,
+                    hook.title,
+                    hook.task_folder,
+                    safe_prompt,
+                    overrides,
                 )
             else:
                 result = WebhookResult(
@@ -225,12 +241,24 @@ class WebhookObserver:
             status=status,
         )
 
+    def _resolve_execution_config(
+        self,
+        task_overrides: TaskOverrides,
+    ) -> TaskExecutionConfig:
+        """Use param_resolver to get final config for this webhook task."""
+        return resolve_cli_config(
+            self._config,
+            self._codex_cache,
+            task_overrides=task_overrides,
+        )
+
     async def _dispatch_cron_task(
         self,
         hook_id: str,
         title: str,
         task_folder: str | None,
         prompt: str,
+        overrides: TaskOverrides,
     ) -> WebhookResult:
         """Spawn fresh CLI session in cron_tasks/<task_folder>/."""
         if not task_folder:
@@ -252,9 +280,9 @@ class WebhookObserver:
                 status="error:folder_missing",
             )
 
-        model, provider, permission_mode = self._snapshot_config()
+        exec_config = self._resolve_execution_config(overrides)
         enriched = enrich_instruction(prompt, task_folder)
-        cmd = build_cmd(provider, model, enriched, permission_mode)
+        cmd = build_cmd(exec_config, enriched)
 
         if cmd is None:
             return WebhookResult(
@@ -262,7 +290,7 @@ class WebhookObserver:
                 hook_title=title,
                 mode="cron_task",
                 result_text="",
-                status=f"error:cli_not_found_{provider}",
+                status=f"error:cli_not_found_{exec_config.provider}",
             )
 
         timeout = self._config.cli_timeout
@@ -272,8 +300,8 @@ class WebhookObserver:
             "  Timeout:  %.0fs\n  Prompt:\n%s",
             hook_id,
             folder,
-            provider,
-            model,
+            exec_config.provider,
+            exec_config.model,
             timeout,
             indent(enriched, "    "),
         )
@@ -308,7 +336,9 @@ class WebhookObserver:
             result_text = f"[Webhook cron_task timed out after {timeout:.0f}s]"
         else:
             result_text = (
-                parse_codex_result(stdout) if provider == "codex" else parse_claude_result(stdout)
+                parse_codex_result(stdout)
+                if exec_config.provider == "codex"
+                else parse_claude_result(stdout)
             )
             status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
 
@@ -317,7 +347,7 @@ class WebhookObserver:
             "  Hook:     %s\n  Provider: %s\n  Status:   %s\n"
             "  Stdout:   %d bytes\n  Result:   %d chars",
             hook_id,
-            provider,
+            exec_config.provider,
             status,
             len(stdout),
             len(result_text),
@@ -330,9 +360,3 @@ class WebhookObserver:
             result_text=result_text,
             status=status,
         )
-
-    def _snapshot_config(self) -> tuple[str, str, str]:
-        """Snapshot model, provider, and permission_mode atomically."""
-        model = self._config.model
-        provider = self._models.provider_for(model)
-        return model, provider, self._config.permission_mode

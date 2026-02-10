@@ -70,6 +70,10 @@ class ClaudeCodeCLI(BaseCLI):
         elif continue_session:
             cmd.append("--continue")
 
+        # Add extra CLI parameters before the separator
+        if cfg.cli_parameters:
+            cmd.extend(cfg.cli_parameters)
+
         cmd.append("--")
         cmd.append(prompt)
         return cmd

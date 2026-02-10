@@ -2,6 +2,30 @@
 
 Scripts for managing incoming HTTP webhook endpoints.
 
+## ⚠️ MANDATORY: Ask Before Creating cron_task Webhooks
+
+**When creating a webhook in `cron_task` mode, you MUST ask:**
+
+1. **Which model?**
+   - `gpt-5.2-codex` - Frontier agentic coding model (recommended)
+   - `gpt-5.3-codex` - Latest frontier agentic coding model
+   - `gpt-5.1-codex-max` - Optimized for deep and fast reasoning
+   - `gpt-5.2` - Latest frontier model
+   - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+
+2. **Which thinking level?**
+   - `low` - Fast, surface-level reasoning
+   - `medium` - Balanced (default)
+   - `high` - Extended thinking
+   - `xhigh` - Maximum reasoning depth
+   - Note: `gpt-5.1-codex-mini` only supports `medium` and `high`
+
+**Present these options and wait for the user's choice!**
+
+For `wake` mode webhooks, these parameters are not applicable (uses current main session).
+
+Do NOT suggest `--cli-parameters` proactively. Only mention it exists if the user asks.
+
 ## Mandatory Rules
 
 1. Use webhook tool scripts for create/list/edit/remove/test/rotate.
@@ -78,13 +102,20 @@ python3 tools/webhook_tools/webhook_add.py \
   --prompt-template "PR {{action}}: {{title}}" \
   --auth-mode "hmac" --hmac-secret "<secret>" --hmac-header "X-Hub-Signature-256"
 
-# cron_task mode
+# cron_task mode (with model and reasoning selection)
 python3 tools/webhook_tools/webhook_add.py \
   --name "github-review" --title "PR Review" \
   --description "Review incoming PR payloads" \
   --mode "cron_task" --task-folder "github-review" \
-  --prompt-template "Review PR #{{number}}: {{title}}"
+  --prompt-template "Review PR #{{number}}: {{title}}" \
+  --model gpt-5.2-codex \
+  --reasoning-effort high
 ```
+
+**Available parameters for cron_task mode:**
+- `--model` - Model choice (optional)
+- `--reasoning-effort` - Thinking level: `low`, `medium`, `high`, `xhigh` (optional)
+- `--cli-parameters` - Advanced: JSON array (only if user explicitly requests)
 
 ### List
 
@@ -174,3 +205,42 @@ HTTP statuses:
 
 After creating/editing webhook automation, update `memory_system/MAINMEMORY.md`
 silently with inferred user workflow preferences and interests.
+
+## Per-Webhook Execution Overrides
+
+Webhooks in `cron_task` mode can override global config settings in `webhooks.json`:
+
+- `model`: Model name (optional, defaults to global config)
+  - Available models:
+    - `"gpt-5.2-codex"` - Frontier agentic coding model
+    - `"gpt-5.3-codex"` - Latest frontier agentic coding model
+    - `"gpt-5.1-codex-max"` - Codex-optimized for deep and fast reasoning
+    - `"gpt-5.2"` - Latest frontier model
+    - `"gpt-5.1-codex-mini"` - Cheaper, faster (limited reasoning)
+- `reasoning_effort`: Thinking level (optional, defaults to `"medium"`)
+  - Most models: `"low"`, `"medium"`, `"high"`, `"xhigh"`
+  - `gpt-5.1-codex-mini`: `"medium"`, `"high"` only
+- `cli_parameters`: List of additional CLI flags (optional, e.g., `["--chrome"]`)
+
+**Fallback behavior:**
+- If a field is `null` or missing, the global config value is used
+- This allows per-webhook customization while maintaining global defaults
+- CLI parameters are merged: global provider-specific params + webhook-specific params
+
+**Example:**
+```json
+{
+  "id": "github-pr-review",
+  "mode": "cron_task",
+  "task_folder": "github-review",
+  "prompt_template": "Review PR #{{number}}",
+  "model": "gpt-5.2-codex",
+  "reasoning_effort": "high",
+  "cli_parameters": ["--chrome"]
+}
+```
+
+**Use cases:**
+- Browser automation: `"cli_parameters": ["--chrome"]`
+- High-reasoning analysis: `"reasoning_effort": "high"`
+- Fast iteration with mini: `"model": "gpt-5.1-codex-mini"`, `"reasoning_effort": "medium"`

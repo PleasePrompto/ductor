@@ -53,6 +53,12 @@ OPTIONAL:
                   If omitted, uses user_timezone from config.json.
                   If config has no user_timezone either, falls back to UTC.
 
+EXECUTION OVERRIDES (optional, override global config for this specific job):
+  --provider          CLI provider: 'claude' or 'codex' (defaults to global config)
+  --model             Model name (e.g. 'opus', 'sonnet', 'gpt-5.2-codex')
+  --reasoning-effort  Thinking level for Codex: 'low', 'medium', 'high', 'xhigh'
+  --cli-parameters    Additional CLI flags as JSON array (e.g. '["--chrome"]' for Claude only)
+
 TIMEZONE REMINDER:
   Hours in cron expressions are interpreted in the user's timezone.
   If user_timezone is NOT set in config.json, ask the user where they are
@@ -75,12 +81,34 @@ EXAMPLES:
   "0 0 1 * *"      First day of each month at midnight
   "30 8,12,18 * * *"  At 08:30, 12:30, and 18:30
 
-FULL EXAMPLE:
+FULL EXAMPLES:
+
+Basic job (uses global config):
   python tools/cron_tools/cron_add.py \\
       --name "weather-check" \\
       --title "Weather Check Muenster" \\
       --description "Check current weather and summarize" \\
       --schedule "0 8 * * *"
+
+Codex job with high reasoning:
+  python tools/cron_tools/cron_add.py \\
+      --name "data-analysis" \\
+      --title "Daily Data Analysis" \\
+      --description "Analyze data with extended thinking" \\
+      --schedule "0 9 * * *" \\
+      --provider codex \\
+      --model gpt-5.2-codex \\
+      --reasoning-effort high
+
+Claude job with browser automation:
+  python tools/cron_tools/cron_add.py \\
+      --name "web-scraper" \\
+      --title "News Scraper" \\
+      --description "Scrape news sites with browser" \\
+      --schedule "*/30 * * * *" \\
+      --provider claude \\
+      --model sonnet \\
+      --cli-parameters '["--chrome"]'
 
 WHAT HAPPENS AFTER CREATION:
   1. Open cron_tasks/<name>/TASK_DESCRIPTION.md
@@ -142,6 +170,27 @@ def main() -> None:
         help="IANA timezone for this job (e.g. 'Europe/Berlin'). "
         "Overrides config user_timezone for this job only.",
     )
+    parser.add_argument(
+        "--provider",
+        choices=["claude", "codex"],
+        help="CLI provider for this job (claude or codex). If omitted, uses global config.",
+    )
+    parser.add_argument(
+        "--model",
+        help="Model name for this job (e.g. 'opus', 'sonnet', 'gpt-5.2-codex'). "
+        "If omitted, uses global config.",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high", "xhigh"],
+        help="Thinking level for Codex jobs only (low, medium, high, xhigh). "
+        "If omitted, uses global config or model default.",
+    )
+    parser.add_argument(
+        "--cli-parameters",
+        help="Additional CLI flags as JSON array (e.g. '[\"--chrome\"]'). "
+        "If omitted, uses only global config parameters.",
+    )
     args = parser.parse_args()
 
     missing = [p for p in ("name", "title", "description", "schedule") if not getattr(args, p)]
@@ -184,6 +233,23 @@ def main() -> None:
     }
     if args.timezone:
         job["timezone"] = args.timezone.strip()
+    if args.provider:
+        job["provider"] = args.provider
+    if args.model:
+        job["model"] = args.model
+    if args.reasoning_effort:
+        job["reasoning_effort"] = args.reasoning_effort
+    if args.cli_parameters:
+        try:
+            cli_params = json.loads(args.cli_parameters)
+            if isinstance(cli_params, list):
+                job["cli_parameters"] = cli_params
+            else:
+                print(json.dumps({"error": "--cli-parameters must be a JSON array"}))
+                sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
+            sys.exit(1)
     data["jobs"].append(job)
     save_jobs(JOBS_PATH, data)
 

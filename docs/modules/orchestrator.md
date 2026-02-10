@@ -1,10 +1,10 @@
 # orchestrator/
 
-Routing layer between Telegram bot UI and CLI providers. Owns command dispatch, directive parsing, session flow orchestration, hooks, model switching, and cron/heartbeat/webhook/cleanup wiring.
+Routing layer between Telegram bot UI and CLI providers. Owns command dispatch, directive parsing, session-flow orchestration, hooks, model switching, and cron/heartbeat/webhook/cleanup/cache wiring.
 
 ## Files
 
-- `core.py`: `Orchestrator` lifecycle, routing, error boundary, `active_provider_name` property.
+- `core.py`: `Orchestrator` lifecycle, routing, error boundary, `active_provider_name`.
 - `registry.py`: `CommandRegistry`, `OrchestratorResult`.
 - `commands.py`: slash command handlers.
 - `flows.py`: `normal`, `normal_streaming`, `heartbeat_flow`.
@@ -15,18 +15,20 @@ Routing layer between Telegram bot UI and CLI providers. Owns command dispatch, 
 ## Creation (`Orchestrator.create`)
 
 1. Resolve paths from configured `ductor_home`.
-2. `init_workspace(paths)` in thread.
+2. `init_workspace(paths)` in a thread.
 3. Set `DUCTOR_HOME` env var.
 4. If Docker is enabled: `DockerManager.setup()` and container fallback wiring.
 5. Inject runtime environment notice into workspace rule files (`inject_runtime_environment`).
 6. Check provider auth (`check_all_auth`).
 7. Set authenticated providers in `CLIService`.
-8. Start `CronObserver`.
-9. Start `HeartbeatObserver`.
-10. Start `WebhookObserver`.
-11. Start `CleanupObserver`.
-12. Start rule-sync task (`watch_rule_files(paths.workspace)`).
-13. Start skill-sync task (`watch_skill_sync(paths)`).
+8. Initialize `CodexCacheObserver` (`~/.ductor/config/codex_models.json`) and load cache.
+9. Create `CronObserver` and `WebhookObserver` with the shared cache (fallback empty cache if unavailable).
+10. Start `CronObserver`.
+11. Start `HeartbeatObserver`.
+12. Start `WebhookObserver`.
+13. Start `CleanupObserver`.
+14. Start rule-sync task (`watch_rule_files(paths.workspace)`).
+15. Start skill-sync task (`watch_skill_sync(paths)`).
 
 ## Routing Entry Points
 
@@ -56,6 +58,8 @@ Registered commands:
 
 `CommandRegistry` supports exact and prefix matching (`name.endswith(" ")`).
 
+`/diagnose` includes Codex cache status (`loaded/not loaded`, `last_updated`, cached model count, default model).
+
 ## Directives
 
 `parse_directives(text, known_models)` consumes only the beginning of a message.
@@ -63,7 +67,7 @@ Registered commands:
 - model directive: `@<model-id>` if `<model-id>` is in `known_models`.
 - raw directives: any other leading `@key` or `@key=value`.
 
-Current orchestrator behavior:
+Current behavior:
 
 - `known_models` is `_CLAUDE_MODELS` (`haiku`, `sonnet`, `opus`).
 - Codex IDs are not recognized as inline model directives.
@@ -127,7 +131,13 @@ Wizard callback namespace: `ms:`.
 - reasoning step (Codex): `ms:r:<effort>:<model_id>`
 - back: `ms:b:root` or `ms:b:<provider>`
 
-`/model` is a quick command (bypasses the per-chat lock). When the chat is busy (agent running or messages queued), the bot returns an immediate "agent is working" message instead of the wizard. When idle, the bot acquires the lock for an atomic model switch.
+`/model` is a quick command (middleware lock bypass). If chat is busy (active process or queued messages), bot returns immediate "agent is working"; when idle it acquires lock for atomic switch.
+
+Model list behavior:
+
+- Claude list is static (`haiku`, `sonnet`, `opus`).
+- Codex list comes from `CodexCacheObserver.get_cache()`.
+- if no cache models are available, wizard shows "No Codex models available."
 
 `switch_model()` behavior:
 
@@ -145,7 +155,7 @@ Wizard callback namespace: `ms:`.
 - `set_webhook_result_handler(handler)` -> forwards `WebhookResult`.
 - `set_webhook_wake_handler(handler)` -> injects bot-layer wake handler.
 
-Wake execution itself stays in bot layer (`TelegramBot._handle_webhook_wake`) so it can reuse the same per-chat lock as normal chat updates.
+Wake execution stays in bot layer (`TelegramBot._handle_webhook_wake`) so it reuses the same per-chat lock as normal chat updates.
 
 ## Upgrade Command (`cmd_upgrade`)
 
@@ -164,9 +174,10 @@ Callback handling is in `TelegramBot` (bot layer), not orchestrator.
 
 1. cancel and await rule-sync task,
 2. cancel and await skill-sync task,
-3. stop heartbeat observer,
-4. stop webhook observer,
-5. stop cron observer,
-6. stop cleanup observer,
-7. cleanup ductor-created symlinks from CLI skill directories (`cleanup_ductor_links`),
-8. teardown Docker container (if managed by this orchestrator instance).
+3. cleanup ductor-created symlinks from CLI skill directories (`cleanup_ductor_links`),
+4. stop heartbeat observer,
+5. stop webhook observer,
+6. stop cron observer,
+7. stop cleanup observer,
+8. stop Codex cache observer,
+9. teardown Docker container (if managed by this orchestrator instance).

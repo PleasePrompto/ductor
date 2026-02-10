@@ -207,6 +207,36 @@ ductor  # wizard creates config interactively
 
 Key fields: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), `model`, `docker.enabled`, `user_timezone`, `cleanup`. Full schema in [docs/config.md](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md).
 
+#### CLI Parameters
+
+Configure provider-specific CLI parameters in `config.json`:
+
+```json
+{
+  "cli_parameters": {
+    "claude": [],
+    "codex": ["--chrome"]
+  }
+}
+```
+
+Parameters are appended to CLI commands for the respective provider.
+
+#### Advanced Cron Task Configuration
+
+Cron tasks support per-task execution overrides:
+
+```json
+{
+  "provider": "codex",
+  "model": "gpt-5.2-codex",
+  "reasoning_effort": "high",
+  "cli_parameters": ["--chrome"]
+}
+```
+
+All fields are optional and fall back to global config values if not specified.
+
 ## Commands
 
 | Command | Description |

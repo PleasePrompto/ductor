@@ -108,7 +108,7 @@ Cancelled cleanly in `Orchestrator.shutdown()` alongside the rule sync task.
 
 ### Home Defaults
 
-`ductor_bot/_home_defaults/workspace/skills/CLAUDE.md` is a Zone 2 rule file (always overwritten on update) that documents the sync system for the workspace agent.
+`ductor_bot/_home_defaults/workspace/skills/RULES.md` is the template source for this folder's runtime rule file(s), deployed by `RulesSelector` as `CLAUDE.md` and/or `AGENTS.md` depending on provider authentication.
 
 Skill subdirectories in `_home_defaults/workspace/skills/` (e.g. `skill-creator/`) are linked via `sync_bundled_skills()` -- not copied via Zone 3.
 

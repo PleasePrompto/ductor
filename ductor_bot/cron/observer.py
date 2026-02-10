@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from cronsim import CronSim, CronSimError
 
+from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
 from ductor_bot.config import resolve_user_timezone
 from ductor_bot.cron.execution import (
     build_cmd,
@@ -22,6 +23,8 @@ from ductor_bot.cron.manager import CronManager
 from ductor_bot.log_context import set_log_context
 
 if TYPE_CHECKING:
+    from ductor_bot.cli.codex_cache import CodexModelCache
+    from ductor_bot.cli.param_resolver import TaskExecutionConfig
     from ductor_bot.config import AgentConfig, ModelRegistry
     from ductor_bot.workspace.paths import DuctorPaths
 
@@ -46,11 +49,13 @@ class CronObserver:
         *,
         config: AgentConfig,
         models: ModelRegistry,
+        codex_cache: CodexModelCache,
     ) -> None:
         self._paths = paths
         self._manager = manager
         self._config = config
         self._models = models
+        self._codex_cache = codex_cache
         self._on_result: CronResultCallback | None = None
         self._scheduled: dict[str, asyncio.Task[None]] = {}
         self._watcher_task: asyncio.Task[None] | None = None
@@ -181,17 +186,18 @@ class CronObserver:
 
     # -- Execution --
 
-    def _snapshot_config(self) -> tuple[str, str, str]:
-        """Snapshot model, provider, and permission_mode atomically.
+    def _resolve_execution_config(
+        self,
+        task_overrides: TaskOverrides,
+    ) -> TaskExecutionConfig:
+        """Use param_resolver to get final config for this task."""
+        return resolve_cli_config(
+            self._config,
+            self._codex_cache,
+            task_overrides=task_overrides,
+        )
 
-        Reads the shared AgentConfig once so a concurrent ``/model`` switch
-        cannot produce an inconsistent (model, provider) pair.
-        """
-        model = self._config.model
-        provider = self._models.provider_for(model)
-        return model, provider, self._config.permission_mode
-
-    async def _execute_job(
+    async def _execute_job(  # noqa: PLR0915
         self,
         job_id: str,
         instruction: str,
@@ -209,13 +215,24 @@ class CronObserver:
             self._manager.update_run_status(job_id, status="error:folder_missing")
             return
 
-        model, provider, permission_mode = self._snapshot_config()
+        # Build TaskOverrides from job
+        overrides = TaskOverrides(
+            provider=job.provider if job else None,
+            model=job.model if job else None,
+            reasoning_effort=job.reasoning_effort if job else None,
+            cli_parameters=job.cli_parameters if job else [],
+        )
+
+        exec_config = self._resolve_execution_config(overrides)
         enriched = enrich_instruction(instruction, task_folder)
-        cmd = build_cmd(provider, model, enriched, permission_mode)
+        cmd = build_cmd(exec_config, enriched)
 
         if cmd is None:
-            logger.error("%s CLI not found for cron job %s", provider, job_id)
-            self._manager.update_run_status(job_id, status=f"error:cli_not_found_{provider}")
+            logger.error("%s CLI not found for cron job %s", exec_config.provider, job_id)
+            self._manager.update_run_status(
+                job_id,
+                status=f"error:cli_not_found_{exec_config.provider}",
+            )
             return
 
         timeout = self._config.cli_timeout
@@ -223,8 +240,8 @@ class CronObserver:
             "Cron subprocess cmd=%s cwd=%s provider=%s model=%s timeout=%.0fs",
             " ".join(cmd[:3]),
             folder,
-            provider,
-            model,
+            exec_config.provider,
+            exec_config.model,
             timeout,
         )
 
@@ -259,7 +276,9 @@ class CronObserver:
             result_text = f"[Cron job timed out after {timeout:.0f}s]"
         else:
             result_text = (
-                parse_codex_result(stdout) if provider == "codex" else parse_claude_result(stdout)
+                parse_codex_result(stdout)
+                if exec_config.provider == "codex"
+                else parse_claude_result(stdout)
             )
             status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
 

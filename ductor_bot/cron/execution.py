@@ -5,22 +5,21 @@ from __future__ import annotations
 import json
 import logging
 from shutil import which
+from typing import TYPE_CHECKING
 
 from ductor_bot.cli.codex_events import parse_codex_jsonl
+
+if TYPE_CHECKING:
+    from ductor_bot.cli.param_resolver import TaskExecutionConfig
 
 logger = logging.getLogger(__name__)
 
 
-def build_cmd(
-    provider: str,
-    model: str,
-    prompt: str,
-    permission_mode: str,
-) -> list[str] | None:
+def build_cmd(exec_config: TaskExecutionConfig, prompt: str) -> list[str] | None:
     """Build a CLI command for one-shot cron execution."""
-    if provider == "codex":
-        return _build_codex_cmd(model, prompt, permission_mode)
-    return _build_claude_cmd(model, prompt, permission_mode)
+    if exec_config.provider == "codex":
+        return _build_codex_cmd(exec_config, prompt)
+    return _build_claude_cmd(exec_config, prompt)
 
 
 def enrich_instruction(instruction: str, task_folder: str) -> str:
@@ -67,35 +66,49 @@ def indent(text: str, prefix: str) -> str:
 # -- Private builders --
 
 
-def _build_claude_cmd(model: str, prompt: str, permission_mode: str) -> list[str] | None:
+def _build_claude_cmd(exec_config: TaskExecutionConfig, prompt: str) -> list[str] | None:
     """Build a Claude CLI command for one-shot cron execution."""
     cli = which("claude")
     if not cli:
         return None
-    return [
+    cmd = [
         cli,
         "-p",
         "--output-format",
         "json",
         "--model",
-        model,
+        exec_config.model,
         "--permission-mode",
-        permission_mode,
+        exec_config.permission_mode,
         "--no-session-persistence",
-        "--",
-        prompt,
     ]
+    # Add extra CLI parameters
+    cmd.extend(exec_config.cli_parameters)
+    cmd += ["--", prompt]
+    return cmd
 
 
-def _build_codex_cmd(model: str, prompt: str, permission_mode: str) -> list[str] | None:
+def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> list[str] | None:
     """Build a Codex CLI command for one-shot cron execution."""
     cli = which("codex")
     if not cli:
         return None
     cmd = [cli, "exec", "--json", "--color", "never", "--skip-git-repo-check"]
-    if permission_mode == "bypassPermissions":
+
+    # Sandbox flags based on permission_mode
+    if exec_config.permission_mode == "bypassPermissions":
         cmd.append("--dangerously-bypass-approvals-and-sandbox")
     else:
         cmd.append("--full-auto")
-    cmd += ["--model", model, "--", prompt]
+
+    cmd += ["--model", exec_config.model]
+
+    # Add reasoning effort (if not default)
+    if exec_config.reasoning_effort and exec_config.reasoning_effort != "medium":
+        cmd += ["-c", f"model_reasoning_effort={exec_config.reasoning_effort}"]
+
+    # Add extra CLI parameters
+    cmd.extend(exec_config.cli_parameters)
+
+    cmd += ["--", prompt]
     return cmd

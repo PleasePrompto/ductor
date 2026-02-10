@@ -1,13 +1,14 @@
 # workspace/
 
-Workspace and home-directory management. Resolves runtime paths, seeds `~/.ductor` from packaged home defaults, syncs rule files, injects runtime environment notices, and manages cron task folders.
+Workspace and home-directory management. Resolves runtime paths, seeds `~/.ductor` from packaged defaults, deploys provider-aware rule files, syncs `CLAUDE.md`/`AGENTS.md`, injects runtime environment notices, and manages cron task folders.
 
 ## Files
 
 - `paths.py`: immutable `DuctorPaths` + `resolve_paths()`.
-- `init.py`: `init_workspace()`, `_walk_and_copy()` zone rules, required-dir creation, rule-file sync, runtime environment injection, config merge.
+- `init.py`: `init_workspace()`, `_walk_and_copy()` zone rules, required-dir creation, config merge, rule sync, runtime environment injection.
+- `rules_selector.py`: auth-based RULES template selection/deployment + stale-file cleanup.
 - `loader.py`: safe file readers (`read_file`, `read_mainmemory`).
-- `cron_tasks.py`: create/list/delete cron task mini-workspaces + template render helpers.
+- `cron_tasks.py`: create/list/delete cron-task mini workspaces + template render helpers.
 - `skill_sync.py`: cross-platform skill directory sync (see [skill_system](skill_system.md)).
 
 ## `DuctorPaths`
@@ -32,7 +33,7 @@ Important properties (runtime side):
 
 Template source side:
 
-- `home_defaults`: `ductor_bot/_home_defaults/` (mirrors `~/.ductor` layout 1:1)
+- `home_defaults`: `ductor_bot/_home_defaults/` (mirrors `~/.ductor` layout)
 - `config_example_path`: `<repo>/config.example.json` in source checkouts, otherwise bundled fallback `ductor_bot/_config_example.json`
 
 ## `init_workspace()` Flow
@@ -41,10 +42,11 @@ Template source side:
 2. link bundled skills from package via `sync_bundled_skills(paths)`.
 3. sync home defaults (`paths.home_defaults`) into runtime home via `_walk_and_copy()` (skips already-symlinked targets).
 4. ensure required directories exist (`workspace/*`, `config/`, `logs/`).
-5. sync `CLAUDE.md` <-> `AGENTS.md` under `paths.workspace`.
-6. shallow config merge with `config.example.json` (`_smart_merge_config`).
-7. remove orphan symlinks in workspace root.
-8. run `sync_skills(paths)` for cross-platform skill directory sync.
+5. deploy rule files with `RulesSelector(paths).deploy_rules()` based on current CLI auth status.
+6. sync `CLAUDE.md` <-> `AGENTS.md` under `paths.workspace` (mtime-based).
+7. shallow config merge with `config.example.json` (`_smart_merge_config`).
+8. remove orphan symlinks in workspace root.
+9. run `sync_skills(paths)` for cross-platform skill sync.
 
 This function is intentionally called from both `__main__.py` and `Orchestrator.create()`. Behavior is idempotent and rule-based, so repeated execution is safe.
 
@@ -52,9 +54,28 @@ This function is intentionally called from both `__main__.py` and `Orchestrator.
 
 - Zone 2 (always overwrite): `CLAUDE.md`, `AGENTS.md`.
 - Zone 3 (seed once): all other files copied only if missing.
-- Special rule: copied `CLAUDE.md` also auto-copies to sibling `AGENTS.md`.
-- Skips targets that are already symlinks (preserves bundled skill links).
-- Skips hidden/ignored dirs (`.venv`, `.git`, `.mypy_cache`, `__pycache__`, `node_modules`).
+- Rule template files are skipped here (`RULES.md`, `RULES-claude-only.md`, `RULES-codex-only.md`, `RULES-claude-and-codex.md`).
+- Targets that are already symlinks are skipped (preserves bundled skill links).
+- Hidden/ignored dirs are skipped (`.venv`, `.git`, `.mypy_cache`, `__pycache__`, `node_modules`).
+
+## RULES Template Deployment (`RulesSelector`)
+
+Templates in `_home_defaults/` use `RULES*.md` naming and are deployed to runtime names (`CLAUDE.md`/`AGENTS.md`) under `~/.ductor/`.
+
+Selection/deploy behavior:
+
+1. discover directories containing `RULES*.md`.
+2. choose variant by auth status:
+   - both authenticated -> `RULES-claude-and-codex.md` (fallback `RULES.md`)
+   - only Codex authenticated -> `RULES-codex-only.md` (fallback `RULES.md`)
+   - otherwise -> `RULES-claude-only.md` (fallback `RULES.md`)
+3. deploy outputs:
+   - Claude authenticated -> write `CLAUDE.md`
+   - Codex authenticated -> write `AGENTS.md`
+4. post-deploy cleanup of stale files:
+   - only Claude authenticated -> remove `AGENTS.md`
+   - only Codex authenticated -> remove `CLAUDE.md`
+   - both authenticated -> keep both
 
 ## Rule Sync
 
@@ -68,7 +89,7 @@ This function is intentionally called from both `__main__.py` and `Orchestrator.
 
 ## Runtime Environment Injection
 
-`inject_runtime_environment(paths, docker_container=...)` appends a runtime notice to `workspace/CLAUDE.md` and `workspace/AGENTS.md`:
+`inject_runtime_environment(paths, docker_container=...)` appends a runtime notice to `workspace/CLAUDE.md` and `workspace/AGENTS.md` (if present):
 
 - Docker mode: informs the agent it runs inside container with `/ductor` mount.
 - Host mode: warns the agent it runs directly on host system.

@@ -38,6 +38,10 @@ OPTIONS:
   --hmac-sig-regex      Regex to extract signature (group 1)
   --hmac-payload-prefix-regex  Regex on header; group 1 prepended to body with "."
   --regenerate-token    Generate a new random Bearer token (bearer mode only)
+  --provider "..."      Change CLI provider (claude or codex)
+  --model "..."         Change model name
+  --reasoning-effort    Change thinking level for Codex (low, medium, high, xhigh)
+  --cli-parameters      Change CLI flags as JSON array
 
 EXAMPLES:
   python tools/webhook_tools/webhook_edit.py "email-notify" --disable
@@ -69,6 +73,24 @@ def main() -> None:
         "--regenerate-token",
         action="store_true",
         help="Generate a new random Bearer token",
+    )
+    parser.add_argument(
+        "--provider",
+        choices=["claude", "codex"],
+        help="Change CLI provider (claude or codex)",
+    )
+    parser.add_argument(
+        "--model",
+        help="Change model name",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high", "xhigh"],
+        help="Change thinking level (Codex only)",
+    )
+    parser.add_argument(
+        "--cli-parameters",
+        help="Change CLI flags as JSON array (e.g. '[\"--verbose\"]')",
     )
     args = parser.parse_args()
 
@@ -161,6 +183,26 @@ def main() -> None:
         hook["token"] = new_token
         changes["token_regenerated"] = True
         changes["new_bearer_token"] = new_token
+    if args.provider:
+        hook["provider"] = args.provider
+        changes["provider"] = args.provider
+    if args.model:
+        hook["model"] = args.model
+        changes["model"] = args.model
+    if args.reasoning_effort:
+        hook["reasoning_effort"] = args.reasoning_effort
+        changes["reasoning_effort"] = args.reasoning_effort
+    if args.cli_parameters:
+        try:
+            cli_params = json.loads(args.cli_parameters)
+            if not isinstance(cli_params, list):
+                print(json.dumps({"error": "--cli-parameters must be a JSON array"}))
+                sys.exit(1)
+            hook["cli_parameters"] = cli_params
+            changes["cli_parameters"] = cli_params
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
+            sys.exit(1)
 
     if not changes:
         print(json.dumps({"error": "No changes specified. Use --help for options."}))

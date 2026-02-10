@@ -69,6 +69,13 @@ class CleanupConfig(BaseModel):
     check_hour: int = 3
 
 
+class CLIParametersConfig(BaseModel):
+    """CLI parameters for main agent."""
+
+    claude: list[str] = Field(default_factory=list)
+    codex: list[str] = Field(default_factory=list)
+
+
 class WebhookConfig(BaseModel):
     """Settings for the webhook HTTP server."""
 
@@ -148,6 +155,7 @@ class AgentConfig(BaseModel):
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     cleanup: CleanupConfig = Field(default_factory=CleanupConfig)
     webhooks: WebhookConfig = Field(default_factory=WebhookConfig)
+    cli_parameters: CLIParametersConfig = Field(default_factory=CLIParametersConfig)
     user_timezone: str = ""
     telegram_token: str = ""
     allowed_user_ids: list[int] = Field(default_factory=list)

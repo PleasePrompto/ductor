@@ -83,6 +83,16 @@ class CLIServiceConfig:
     permission_mode: str
     reasoning_effort: str = "medium"
     docker_container: str = ""
+    claude_cli_parameters: tuple[str, ...] = ()
+    codex_cli_parameters: tuple[str, ...] = ()
+
+    def cli_parameters_for_provider(self, provider: str) -> list[str]:
+        """Return CLI parameters for the given provider."""
+        return (
+            list(self.codex_cli_parameters)
+            if provider == "codex"
+            else list(self.claude_cli_parameters)
+        )
 
 
 class CLIService:
@@ -279,6 +289,7 @@ class CLIService:
                 process_registry=self._process_registry,
                 chat_id=request.chat_id,
                 process_label=request.process_label,
+                cli_parameters=self._config.cli_parameters_for_provider(provider),
             )
         )
 

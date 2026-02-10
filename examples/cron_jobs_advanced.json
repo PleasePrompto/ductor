@@ -1,0 +1,50 @@
+{
+  "jobs": [
+    {
+      "id": "daily-report",
+      "title": "Daily Status Report",
+      "description": "Generate daily status summary",
+      "schedule": "0 9 * * *",
+      "task_folder": "daily-report",
+      "agent_instruction": "Read project status and create summary",
+      "enabled": true,
+      "timezone": "",
+      "created_at": "2026-02-10T12:00:00Z",
+      "last_run_at": null,
+      "last_run_status": null
+    },
+    {
+      "id": "web-scraper",
+      "title": "News Scraper (Codex with Chrome)",
+      "description": "Scrape news sites using browser automation",
+      "schedule": "0 8 * * *",
+      "task_folder": "news-scraper",
+      "agent_instruction": "Scrape top news sites and save summaries",
+      "enabled": true,
+      "timezone": "",
+      "provider": "codex",
+      "model": "gpt-5.2-codex",
+      "reasoning_effort": "high",
+      "cli_parameters": ["--chrome"],
+      "created_at": "2026-02-10T12:00:00Z",
+      "last_run_at": null,
+      "last_run_status": null
+    },
+    {
+      "id": "code-review",
+      "title": "Automated Code Review",
+      "description": "Review recent commits with Claude",
+      "schedule": "0 18 * * 1-5",
+      "task_folder": "code-review",
+      "agent_instruction": "Review git commits from today",
+      "enabled": true,
+      "timezone": "",
+      "provider": "claude",
+      "model": "opus",
+      "cli_parameters": [],
+      "created_at": "2026-02-10T12:00:00Z",
+      "last_run_at": null,
+      "last_run_status": null
+    }
+  ]
+}

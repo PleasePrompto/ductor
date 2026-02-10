@@ -42,6 +42,8 @@ class CLIConfig:
     process_registry: ProcessRegistry | None = None
     chat_id: int = 0
     process_label: str = "main"
+    # Extra CLI parameters (provider-specific):
+    cli_parameters: list[str] = field(default_factory=list)
 
 
 def docker_wrap(

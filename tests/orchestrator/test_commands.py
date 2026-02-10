@@ -158,6 +158,42 @@ async def test_diagnose_with_logs(orch: Orchestrator) -> None:
     assert "Something broke" in result.text
 
 
+async def test_diagnose_shows_cache_status(orch: Orchestrator) -> None:
+    """Should display Codex cache status in /diagnose output."""
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock
+
+    from ductor_bot.cli.codex_cache import CodexModelCache
+    from ductor_bot.cli.codex_discovery import CodexModelInfo
+
+    # Create mock cache with test data
+    mock_cache = CodexModelCache(
+        last_updated=datetime.now(UTC).isoformat(),
+        models=[
+            CodexModelInfo(
+                id="gpt-4o",
+                display_name="GPT-4o",
+                description="Test model",
+                supported_efforts=("low", "medium", "high"),
+                default_effort="medium",
+                is_default=True,
+            ),
+        ],
+    )
+
+    # Mock the cache observer
+    mock_observer = MagicMock()
+    mock_observer.get_cache = MagicMock(return_value=mock_cache)
+    object.__setattr__(orch, "_codex_cache_observer", mock_observer)
+
+    result = await cmd_diagnose(orch, 0, "/diagnose")
+
+    # Verify cache info is in output
+    assert "Codex Model Cache" in result.text
+    assert "Models cached: 1" in result.text
+    assert "Default model: gpt-4o" in result.text
+
+
 # -- cmd_stop --
 
 

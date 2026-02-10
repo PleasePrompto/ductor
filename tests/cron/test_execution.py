@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from ductor_bot.cli.param_resolver import TaskExecutionConfig
 from ductor_bot.cron.execution import (
     build_cmd,
     enrich_instruction,
@@ -15,32 +16,77 @@ from ductor_bot.cron.execution import (
 
 class TestBuildCmd:
     def test_claude_provider(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
         with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
-            cmd = build_cmd("claude", "opus", "hello", "bypassPermissions")
+            cmd = build_cmd(exec_config, "hello")
         assert cmd is not None
         assert cmd[0] == "/usr/bin/claude"
         assert "--no-session-persistence" in cmd
 
     def test_codex_provider(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="codex",
+            model="gpt-4",
+            reasoning_effort="medium",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
         with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
-            cmd = build_cmd("codex", "gpt-4", "hello", "bypassPermissions")
+            cmd = build_cmd(exec_config, "hello")
         assert cmd is not None
         assert cmd[0] == "/usr/bin/codex"
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
 
     def test_codex_full_auto(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="codex",
+            model="gpt-4",
+            reasoning_effort="medium",
+            cli_parameters=[],
+            permission_mode="plan",
+            working_dir="/tmp",
+            file_access="all",
+        )
         with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
-            cmd = build_cmd("codex", "gpt-4", "hello", "plan")
+            cmd = build_cmd(exec_config, "hello")
         assert cmd is not None
         assert "--full-auto" in cmd
 
     def test_returns_none_when_cli_missing(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="plan",
+            working_dir="/tmp",
+            file_access="all",
+        )
         with patch("ductor_bot.cron.execution.which", return_value=None):
-            assert build_cmd("claude", "opus", "hello", "plan") is None
+            assert build_cmd(exec_config, "hello") is None
 
     def test_unknown_provider_falls_back_to_claude(self) -> None:
+        exec_config = TaskExecutionConfig(
+            provider="unknown",
+            model="model",
+            reasoning_effort="",
+            cli_parameters=[],
+            permission_mode="plan",
+            working_dir="/tmp",
+            file_access="all",
+        )
         with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
-            cmd = build_cmd("unknown", "model", "hello", "plan")
+            cmd = build_cmd(exec_config, "hello")
         assert cmd is not None
         assert cmd[0] == "/usr/bin/claude"
 

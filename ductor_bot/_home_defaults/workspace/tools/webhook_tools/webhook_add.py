@@ -211,6 +211,27 @@ def main() -> None:
         default="",
         help='Regex on header value; group 1 prepended to body with "." before HMAC',
     )
+    parser.add_argument(
+        "--provider",
+        choices=["claude", "codex"],
+        help="CLI provider for this webhook (claude or codex). If omitted, uses global config.",
+    )
+    parser.add_argument(
+        "--model",
+        help="Model name for this webhook (e.g. 'opus', 'sonnet', 'gpt-5.2-codex'). "
+        "If omitted, uses global config.",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high", "xhigh"],
+        help="Thinking level for Codex webhooks only (low, medium, high, xhigh). "
+        "If omitted, uses global config or model default.",
+    )
+    parser.add_argument(
+        "--cli-parameters",
+        help="Additional CLI flags as JSON array (e.g. '[\"--verbose\"]'). "
+        "If omitted, uses only global config parameters.",
+    )
     args = parser.parse_args()
 
     required = ["name", "title", "description", "mode", "prompt_template"]
@@ -257,6 +278,18 @@ def main() -> None:
     if args.auth_mode == "bearer":
         token = secrets.token_urlsafe(32)
 
+    # Parse CLI parameters if provided
+    cli_params_list = []
+    if args.cli_parameters:
+        try:
+            cli_params_list = json.loads(args.cli_parameters)
+            if not isinstance(cli_params_list, list):
+                print(json.dumps({"error": "--cli-parameters must be a JSON array"}))
+                sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
+            sys.exit(1)
+
     hook = {
         "id": name,
         "title": args.title,
@@ -278,6 +311,10 @@ def main() -> None:
         "trigger_count": 0,
         "last_triggered_at": None,
         "last_error": None,
+        "provider": args.provider,
+        "model": args.model,
+        "reasoning_effort": args.reasoning_effort,
+        "cli_parameters": cli_params_list,
     }
     data["hooks"].append(hook)
     save_hooks(HOOKS_PATH, data)
