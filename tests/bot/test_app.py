@@ -364,7 +364,8 @@ class TestSendWelcomeImage:
 
 
 class TestOnRestart:
-    async def test_restart_writes_sentinel_and_stops(self) -> None:
+    @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
+    async def test_restart_writes_sentinel_and_stops(self, mock_send: AsyncMock) -> None:
         from ductor_bot.infra.restart import EXIT_RESTART
 
         tg_bot, _ = _make_tg_bot()
@@ -376,7 +377,9 @@ class TestOnRestart:
         with patch("ductor_bot.infra.restart.write_restart_sentinel") as mock_sentinel:
             await tg_bot._on_restart(msg)
 
-        msg.answer.assert_called_once_with("Bot is restarting...")
+        mock_send.assert_called_once()
+        text = mock_send.call_args[0][2]
+        assert "Restarting" in text
         assert tg_bot._exit_code == EXIT_RESTART
         mock_sentinel.assert_called_once()
         sentinel_kwargs = mock_sentinel.call_args

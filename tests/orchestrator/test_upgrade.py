@@ -22,7 +22,7 @@ class TestCmdUpgrade:
         ):
             result = await cmd_upgrade(orch, 1, "/upgrade")
 
-        assert "Update available" in result.text
+        assert "Update Available" in result.text
         assert "1.0.0" in result.text
         assert "2.0.0" in result.text
         assert result.reply_markup is not None

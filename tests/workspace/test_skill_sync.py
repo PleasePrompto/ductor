@@ -15,7 +15,10 @@ from ductor_bot.workspace.skill_sync import (
     _clean_broken_links,
     _discover_skills,
     _ensure_link,
+    _is_under,
     _resolve_canonical,
+    cleanup_ductor_links,
+    sync_bundled_skills,
     sync_skills,
     watch_skill_sync,
 )
@@ -24,7 +27,7 @@ from ductor_bot.workspace.skill_sync import (
 def _make_paths(tmp_path: Path) -> DuctorPaths:
     return DuctorPaths(
         ductor_home=tmp_path / "ductor_home",
-        home_defaults=tmp_path / "fw" / "workspace",
+        home_defaults=tmp_path / "fw" / "_home_defaults",
         framework_root=tmp_path / "fw",
     )
 
@@ -410,3 +413,256 @@ def test_permission_error_logged(tmp_path: Path, caplog: pytest.LogCaptureFixtur
         mock_dirs.return_value = {"claude": claude_skills}
         sync_skills(paths)
     assert "denied" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Group 9: _is_under helper
+# ---------------------------------------------------------------------------
+
+
+def test_is_under_child(tmp_path: Path) -> None:
+    parent = tmp_path / "parent"
+    child = parent / "sub" / "deep"
+    parent.mkdir()
+    child.mkdir(parents=True)
+    assert _is_under(child, parent) is True
+
+
+def test_is_under_same(tmp_path: Path) -> None:
+    d = tmp_path / "dir"
+    d.mkdir()
+    assert _is_under(d, d) is True
+
+
+def test_is_under_unrelated(tmp_path: Path) -> None:
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    assert _is_under(a, b) is False
+
+
+# ---------------------------------------------------------------------------
+# Group 10: External symlink protection in sync
+# ---------------------------------------------------------------------------
+
+
+def test_sync_preserves_external_symlink(tmp_path: Path) -> None:
+    """User has a symlink in .claude pointing outside sync dirs -- must not be replaced."""
+    paths, claude_skills, _ = _setup_three_dirs(tmp_path)
+    claude_skills.mkdir(parents=True, exist_ok=True)
+
+    # User's external skill (outside all sync dirs)
+    external = tmp_path / "my_custom" / "my-skill"
+    external.mkdir(parents=True)
+    (external / "SKILL.md").write_text("# user version")
+
+    # User symlink in .claude pointing to external location
+    (claude_skills / "my-skill").symlink_to(external)
+
+    # Ductor also has a skill with the same name
+    _make_skill(paths.skills_dir, "my-skill")
+
+    with patch("ductor_bot.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills}
+        sync_skills(paths)
+
+    # User's external symlink must be preserved
+    link = claude_skills / "my-skill"
+    assert link.is_symlink()
+    assert link.resolve() == external.resolve()
+
+
+def test_sync_replaces_internal_symlink(tmp_path: Path) -> None:
+    """Symlinks pointing inside sync dirs (ductor-managed) can be updated."""
+    paths, claude_skills, codex_skills = _setup_three_dirs(tmp_path)
+    claude_skills.mkdir(parents=True, exist_ok=True)
+    codex_skills.mkdir(parents=True, exist_ok=True)
+
+    # Codex has a real skill
+    _make_skill(codex_skills, "shared")
+
+    # Claude has a symlink pointing to codex (inside sync dirs)
+    (claude_skills / "shared").symlink_to(codex_skills / "shared")
+
+    # Ductor now has a real skill with the same name (higher priority)
+    _make_skill(paths.skills_dir, "shared")
+
+    with patch("ductor_bot.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills, "codex": codex_skills}
+        sync_skills(paths)
+
+    # Claude's symlink should now point to ductor (higher priority canonical)
+    link = claude_skills / "shared"
+    assert link.is_symlink()
+    assert link.resolve() == (paths.skills_dir / "shared").resolve()
+
+
+# ---------------------------------------------------------------------------
+# Group 11: sync_bundled_skills
+# ---------------------------------------------------------------------------
+
+
+def test_bundled_creates_symlink(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    bundled = paths.bundled_skills_dir
+    _make_skill(bundled, "default-skill")
+    paths.skills_dir.mkdir(parents=True)
+
+    sync_bundled_skills(paths)
+
+    target = paths.skills_dir / "default-skill"
+    assert target.is_symlink()
+    assert target.resolve() == (bundled / "default-skill").resolve()
+
+
+def test_bundled_preserves_user_real_dir(tmp_path: Path) -> None:
+    """User has a real directory with the same name as a bundled skill."""
+    paths = _make_paths(tmp_path)
+    _make_skill(paths.bundled_skills_dir, "my-skill")
+
+    # User already has their own version
+    user_skill = _make_skill(paths.skills_dir, "my-skill")
+    (user_skill / "SKILL.md").write_text("# user custom version")
+
+    sync_bundled_skills(paths)
+
+    target = paths.skills_dir / "my-skill"
+    assert not target.is_symlink()
+    assert (target / "SKILL.md").read_text() == "# user custom version"
+
+
+def test_bundled_updates_stale_symlink(tmp_path: Path) -> None:
+    """Existing symlink pointing to wrong bundled location gets updated."""
+    paths = _make_paths(tmp_path)
+    _make_skill(paths.bundled_skills_dir, "default-skill")
+    paths.skills_dir.mkdir(parents=True)
+
+    old_target = tmp_path / "old_pkg" / "default-skill"
+    old_target.mkdir(parents=True)
+    (paths.skills_dir / "default-skill").symlink_to(old_target)
+
+    sync_bundled_skills(paths)
+
+    target = paths.skills_dir / "default-skill"
+    assert target.is_symlink()
+    assert target.resolve() == (paths.bundled_skills_dir / "default-skill").resolve()
+
+
+def test_bundled_idempotent(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    _make_skill(paths.bundled_skills_dir, "default-skill")
+    paths.skills_dir.mkdir(parents=True)
+
+    sync_bundled_skills(paths)
+    sync_bundled_skills(paths)
+
+    target = paths.skills_dir / "default-skill"
+    assert target.is_symlink()
+    assert target.resolve() == (paths.bundled_skills_dir / "default-skill").resolve()
+
+
+def test_bundled_skips_files(tmp_path: Path) -> None:
+    """Plain files in bundled dir (like CLAUDE.md) are ignored."""
+    paths = _make_paths(tmp_path)
+    bundled = paths.bundled_skills_dir
+    bundled.mkdir(parents=True)
+    (bundled / "CLAUDE.md").write_text("# docs")
+    paths.skills_dir.mkdir(parents=True)
+
+    sync_bundled_skills(paths)
+
+    assert not (paths.skills_dir / "CLAUDE.md").is_symlink()
+
+
+def test_bundled_no_dir_noop(tmp_path: Path) -> None:
+    """No crash when bundled_skills_dir does not exist."""
+    paths = _make_paths(tmp_path)
+    sync_bundled_skills(paths)
+
+
+# ---------------------------------------------------------------------------
+# Group 12: cleanup_ductor_links
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_removes_ductor_links(tmp_path: Path) -> None:
+    paths, claude_skills, codex_skills = _setup_three_dirs(tmp_path)
+    claude_skills.mkdir(parents=True, exist_ok=True)
+    codex_skills.mkdir(parents=True, exist_ok=True)
+
+    # Simulate ductor-created symlinks (target under ductor skills dir)
+    _make_skill(paths.skills_dir, "from-ductor")
+    (claude_skills / "from-ductor").symlink_to(paths.skills_dir / "from-ductor")
+    (codex_skills / "from-ductor").symlink_to(paths.skills_dir / "from-ductor")
+
+    with patch("ductor_bot.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills, "codex": codex_skills}
+        removed = cleanup_ductor_links(paths)
+
+    assert removed == 2
+    assert not (claude_skills / "from-ductor").exists()
+    assert not (codex_skills / "from-ductor").exists()
+
+
+def test_cleanup_preserves_external_links(tmp_path: Path) -> None:
+    paths, claude_skills, _ = _setup_three_dirs(tmp_path)
+    claude_skills.mkdir(parents=True, exist_ok=True)
+
+    external = tmp_path / "external" / "user-skill"
+    external.mkdir(parents=True)
+    (claude_skills / "user-skill").symlink_to(external)
+
+    with patch("ductor_bot.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills}
+        removed = cleanup_ductor_links(paths)
+
+    assert removed == 0
+    assert (claude_skills / "user-skill").is_symlink()
+
+
+def test_cleanup_preserves_real_dirs(tmp_path: Path) -> None:
+    paths, claude_skills, _ = _setup_three_dirs(tmp_path)
+    _make_skill(claude_skills, "real-skill")
+
+    with patch("ductor_bot.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills}
+        removed = cleanup_ductor_links(paths)
+
+    assert removed == 0
+    assert (claude_skills / "real-skill").is_dir()
+    assert not (claude_skills / "real-skill").is_symlink()
+
+
+def test_cleanup_removes_bundled_links(tmp_path: Path) -> None:
+    """Symlinks pointing to bundled skills dir are also cleaned up."""
+    paths, claude_skills, _ = _setup_three_dirs(tmp_path)
+    claude_skills.mkdir(parents=True, exist_ok=True)
+
+    bundled_skill = _make_skill(paths.bundled_skills_dir, "bundled-one")
+    (claude_skills / "bundled-one").symlink_to(bundled_skill)
+
+    with patch("ductor_bot.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {"claude": claude_skills}
+        removed = cleanup_ductor_links(paths)
+
+    assert removed == 1
+    assert not (claude_skills / "bundled-one").exists()
+
+
+def test_cleanup_no_providers(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    with patch("ductor_bot.workspace.skill_sync._cli_skill_dirs") as mock:
+        mock.return_value = {}
+        removed = cleanup_ductor_links(paths)
+    assert removed == 0
+
+
+# ---------------------------------------------------------------------------
+# Group 13: bundled_skills_dir property
+# ---------------------------------------------------------------------------
+
+
+def test_bundled_skills_dir_property(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    assert paths.bundled_skills_dir == paths.home_defaults / "workspace" / "skills"

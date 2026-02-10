@@ -53,7 +53,7 @@ from ductor_bot.workspace.init import (
     watch_rule_files,
 )
 from ductor_bot.workspace.paths import DuctorPaths, resolve_paths
-from ductor_bot.workspace.skill_sync import watch_skill_sync
+from ductor_bot.workspace.skill_sync import cleanup_ductor_links, watch_skill_sync
 
 logger = logging.getLogger(__name__)
 
@@ -366,6 +366,7 @@ class Orchestrator:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+        await asyncio.to_thread(cleanup_ductor_links, self._paths)
         await self._heartbeat.stop()
         await self._webhook_observer.stop()
         await self._cron_observer.stop()

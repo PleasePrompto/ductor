@@ -1,11 +1,11 @@
 # workspace/
 
-Workspace and home-directory management. Resolves runtime paths, seeds `~/.ductor` from packaged home defaults, syncs rule files, and manages cron task folders.
+Workspace and home-directory management. Resolves runtime paths, seeds `~/.ductor` from packaged home defaults, syncs rule files, injects runtime environment notices, and manages cron task folders.
 
 ## Files
 
 - `paths.py`: immutable `DuctorPaths` + `resolve_paths()`.
-- `init.py`: `init_workspace()`, `_walk_and_copy()` zone rules, rule-file sync, config merge.
+- `init.py`: `init_workspace()`, `_walk_and_copy()` zone rules, required-dir creation, rule-file sync, runtime environment injection, config merge.
 - `loader.py`: safe file readers (`read_file`, `read_mainmemory`).
 - `cron_tasks.py`: create/list/delete cron task mini-workspaces + template render helpers.
 - `skill_sync.py`: cross-platform skill directory sync (see [skill_system](skill_system.md)).
@@ -27,6 +27,7 @@ Important properties (runtime side):
 - `telegram_files_dir`: `~/.ductor/workspace/telegram_files`
 - `output_to_user_dir`: `~/.ductor/workspace/output_to_user`
 - `skills_dir`: `~/.ductor/workspace/skills`
+- `bundled_skills_dir`: `ductor_bot/_home_defaults/workspace/skills` (package-internal, read-only)
 - `mainmemory_path`: `~/.ductor/workspace/memory_system/MAINMEMORY.md`
 
 Template source side:
@@ -37,11 +38,13 @@ Template source side:
 ## `init_workspace()` Flow
 
 1. one-time migration: `workspace/tasks` -> `workspace/cron_tasks`.
-2. sync home defaults (`paths.home_defaults`) into runtime home via `_walk_and_copy()`.
-3. sync `CLAUDE.md` <-> `AGENTS.md` under `paths.workspace`.
-4. shallow config merge with `config.example.json` (`_smart_merge_config`).
-5. remove orphan symlinks in workspace root.
-6. run `sync_skills(paths)` for cross-platform skill directory sync.
+2. link bundled skills from package via `sync_bundled_skills(paths)`.
+3. sync home defaults (`paths.home_defaults`) into runtime home via `_walk_and_copy()` (skips already-symlinked targets).
+4. ensure required directories exist (`workspace/*`, `config/`, `logs/`).
+5. sync `CLAUDE.md` <-> `AGENTS.md` under `paths.workspace`.
+6. shallow config merge with `config.example.json` (`_smart_merge_config`).
+7. remove orphan symlinks in workspace root.
+8. run `sync_skills(paths)` for cross-platform skill directory sync.
 
 This function is intentionally called from both `__main__.py` and `Orchestrator.create()`. Behavior is idempotent and rule-based, so repeated execution is safe.
 
@@ -50,7 +53,8 @@ This function is intentionally called from both `__main__.py` and `Orchestrator.
 - Zone 2 (always overwrite): `CLAUDE.md`, `AGENTS.md`.
 - Zone 3 (seed once): all other files copied only if missing.
 - Special rule: copied `CLAUDE.md` also auto-copies to sibling `AGENTS.md`.
-- skips hidden/ignored dirs (`.venv`, `.git`, `.mypy_cache`, `__pycache__`, `node_modules`).
+- Skips targets that are already symlinks (preserves bundled skill links).
+- Skips hidden/ignored dirs (`.venv`, `.git`, `.mypy_cache`, `__pycache__`, `node_modules`).
 
 ## Rule Sync
 
@@ -61,6 +65,15 @@ This function is intentionally called from both `__main__.py` and `Orchestrator.
 - both exist -> newer file (mtime) overwrites older file
 
 `watch_rule_files(workspace, interval=10s)` runs this continuously in background.
+
+## Runtime Environment Injection
+
+`inject_runtime_environment(paths, docker_container=...)` appends a runtime notice to `workspace/CLAUDE.md` and `workspace/AGENTS.md`:
+
+- Docker mode: informs the agent it runs inside container with `/ductor` mount.
+- Host mode: warns the agent it runs directly on host system.
+
+Injection is idempotent (`"## Runtime Environment"` marker check).
 
 ## Cron Task Workspaces (`cron_tasks.py`)
 

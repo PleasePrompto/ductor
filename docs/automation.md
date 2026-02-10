@@ -1,14 +1,15 @@
 # Automation quickstart
 
-ductor can do things without you typing. There are three systems for that, and they work differently.
+ductor can do things without you typing. There are four background systems, and they work differently.
 
 | System | Trigger | What runs | Where it runs |
 |---|---|---|---|
-| **Cron jobs** | Time (schedule) | Isolated subagent | Own workspace folder |
-| **Webhooks** | HTTP request (event) | Main agent *or* subagent | Active chat *or* own folder |
+| **Cron jobs** | Time (schedule) | Context-isolated subagent | Own workspace folder |
+| **Webhooks** | HTTP request (event) | Main agent *or* context-isolated subagent | Active chat *or* own folder |
 | **Heartbeat** | Timer (periodic) | Main agent | Active chat session |
+| **Cleanup** | Daily maintenance window | Retention cleanup | `telegram_files/` + `output_to_user/` |
 
-All three post results into your Telegram chat.
+Cron, webhook, and heartbeat systems post results into Telegram. Cleanup runs silently.
 
 ---
 
@@ -34,12 +35,14 @@ You can also be more specific:
 
 ### What happens when a cron job runs
 
-ductor starts a fresh agent session inside the task folder. This subagent is completely isolated:
+ductor starts a fresh agent session inside the task folder. This subagent is context-isolated:
 
-- It can only see its own folder
 - It has no access to your main conversation
 - It has no access to your main memory
 - It has its own memory file that persists between runs
+- It starts in its own task folder (`workspace/cron_tasks/<task_folder>`)
+
+Filesystem hard-isolation depends on your execution mode (`docker.enabled` / provider permissions). Without sandboxing, the CLI can still access host files.
 
 ```
 ~/.ductor/workspace/cron_tasks/weather-report/
@@ -82,7 +85,7 @@ Webhooks let external services trigger your agent. GitHub pushes, Stripe payment
 
 **Wake mode** - injects a message into your active chat session, as if you typed it yourself. Your main agent handles it with full context and memory.
 
-**Cron task mode** - runs an isolated subagent in a task folder, just like a cron job. The subagent has no access to your main conversation.
+**Cron task mode** - runs a context-isolated subagent in a task folder, just like a cron job. The subagent has no access to your main conversation.
 
 ### How to create one
 
@@ -91,10 +94,10 @@ Tell the agent:
 > "Create a webhook that listens for GitHub push events and tells me what changed"
 
 The agent will:
-1. Create the webhook entry with a unique ID and auto-generated bearer token
+1. Create the webhook entry with a unique ID and auth mode (`bearer` or `hmac`)
 2. Pick the right mode (wake for notifications, cron_task for heavier processing)
 3. Set up a prompt template
-4. Tell you the endpoint URL and auth token
+4. Tell you the endpoint URL and required auth details
 
 ### Wake mode in practice
 
@@ -129,7 +132,7 @@ If a field is missing from the payload, it shows as `{{?field}}` instead of cras
 
 Each webhook has its own auth. Two options:
 
-- **Bearer token** (default) - auto-generated per hook. Send it in the `Authorization: Bearer <token>` header
+- **Bearer token** (default) - validates hook token (or global `webhooks.token` fallback). Send it in `Authorization: Bearer <token>`
 - **HMAC** - for services like GitHub that sign payloads. Supports SHA-256, SHA-1, SHA-512
 
 ### Exposing webhooks to the internet
@@ -177,7 +180,7 @@ Heartbeat is off by default. Tell the agent to turn it on, or edit your config:
     "enabled": true,
     "interval_minutes": 30,
     "cooldown_minutes": 5,
-    "quiet_start": 22,
+    "quiet_start": 21,
     "quiet_end": 8,
     "prompt": "Check if there's anything worth bringing up."
   }
@@ -209,6 +212,22 @@ The prompt runs inside your active session, so the agent has access to everythin
 
 ---
 
+## Cleanup - automatic file retention
+
+ductor runs a daily cleanup pass for downloaded Telegram files and generated output files.
+
+How it works:
+
+1. Every hour, ductor checks local time in `user_timezone`
+2. At `cleanup.check_hour` (default: `3`), it runs once per day
+3. It deletes top-level files older than:
+   - `cleanup.telegram_files_days` (default: `30`) in `workspace/telegram_files/`
+   - `cleanup.output_to_user_days` (default: `30`) in `workspace/output_to_user/`
+
+Cleanup is non-recursive: subdirectories are left untouched.
+
+---
+
 ## Configuration overview
 
 All automation settings live in `~/.ductor/config/config.json`:
@@ -221,8 +240,15 @@ All automation settings live in `~/.ductor/config/config.json`:
     "enabled": false,
     "interval_minutes": 30,
     "cooldown_minutes": 5,
-    "quiet_start": 22,
+    "quiet_start": 21,
     "quiet_end": 8
+  },
+
+  "cleanup": {
+    "enabled": true,
+    "telegram_files_days": 30,
+    "output_to_user_days": 30,
+    "check_hour": 3
   },
 
   "webhooks": {

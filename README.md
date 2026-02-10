@@ -78,8 +78,9 @@ I picked Python because it's easy to modify. The agents can write their own auto
 ### Automation
 
 - **Cron jobs** -recurring tasks with cron expressions and timezone support. Each job runs as its own subagent with a dedicated workspace and memory file
-- **Webhooks** -HTTP endpoints with Bearer or HMAC auth. Two modes: *wake* injects a prompt into your active chat, *cron_task* runs an isolated task. Works with GitHub, Stripe, or anything that sends POST
+- **Webhooks** -HTTP endpoints with Bearer or HMAC auth. Two modes: *wake* injects a prompt into your active chat, *cron_task* runs a separate task session. Works with GitHub, Stripe, or anything that sends POST
 - **Heartbeat** -the agent checks in periodically during active sessions. Quiet hours respected
+- **Cleanup** -daily retention cleanup for `telegram_files/` and `output_to_user/`
 
 #### Example: a cron job
 
@@ -95,7 +96,7 @@ ductor creates a task folder with everything the subagent needs:
     scripts/               # Helper scripts if needed
 ```
 
-At 8:00 every morning, ductor starts a fresh session in that folder. The subagent reads the task, does the work, writes what it learned to memory, and posts the result to your chat. Fully isolated from your main conversation.
+At 8:00 every morning, ductor starts a fresh session in that folder. The subagent reads the task, does the work, writes what it learned to memory, and posts the result to your chat. It is context-isolated from your main conversation and memory.
 
 #### Example: a webhook wake call
 
@@ -108,9 +109,9 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 
 ### Infrastructure
 
-- `ductor service install` -systemd on Linux, launchd on macOS, Task Scheduler for WSL. Starts on boot, restarts on crash
+- `ductor service install` -Linux systemd user service (start on boot, restart on crash)
 - Docker sandbox (Debian Bookworm) -both CLIs have full filesystem access by default, so a container keeps your host safe
-- `/upgrade` checks PyPI and updates in one step. Automatic restart
+- `/upgrade` checks PyPI, offers in-chat upgrade, then restarts automatically on success
 - Supervisor with PID lock. Exit code 42 triggers restart
 - Prompt injection detection, path traversal checks, per-user allowlist
 
@@ -120,7 +121,9 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 - New config fields merge automatically on upgrade
 - `/diagnose` dumps recent logs, `/status` shows session stats
 - `/stop` terminates the agent and discards all queued messages, `/new` clears the session
+- `/showfiles` lets you browse `~/.ductor/` as a clickable file tree inside Telegram
 - Messages sent while the agent is working show `[Message in queue...]` with a cancel button
+- Bundled skills (e.g. `skill-creator`) are symlinked into the workspace and stay current with the installed version
 
 ## Prerequisites
 
@@ -155,6 +158,7 @@ Orchestrator
     ├── CronObserver -> Scheduled task execution
     ├── HeartbeatObserver -> Periodic background checks
     ├── WebhookObserver -> HTTP endpoint server
+    ├── CleanupObserver -> Daily file retention cleanup
     └── UpdateObserver -> PyPI version check
     |
     v
@@ -180,6 +184,8 @@ Everything lives in `~/.ductor/`.
         memory_system/
             MAINMEMORY.md        # The agent's long-term memory about you
         cron_tasks/              # One subfolder per scheduled job
+        skills/
+            skill-creator/       # Bundled skill (symlinked from package)
         tools/
             cron_tools/          # Add, edit, remove, list cron jobs
             webhook_tools/       # Add, edit, remove, test webhooks
@@ -199,7 +205,7 @@ Config lives in `~/.ductor/config/config.json`. The wizard creates it on first r
 ductor  # wizard creates config interactively
 ```
 
-Key fields: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), `default_model`, `docker.enabled`, `user_timezone`. Full schema in [docs/config.md](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md).
+Key fields: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), `model`, `docker.enabled`, `user_timezone`, `cleanup`. Full schema in [docs/config.md](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md).
 
 ## Commands
 
@@ -212,7 +218,9 @@ Key fields: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), 
 | `/status` | Session info, tokens, cost, auth status |
 | `/memory` | View persistent memory |
 | `/cron` | List scheduled tasks |
-| `/upgrade` | Check for updates and upgrade |
+| `/showfiles` | Browse `~/.ductor/` as an interactive file tree |
+| `/info` | Project links and version info |
+| `/upgrade` | Check for updates and show upgrade prompt |
 | `/restart` | Restart the bot |
 | `/diagnose` | Show recent log output |
 | `/help` | Command reference |

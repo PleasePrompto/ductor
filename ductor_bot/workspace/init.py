@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 
 from ductor_bot.workspace.paths import DuctorPaths
-from ductor_bot.workspace.skill_sync import sync_skills
+from ductor_bot.workspace.skill_sync import sync_bundled_skills, sync_skills
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,9 @@ def _walk_and_copy(src: Path, dst: Path) -> None:
             continue
         target = dst / entry.name
         if entry.is_dir():
+            if target.is_symlink():
+                logger.debug("Skip symlinked target: %s", target)
+                continue
             _walk_and_copy(entry, target)
         elif entry.name in _ZONE2_FILES:
             # Zone 2: always overwrite (framework-controlled)
@@ -212,6 +215,7 @@ def init_workspace(paths: DuctorPaths) -> None:
     """Initialize the workspace: defaults sync, rule sync, config merge, cleanup."""
     logger.info("Workspace init started home=%s", paths.ductor_home)
     _migrate_tasks_to_cron_tasks(paths)
+    sync_bundled_skills(paths)
     _sync_home_defaults(paths)
     _ensure_required_dirs(paths)
     sync_rule_files(paths.workspace)

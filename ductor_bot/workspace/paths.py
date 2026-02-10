@@ -96,6 +96,11 @@ class DuctorPaths:
         return self.workspace / "skills"
 
     @property
+    def bundled_skills_dir(self) -> Path:
+        """Package-internal skill directory (read-only, ships with ductor)."""
+        return self.home_defaults / "workspace" / "skills"
+
+    @property
     def mainmemory_path(self) -> Path:
         return self.memory_system_dir / "MAINMEMORY.md"
 

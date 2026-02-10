@@ -1,6 +1,6 @@
 # orchestrator/
 
-Routing layer between Telegram bot UI and CLI providers. Owns command dispatch, directive parsing, session flow orchestration, hooks, model switching, and cron/heartbeat/webhook wiring.
+Routing layer between Telegram bot UI and CLI providers. Owns command dispatch, directive parsing, session flow orchestration, hooks, model switching, and cron/heartbeat/webhook/cleanup wiring.
 
 ## Files
 
@@ -17,12 +17,16 @@ Routing layer between Telegram bot UI and CLI providers. Owns command dispatch, 
 1. Resolve paths from configured `ductor_home`.
 2. `init_workspace(paths)` in thread.
 3. Set `DUCTOR_HOME` env var.
-4. Check provider auth (`check_all_auth`).
-5. Set authenticated providers in `CLIService`.
-6. Start `CronObserver`.
-7. Start `HeartbeatObserver`.
-8. Start `WebhookObserver`.
-9. Start rule-sync task (`watch_rule_files(paths.workspace)`).
+4. If Docker is enabled: `DockerManager.setup()` and container fallback wiring.
+5. Inject runtime environment notice into workspace rule files (`inject_runtime_environment`).
+6. Check provider auth (`check_all_auth`).
+7. Set authenticated providers in `CLIService`.
+8. Start `CronObserver`.
+9. Start `HeartbeatObserver`.
+10. Start `WebhookObserver`.
+11. Start `CleanupObserver`.
+12. Start rule-sync task (`watch_rule_files(paths.workspace)`).
+13. Start skill-sync task (`watch_skill_sync(paths)`).
 
 ## Routing Entry Points
 
@@ -84,7 +88,7 @@ If a message is only a model directive (`@sonnet` with no prompt text), orchestr
 
 `normal_streaming()`:
 
-- run `CLIService.execute_streaming()` with `on_system_status` callback for compaction display.
+- run `CLIService.execute_streaming()` with `on_system_status` callback for system indicators (`thinking`, `compacting`, clear).
 - same resume-failure retry behavior as `normal()`.
 - on final error: kill processes + reset session.
 
@@ -149,8 +153,8 @@ Wake execution itself stays in bot layer (`TelegramBot._handle_webhook_wake`) so
 
 1. Calls `check_pypi()` for latest version info.
 2. If unreachable: returns error message.
-3. If already up to date: shows installed/latest versions.
-4. If update available: shows version diff + package summary + inline keyboard (`upg:yes:<version>` / `upg:no`).
+3. Shows changelog button (`upg:cl:<version>`), even when already up to date.
+4. If update available: shows version diff + inline keyboard (`upg:yes:<version>` / `upg:no`).
 
 Callback handling is in `TelegramBot` (bot layer), not orchestrator.
 
@@ -159,6 +163,10 @@ Callback handling is in `TelegramBot` (bot layer), not orchestrator.
 `Orchestrator.shutdown()`:
 
 1. cancel and await rule-sync task,
-2. stop heartbeat observer,
-3. stop webhook observer,
-4. stop cron observer.
+2. cancel and await skill-sync task,
+3. stop heartbeat observer,
+4. stop webhook observer,
+5. stop cron observer,
+6. stop cleanup observer,
+7. cleanup ductor-created symlinks from CLI skill directories (`cleanup_ductor_links`),
+8. teardown Docker container (if managed by this orchestrator instance).

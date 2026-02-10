@@ -38,7 +38,7 @@ async def test_new_command(orch: Orchestrator) -> None:
     mock_kill = AsyncMock(return_value=0)
     object.__setattr__(orch._process_registry, "kill_all", mock_kill)
     result = await orch.handle_message(1, "/new")
-    assert "fresh session" in result.text.lower()
+    assert "session reset" in result.text.lower()
     mock_kill.assert_called_once_with(1)
 
 

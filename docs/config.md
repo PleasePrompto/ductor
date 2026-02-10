@@ -21,7 +21,7 @@ Config is merged in two places:
    - preserves existing user top-level keys,
    - only fills missing top-level keys from `config.example.json`.
 
-Runtime edits from `/model` and webhook token auto-generation are persisted via `update_config_file_async()`.
+Runtime edits from `/model` switches (model/provider/reasoning) and webhook token auto-generation are persisted via `update_config_file_async()`.
 
 ## `AgentConfig` (`ductor_bot/config.py`)
 
@@ -34,7 +34,7 @@ Runtime edits from `/model` and webhook token auto-generation are persisted via 
 | `idle_timeout_minutes` | `int` | `1440` | Session freshness timeout (`0` = never expires, only `/new` resets) |
 | `session_age_warning_hours` | `int` | `12` | Show `/new` reminder every 10th message after this age (`0` = disabled) |
 | `daily_reset_hour` | `int` | `4` | Session daily reset boundary (in `user_timezone`) |
-| `user_timezone` | `str` | `""` | IANA timezone (e.g. `"Europe/Berlin"`). Affects cron scheduling, daily session reset, and heartbeat quiet hours. Fallback: host system TZ, then UTC. |
+| `user_timezone` | `str` | `""` | IANA timezone (e.g. `"Europe/Berlin"`). Affects cron scheduling, daily session reset, heartbeat quiet hours, and cleanup check hour. Fallback: host system TZ, then UTC. |
 | `max_budget_usd` | `float \| None` | `None` | Passed to Claude CLI |
 | `max_turns` | `int \| None` | `None` | Passed to Claude CLI |
 | `max_session_messages` | `int \| None` | `None` | Session rollover limit |
@@ -47,6 +47,7 @@ Runtime edits from `/model` and webhook token auto-generation are persisted via 
 | `streaming` | `StreamingConfig` | see below | Streaming tuning |
 | `docker` | `DockerConfig` | see below | Docker sidecar config |
 | `heartbeat` | `HeartbeatConfig` | see below | Background heartbeat config |
+| `cleanup` | `CleanupConfig` | see below | Daily file-retention cleanup |
 | `webhooks` | `WebhookConfig` | see below | Webhook HTTP server config |
 
 ## `StreamingConfig`
@@ -71,7 +72,7 @@ Runtime edits from `/model` and webhook token auto-generation are persisted via 
 | `container_name` | `str` | `"ductor-sandbox"` |
 | `auto_build` | `bool` | `true` |
 
-`DockerManager` exists, but default runtime startup does not automatically call `DockerManager.setup()`. CLI calls run on host unless `docker_container` is explicitly wired.
+`Orchestrator.create()` calls `DockerManager.setup()` when `docker.enabled=true`. If setup fails, ductor logs a warning and falls back to host execution.
 
 ## `HeartbeatConfig`
 
@@ -84,6 +85,15 @@ Runtime edits from `/model` and webhook token auto-generation are persisted via 
 | `quiet_end` | `int` | `8` | Quiet end hour (in `user_timezone`, exclusive) |
 | `prompt` | `str` | default prompt | Sent as heartbeat message |
 | `ack_token` | `str` | `"HEARTBEAT_OK"` | Suppression token |
+
+## `CleanupConfig`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `true` | Master toggle |
+| `telegram_files_days` | `int` | `30` | Retention for top-level files in `workspace/telegram_files/` |
+| `output_to_user_days` | `int` | `30` | Retention for top-level files in `workspace/output_to_user/` |
+| `check_hour` | `int` | `3` | Local hour in `user_timezone` when cleanup can run |
 
 ## `WebhookConfig`
 
@@ -132,6 +142,7 @@ Returns a `zoneinfo.ZoneInfo` instance. Used by:
 - `CronObserver._schedule_job()` for cron expression interpretation.
 - `SessionManager._is_fresh()` for `daily_reset_hour` boundary.
 - `HeartbeatObserver._tick()` for quiet-hour evaluation.
+- `CleanupObserver._maybe_run()` for daily cleanup window.
 
 Per-job override: `CronJob.timezone` takes precedence over global `user_timezone` when set.
 

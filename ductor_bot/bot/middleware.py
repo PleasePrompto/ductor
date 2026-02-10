@@ -35,7 +35,9 @@ AbortHandler = Callable[[int, "Message"], Awaitable[bool]]
 QuickCommandHandler = Callable[[int, "Message"], Awaitable[bool]]
 """Async callback for read-only commands that bypass the per-chat lock."""
 
-QUICK_COMMANDS: frozenset[str] = frozenset({"/status", "/memory", "/cron", "/diagnose", "/model"})
+QUICK_COMMANDS: frozenset[str] = frozenset(
+    {"/status", "/memory", "/cron", "/diagnose", "/model", "/showfiles"}
+)
 
 MQ_PREFIX = "mq:"
 """Callback data prefix for message queue cancel buttons."""

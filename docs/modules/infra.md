@@ -1,13 +1,15 @@
 # infra/
 
-Process/runtime infrastructure: PID locking, restart signaling, Docker sandbox helper, version checking, auto-update observer, and supervisor loop.
+Process/runtime infrastructure: PID locking, restart signaling, Docker sandbox helper, install-mode detection, service management, version checking, auto-update observer, and supervisor loop.
 
 ## Files
 
 - `pidlock.py`: single-instance lock with optional kill-existing behavior.
 - `restart.py`: restart sentinel/marker helpers + `EXIT_RESTART = 42`.
 - `docker.py`: `DockerManager` for optional persistent sidecar container.
-- `version.py`: PyPI version check, `VersionInfo` model, installed version detection.
+- `install.py`: installation mode detection (`pipx` / `pip` / `dev`).
+- `service.py`: Linux systemd user-service install/start/stop/logs/uninstall.
+- `version.py`: PyPI version check, GitHub changelog fetch, `VersionInfo` model, installed version detection.
 - `updater.py`: `UpdateObserver` background task, `perform_upgrade()`, upgrade sentinel read/write.
 - `ductor_bot/run.py`: supervisor (hot reload + crash recovery).
 - `run.py` (repo root): thin wrapper calling `ductor_bot.run.main()`.
@@ -46,16 +48,17 @@ Usage:
 1. verify docker binary and daemon,
 2. verify image or build (if `auto_build=true`),
 3. reuse or start configured container,
-4. mount workspace and available auth directories.
+4. mount `~/.ductor` into container as `/ductor` and mount available auth directories (`~/.claude`, `~/.codex`) when present.
 
 `teardown()` stops and removes container.
 
-Note: default startup path does not automatically wire `DockerManager.setup()` into CLI execution.
+`Orchestrator.create()` calls `DockerManager.setup()` when `docker.enabled=true`. If setup fails, orchestration continues in host-execution mode with warning logs.
 
 ## Version Check (`version.py`)
 
 - `get_current_version()`: returns installed version via `importlib.metadata.version("ductor")`, falls back to `"0.0.0"`.
 - `check_pypi()`: async HTTP GET to `https://pypi.org/pypi/ductor/json`, returns `VersionInfo(current, latest, update_available, summary)` or `None` on failure.
+- `fetch_changelog(version)`: async fetch from GitHub Releases (`v<version>` tag fallback to `<version>`).
 - Version comparison: dotted string parsed to int tuple via `_parse_version()`.
 
 ## Update Observer (`updater.py`)

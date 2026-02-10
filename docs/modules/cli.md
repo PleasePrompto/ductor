@@ -55,8 +55,9 @@ Codex streaming additionally applies `CodexThinkingFilter`: assistant text emitt
 1. consume provider stream events via `_StreamCallbacks` dispatcher,
 2. forward text deltas, tool events, and system status through callbacks,
 3. `SystemStatusEvent` -> `on_system_status` callback (compaction indicator),
-4. `CompactBoundaryEvent` -> logged at INFO level + `on_system_status(None)` to clear indicator,
-5. capture final `ResultEvent`.
+4. `ThinkingEvent` -> `on_system_status("thinking")`,
+5. `CompactBoundaryEvent` -> logged at INFO level + `on_system_status(None)` to clear indicator,
+6. capture final `ResultEvent`.
 
 Fallback handling:
 

@@ -8,11 +8,13 @@ Telegram Update
   -> AuthMiddleware (allowlist)
   -> SequentialMiddleware (message updates only)
        - /stop or bare abort keyword: kill active CLI process(es) + drain pending queue
-       - quick command (/status /memory /cron /diagnose /model): lock bypass
+       - quick command (/status /memory /cron /diagnose /model /showfiles): lock bypass
        - otherwise: dedupe + per-chat lock (with queue tracking when lock is held)
   -> TelegramBot handler
        - /start -> welcome screen (+ quick-start buttons)
        - /help -> command reference
+       - /info -> links/version panel (URL inline buttons)
+       - /showfiles -> interactive file browser (sf: / sf! callbacks)
        - /restart -> restart sentinel + exit 42
        - /new /stop -> direct session/process handlers
        - normal text/media -> Orchestrator
@@ -29,6 +31,7 @@ Also running in background:
 - `CronObserver`: schedules `cron_jobs.json` entries.
 - `HeartbeatObserver`: periodic checks in existing sessions.
 - `WebhookObserver`: HTTP ingress for external triggers.
+- `CleanupObserver`: daily retention cleanup for Telegram file directories.
 - `UpdateObserver`: periodic PyPI version check + Telegram notification (upgradeable installs only).
 - rule-sync task: keeps `CLAUDE.md` and `AGENTS.md` mirrored.
 - skill-sync task: three-way symlink sync between `~/.ductor/workspace/skills/`, `~/.claude/skills/`, and `~/.codex/skills/` (30s interval).
@@ -66,13 +69,16 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 1. Resolve paths from `ductor_home`.
 2. Run `init_workspace(paths)` in a worker thread.
 3. Set `DUCTOR_HOME` env var.
-4. Check provider auth (`check_all_auth`).
-5. Set authenticated provider set in `CLIService`.
-6. Start `CronObserver`.
-7. Start `HeartbeatObserver`.
-8. Start `WebhookObserver`.
-9. Start `watch_rule_files(paths.workspace)` task.
-10. Start `watch_skill_sync(paths)` task.
+4. If Docker is enabled: `DockerManager.setup()` and container recovery wiring.
+5. Inject runtime environment notice into workspace rule files (`inject_runtime_environment`).
+6. Check provider auth (`check_all_auth`).
+7. Set authenticated provider set in `CLIService`.
+8. Start `CronObserver`.
+9. Start `HeartbeatObserver`.
+10. Start `WebhookObserver`.
+11. Start `CleanupObserver`.
+12. Start `watch_rule_files(paths.workspace)` task.
+13. Start `watch_skill_sync(paths)` task.
 
 `init_workspace()` is called in both `__main__.py` and `Orchestrator.create()`; this is safe because initialization is idempotent and rule-driven.
 
@@ -80,10 +86,11 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 
 ### Command ownership
 
-- Bot-level handlers: `/start`, `/help`, `/stop`, `/restart`, `/new`.
+- Bot-level handlers: `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/restart`, `/new`.
 - Orchestrator command registry: `/new`, `/stop`, `/status`, `/model`, `/memory`, `/cron`, `/diagnose`, `/upgrade`.
 - In regular chat usage, `/status`, `/memory`, `/model`, `/cron`, `/diagnose`, `/upgrade` are routed via `handle_command()`.
-- Quick-command bypass in middleware applies to `/status`, `/memory`, `/cron`, `/diagnose`, and `/model`.
+- Quick-command bypass in middleware applies to `/status`, `/memory`, `/cron`, `/diagnose`, `/model`, and `/showfiles`.
+- `/showfiles` is handled directly in the quick-command path (no orchestrator needed).
 - `/model` bypass has a busy-check: when agent is active or messages are queued, it returns an immediate "agent is working" message instead of the model wizard.
 
 ### Directives (`ductor_bot/orchestrator/directives.py`)
@@ -122,7 +129,9 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 3. Orchestrator callbacks:
    - text delta -> `coalescer.feed(...)`
    - tool event -> `coalescer.flush(force=True)` + tool indicator
-   - system status -> compaction display (`[COMPACTING: Context full, conversation is compacting...]`)
+   - system status:
+     - `"thinking"` -> `[THINKING]`
+     - `"compacting"` -> `[COMPACTING]`
 4. Finalization:
    - flush remaining buffered text,
    - `editor.finalize(full_text)` to attach buttons,
@@ -143,10 +152,14 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 1. `answer()` callback query.
 2. Welcome shortcut callbacks (`w:*`) are expanded to full prompt text.
 3. Queue cancel callbacks (`mq:*`) cancel a specific pending message via `SequentialMiddleware.cancel_entry()`.
-4. Upgrade callbacks (`upg:*`) run upgrade flow (`upg:yes:<version>` -> upgrade + restart, `upg:no` -> dismiss).
+4. Upgrade callbacks (`upg:*`) run upgrade flow:
+   - `upg:cl:<version>` -> fetch and send changelog
+   - `upg:yes:<version>` -> upgrade + restart
+   - `upg:no` -> dismiss
 5. If callback data starts with `ms:` -> route to model selector wizard and edit message in place.
-6. Otherwise:
-   - remove keyboard from original message,
+6. If callback data starts with `sf:` or `sf!` -> route to file browser: `sf:` navigates directories (edit message in place), `sf!` sends file-request prompt to orchestrator.
+7. Otherwise:
+   - append `[USER ANSWER] ...` to the button message when possible (fallback: remove keyboard),
    - acquire per-chat lock via `SequentialMiddleware.get_lock(chat_id)`,
    - route callback data as a new message through orchestrator,
    - send response via streaming or non-streaming path.
@@ -204,6 +217,15 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 7. Record trigger count and error status in `webhooks.json`.
 8. Result callback receives `WebhookResult`; bot forwards only `cron_task` results (`wake` is already sent by wake handler).
 
+### Cleanup Flow
+
+1. `CleanupObserver.start()` runs when `cleanup.enabled=true`.
+2. Every hour it checks local hour in `user_timezone`.
+3. If current hour matches `cleanup.check_hour` and cleanup did not run today:
+   - delete top-level files older than `cleanup.telegram_files_days` in `workspace/telegram_files/`,
+   - delete top-level files older than `cleanup.output_to_user_days` in `workspace/output_to_user/`.
+4. Cleanup is non-recursive by design (subdirectories are left untouched).
+
 ## Restart & Supervisor
 
 ### In-process restart triggers
@@ -242,6 +264,6 @@ Copy rules in `ductor_bot/workspace/init.py` (`_walk_and_copy`):
 ## Core Design Trade-offs
 
 - JSON files over DB: transparent and easy to debug, but no query/transaction layer.
-- In-process cron/heartbeat/webhook: simple deployment, lifecycle tied to bot process.
+- In-process cron/heartbeat/webhook/cleanup: simple deployment, lifecycle tied to bot process.
 - Per-chat lock with queue tracking: prevents race conditions and duplicate execution, limits chat-level parallelism. Pending messages are tracked with visual indicators and individual cancel buttons. `/stop` drains the entire queue.
 - Streaming with coalescing and edit mode: better UX with controlled message churn.

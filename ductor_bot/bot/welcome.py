@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from ductor_bot.bot.response_format import SEP
+
 if TYPE_CHECKING:
     from ductor_bot.cli.auth import AuthResult
     from ductor_bot.config import AgentConfig
@@ -51,9 +53,9 @@ def build_welcome_text(
         f"**Welcome to ductor.dev{name}!**\n\n"
         "Deploy from your pocket. Automate from your couch.\n"
         "Claude Code & OpenAI Codex -- straight from Telegram.\n\n"
-        "\u2500\u2500\u2500\n\n"
+        f"{SEP}\n\n"
         f"{auth_block}\n\n"
-        "\u2500\u2500\u2500\n\n"
+        f"{SEP}\n\n"
         "/model \u2014 switch models\n"
         "/info \u2014 docs & links\n"
         "/help \u2014 all commands"

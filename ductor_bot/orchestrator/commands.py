@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from ductor_bot.bot.response_format import NEW_SESSION_TEXT, SEP, fmt, stop_text
 from ductor_bot.cli.auth import check_all_auth
-from ductor_bot.infra.version import check_pypi
+from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.model_selector import model_selector_start, switch_model
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.workspace.loader import read_mainmemory
@@ -29,19 +30,14 @@ async def cmd_reset(orch: Orchestrator, chat_id: int, _text: str) -> Orchestrato
     logger.info("Reset requested")
     await orch._process_registry.kill_all(chat_id)
     await orch._sessions.reset_session(chat_id)
-    return OrchestratorResult(text="**Fresh session.** Everything cleared -- ready to go.")
+    return OrchestratorResult(text=NEW_SESSION_TEXT)
 
 
 async def cmd_stop(orch: Orchestrator, chat_id: int, _text: str) -> OrchestratorResult:
     """Handle /stop: kill all active processes."""
     logger.info("Stop requested")
     killed = await orch._process_registry.kill_all(chat_id)
-    if killed:
-        provider = orch.active_provider_name
-        return OrchestratorResult(
-            text=f"**{provider} has been terminated!** All queued messages will be discarded.",
-        )
-    return OrchestratorResult(text="Nothing running right now.")
+    return OrchestratorResult(text=stop_text(bool(killed), orch.active_provider_name))
 
 
 async def cmd_status(orch: Orchestrator, chat_id: int, _text: str) -> OrchestratorResult:
@@ -68,9 +64,23 @@ async def cmd_memory(orch: Orchestrator, _chat_id: int, _text: str) -> Orchestra
     content = await asyncio.to_thread(read_mainmemory, orch.paths)
     if not content.strip():
         return OrchestratorResult(
-            text="**Main Memory**\n\nEmpty. The agent will start building memory as you interact.",
+            text=fmt(
+                "**Main Memory**",
+                SEP,
+                "Empty. The agent will build memory as you interact.",
+                SEP,
+                '*Tip: Ask your agent to "remember" something to get started.*',
+            ),
         )
-    return OrchestratorResult(text=f"**Main Memory**\n\n{content}")
+    return OrchestratorResult(
+        text=fmt(
+            "**Main Memory**",
+            SEP,
+            content,
+            SEP,
+            "*Tip: The agent reads and updates this automatically.*",
+        ),
+    )
 
 
 async def cmd_cron(orch: Orchestrator, _chat_id: int, _text: str) -> OrchestratorResult:
@@ -79,14 +89,28 @@ async def cmd_cron(orch: Orchestrator, _chat_id: int, _text: str) -> Orchestrato
     jobs = orch._cron_manager.list_jobs()
     if not jobs:
         return OrchestratorResult(
-            text="**Scheduled Tasks**\n\nNo cron jobs configured yet.",
+            text=fmt(
+                "**Scheduled Tasks**",
+                SEP,
+                "No cron jobs configured.",
+                SEP,
+                '*Ask your agent: "Run a backup check every day at 9am"*',
+            ),
         )
-    lines = ["**Scheduled Tasks**", ""]
+    job_lines: list[str] = []
     for j in jobs:
         status = f" [{j.last_run_status}]" if j.last_run_status else ""
         enabled = "" if j.enabled else " (disabled)"
-        lines.append(f"  `{j.schedule}` -- {j.title}{enabled}{status}")
-    return OrchestratorResult(text="\n".join(lines))
+        job_lines.append(f"  `{j.schedule}` -- {j.title}{enabled}{status}")
+    return OrchestratorResult(
+        text=fmt(
+            "**Scheduled Tasks**",
+            SEP,
+            "\n".join(job_lines),
+            SEP,
+            "*Manage jobs by asking your agent to add, edit, or remove them.*",
+        ),
+    )
 
 
 async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> OrchestratorResult:
@@ -97,10 +121,11 @@ async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
 
     if detect_install_mode() == "dev":
         return OrchestratorResult(
-            text=(
-                "**Running from source**\n\n"
+            text=fmt(
+                "**Running From Source**",
+                SEP,
                 "Self-upgrade is not available for development installs.\n"
-                "Update with `git pull` in your project directory."
+                "Update with `git pull` in your project directory.",
             ),
         )
 
@@ -123,11 +148,12 @@ async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
             ],
         )
         return OrchestratorResult(
-            text=(
-                f"**Already up to date**\n\n"
+            text=fmt(
+                "**Already Up to Date**",
+                SEP,
                 f"Installed: `{info.current}`\n"
                 f"Latest:    `{info.latest}`\n\n"
-                f"You're running the latest version."
+                "You're running the latest version.",
             ),
             reply_markup=keyboard,
         )
@@ -150,11 +176,10 @@ async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
     )
 
     return OrchestratorResult(
-        text=(
-            f"**Update available**\n\n"
-            f"Installed: `{info.current}`\n"
-            f"New:       `{info.latest}`\n\n"
-            f"Upgrade now?"
+        text=fmt(
+            "**Update Available**",
+            SEP,
+            f"Installed: `{info.current}`\nNew:       `{info.latest}`\n\nUpgrade now?",
         ),
         reply_markup=keyboard,
     )
@@ -163,17 +188,21 @@ async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
 async def cmd_diagnose(orch: Orchestrator, _chat_id: int, _text: str) -> OrchestratorResult:
     """Handle /diagnose."""
     logger.info("Diagnose requested")
-    sections: list[str] = ["**System Diagnostics**", ""]
+    version = get_current_version()
+    info_block = (
+        f"Version: `{version}`\nProvider: {orch._config.provider}\nModel: {orch._config.model}"
+    )
 
     log_path = orch.paths.logs_dir / "agent.log"
     log_tail = await _read_log_tail(log_path)
     if log_tail:
-        sections.append("Recent logs (last 50 lines):")
-        sections.append(f"```\n{log_tail}\n```")
+        log_block = f"Recent logs (last 50 lines):\n```\n{log_tail}\n```"
     else:
-        sections.append("No log file found.")
+        log_block = "No log file found."
 
-    return OrchestratorResult(text="\n".join(sections))
+    return OrchestratorResult(
+        text=fmt("**System Diagnostics**", SEP, info_block, SEP, log_block),
+    )
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -187,19 +216,20 @@ async def _build_status(orch: Orchestrator, chat_id: int) -> str:
             f"Session: `{session.session_id[:8]}...`\n"
             f"Messages: {session.message_count}\n"
             f"Tokens: {session.total_tokens:,}\n"
-            f"Cost: ${session.total_cost_usd:.4f}"
+            f"Cost: ${session.total_cost_usd:.4f}\n"
+            f"Model: {orch._config.model}"
         )
     else:
-        session_block = "No active session."
+        session_block = f"No active session.\nModel: {orch._config.model}"
 
     auth = await asyncio.to_thread(check_all_auth)
     auth_lines: list[str] = []
     for provider, result in auth.items():
         age = f" ({result.age_human})" if result.age_human else ""
         auth_lines.append(f"  [{provider}] {result.status.value}{age}")
-    auth_block = "\n".join(auth_lines)
+    auth_block = "Auth:\n" + "\n".join(auth_lines)
 
-    return f"**Status**\n\n{session_block}\nModel: {orch._config.model}\n\nAuth:\n{auth_block}"
+    return fmt("**Status**", SEP, session_block, SEP, auth_block)
 
 
 async def _read_log_tail(log_path: Path, lines: int = 50) -> str:

@@ -271,7 +271,7 @@ class TestNewSessionFlow:
 
         result = await orch.handle_message(CHAT_ID, "/new")
 
-        assert "Fresh session" in result.text
+        assert "Session Reset" in result.text
 
         session_after = await orch._sessions.get_active(CHAT_ID)
         assert session_after is not None

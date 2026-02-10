@@ -317,7 +317,7 @@ The wizard asks whether to install the systemd service. If you skip it, run `duc
 
 ### Resource usage
 
-Idle: ~50-100 MB RAM, almost no CPU. During CLI execution the subprocess uses more, but ductor itself stays light. Disk is about 200 MB for the package and dependencies. The workspace grows over time but auto-cleans files older than 30 days. All network traffic is outbound to Telegram and the AI provider.
+Idle: ~50-100 MB RAM, almost no CPU. During CLI execution the subprocess uses more, but ductor itself stays light. Disk is about 200 MB for the package and dependencies. The workspace grows over time, and a daily cleanup pass removes old top-level files from `telegram_files/` and `output_to_user/` (default retention: 30 days). All network traffic is outbound to Telegram and the AI provider.
 
 ---
 

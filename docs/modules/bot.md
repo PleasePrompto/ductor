@@ -8,10 +8,12 @@ Telegram interface layer (aiogram 3.x). Handles incoming updates, middleware, we
 - `handlers.py`: helper handlers for abort, orchestrator command routing, new session reset.
 - `middleware.py`: `AuthMiddleware`, `SequentialMiddleware`, quick-command bypass, per-chat lock, queue entry tracking with cancel buttons.
 - `welcome.py`: `/start` welcome text + quick-start keyboard (`w:*` callbacks).
+- `file_browser.py`: interactive `~/.ductor/` navigator via inline keyboard (`sf:` / `sf!` callbacks).
+- `response_format.py`: shared formatting primitives (`SEP`, `fmt()`, `NEW_SESSION_TEXT`, `stop_text()`).
 - `streaming.py`: append-mode stream editor + `create_stream_editor()` factory.
 - `edit_streaming.py`: default in-place edit stream editor.
 - `sender.py`: `send_rich()`, `send_file()`, `<file:...>` extraction, keyboard attachment.
-- `formatting.py`: Markdown -> Telegram HTML conversion + chunk splitting.
+- `formatting.py`: Markdown -> Telegram HTML conversion (bold, italic, code, tables, blockquotes) + chunk splitting.
 - `buttons.py`: `[button:...]` parsing/stripping and inline keyboard generation.
 - `media.py`: Telegram media download, `_index.yaml` rebuild, media prompt composition.
 - `abort.py`: `/stop` and bare-word abort trigger detection.
@@ -22,7 +24,7 @@ Telegram interface layer (aiogram 3.x). Handles incoming updates, middleware, we
 
 Registered in `TelegramBot._register_handlers()`:
 
-- direct bot handlers: `/start`, `/help`, `/stop`, `/restart`, `/new`
+- direct bot handlers: `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/restart`, `/new`
 - command route to orchestrator: `/status`, `/memory`, `/model`, `/cron`, `/diagnose`, `/upgrade`
 - fallback message handler: all other messages
 - callback query handler: all inline keyboard callbacks
@@ -38,7 +40,7 @@ Registered in `TelegramBot._register_handlers()`:
 `SequentialMiddleware` order (message updates only):
 
 1. abort trigger check (`/stop` + bare abort words), handled before lock. On abort: kills processes **and** drains the pending message queue (edits all indicators to `[Message discarded.]`).
-2. quick command check (`/status`, `/memory`, `/cron`, `/diagnose`, `/model`), bypasses lock. `/model` has a busy-check: when agent is active or messages are queued, returns immediate feedback instead of the wizard.
+2. quick command check (`/status`, `/memory`, `/cron`, `/diagnose`, `/model`, `/showfiles`), bypasses lock. `/showfiles` is handled directly (no orchestrator). `/model` has a busy-check: when agent is active or messages are queued, returns immediate feedback instead of the wizard.
 3. dedupe by `chat_id:message_id`.
 4. per-chat `asyncio.Lock` for regular messages. When the lock is held, queued messages get a `[Message in queue...]` indicator (reply to the user's message) with a "Cancel message" inline button (`mq:<entry_id>` callback).
 5. after lock acquisition: cancelled entries skip handler execution; otherwise the indicator is deleted and the handler runs normally.
@@ -69,7 +71,9 @@ For media in groups, processing only happens when addressed to the bot (reply or
 1. build stream editor (`EditStreamEditor` by default, `StreamEditor` in append mode).
 2. create `StreamCoalescer` with config thresholds.
 3. route deltas/tool events/system status from orchestrator callbacks into coalescer/editor.
-4. system status callback: on `"compacting"` status, flush coalescer and show `[COMPACTING: Context full, conversation is compacting...]` via `editor.append_system()`.
+4. system status callback:
+   - on `"thinking"` status, flush coalescer and show `[THINKING]`
+   - on `"compacting"` status, flush coalescer and show `[COMPACTING]`
 5. on completion: flush + `editor.finalize(full_text)`.
 6. output rules:
    - if stream fallback or no content streamed: send full text via `send_rich()`,
@@ -109,7 +113,11 @@ Behavior (`buttons.py`):
 - if blocked: sends a user-visible block message.
 - image-like files -> `send_photo`, others -> `send_document`.
 
-Bot currently passes `allowed_roots=[paths.workspace]`.
+Bot passes roots from `config.file_access`:
+
+- `"all"` -> no root restriction (`None`)
+- `"home"` -> `[Path.home()]`
+- `"workspace"` -> `[paths.workspace]`
 
 ## Callback Queries
 
@@ -118,10 +126,14 @@ Bot currently passes `allowed_roots=[paths.workspace]`.
 - always calls `answer()`.
 - `w:*` callbacks -> resolved via `welcome.py` into full prompt text.
 - `mq:*` callbacks -> queue cancel: parses entry ID and calls `SequentialMiddleware.cancel_entry()`.
-- `upg:*` callbacks -> upgrade flow (`upg:yes:<version>` triggers upgrade + restart, `upg:no` dismisses).
+- `upg:*` callbacks -> upgrade flow:
+  - `upg:cl:<version>` -> fetch/send changelog
+  - `upg:yes:<version>` -> upgrade + restart
+  - `upg:no` -> dismiss
 - `ms:*` callbacks -> model selector wizard (edits message in place).
+- `sf:*` / `sf!*` callbacks -> file browser: `sf:<rel_path>` navigates directories (edit message in place), `sf!<rel_path>` sends file-request prompt to orchestrator.
 - all other callbacks:
-  - remove original keyboard,
+  - append `[USER ANSWER] <label>` to original message when possible (fallback: keyboard-only removal),
   - run callback text through normal message pipeline under per-chat lock.
 
 ## Webhook Wake Bridge
@@ -142,7 +154,10 @@ Bot currently passes `allowed_roots=[paths.workspace]`.
 
 - `UpdateObserver` starts in `_on_startup()` only for upgradeable installs (`pipx`/`pip`, not dev/source), and stops in `shutdown()`.
 - On new version detected: `_on_update_available(info)` sends notification with inline buttons to all `allowed_user_ids`.
-- `_handle_upgrade_callback(chat_id, message_id, data)` handles `upg:yes:<version>` (run upgrade, write sentinel, exit 42) and `upg:no` (dismiss).
+- `_handle_upgrade_callback(chat_id, message_id, data)` handles:
+  - `upg:cl:<version>` (fetch changelog),
+  - `upg:yes:<version>` (run upgrade, write sentinel, exit 42),
+  - `upg:no` (dismiss).
 - On startup: `consume_upgrade_sentinel()` reads and deletes sentinel, sends "Upgrade complete" message.
 
 ## Restart Behavior in Bot

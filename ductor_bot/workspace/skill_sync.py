@@ -3,6 +3,9 @@
 Provides three-way symlink synchronization so skills installed via Claude Code,
 Codex CLI, or the ductor workspace are visible to all agents.
 
+Includes bundled-skill linking (package → workspace), sync-time external-symlink
+protection, and cleanup of ductor-created links on shutdown.
+
 Sync runs once during ``init_workspace`` and periodically as a background task.
 """
 
@@ -26,6 +29,16 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 )
 
 _SKILL_SYNC_INTERVAL = 30.0
+
+
+def _is_under(child: Path, parent: Path) -> bool:
+    """Return ``True`` if *child* is located under *parent* directory."""
+    try:
+        child.resolve().relative_to(parent.resolve())
+    except ValueError:
+        return False
+    else:
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -169,13 +182,22 @@ def _link_skill_everywhere(
     canonical: Path,
     all_dirs: dict[str, Path],
 ) -> None:
-    """Create symlinks for *skill_name* in every location that lacks it."""
+    """Create symlinks for *skill_name* in every location that lacks it.
+
+    Preserves existing symlinks that point outside the known sync directories
+    (user-managed external links are never touched).
+    """
+    sync_roots = {d.resolve() for d in all_dirs.values() if d.is_dir()}
     for loc_name, base_dir in all_dirs.items():
         if not base_dir.is_dir():
             base_dir.mkdir(parents=True, exist_ok=True)
         link = base_dir / skill_name
         if link == canonical or (link.exists() and not link.is_symlink()):
             continue
+        if link.is_symlink() and link.exists():
+            resolved = link.resolve()
+            if not any(_is_under(resolved, root) for root in sync_roots):
+                continue
         try:
             if _ensure_link(link, canonical):
                 logger.info("Skill link created: %s -> %s", link, canonical)
@@ -214,6 +236,81 @@ def sync_skills(paths: DuctorPaths) -> None:
         removed = _clean_broken_links(base_dir)
         if removed:
             logger.info("Cleaned %d broken skill link(s) in %s", removed, base_dir)
+
+
+def sync_bundled_skills(paths: DuctorPaths) -> None:
+    """Symlink bundled skills from the package into the ductor workspace.
+
+    Creates symlinks from ``~/.ductor/workspace/skills/<name>`` to the
+    package's ``_home_defaults/workspace/skills/<name>`` so bundled skills
+    stay up-to-date with the installed ductor version.
+
+    Real directories are never overwritten (preserves user modifications
+    from older Zone 3 copies or manually created skills with the same name).
+    """
+    bundled = paths.bundled_skills_dir
+    if not bundled.is_dir():
+        return
+
+    target_dir = paths.skills_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    for entry in sorted(bundled.iterdir()):
+        if not entry.is_dir() or entry.name.startswith("."):
+            continue
+        if entry.name in _SKIP_DIRS:
+            continue
+
+        target = target_dir / entry.name
+
+        if target.exists() and not target.is_symlink():
+            continue
+
+        if target.is_symlink():
+            if target.resolve() == entry.resolve():
+                continue
+            target.unlink()
+
+        try:
+            _create_dir_link(target, entry)
+            logger.info("Bundled skill linked: %s -> %s", target, entry)
+        except OSError:
+            logger.warning("Failed to link bundled skill %s", entry.name, exc_info=True)
+
+
+def cleanup_ductor_links(paths: DuctorPaths) -> int:
+    """Remove symlinks created by ductor in CLI skill directories.
+
+    Only removes symlinks whose resolved target is under the ductor workspace
+    skills directory or the bundled skills directory.  Everything else
+    (real directories, user-managed symlinks) is left untouched.
+
+    Returns the total count of removed links.
+    """
+    managed_roots = [paths.skills_dir]
+    bundled = paths.bundled_skills_dir
+    if bundled.is_dir():
+        managed_roots.append(bundled)
+
+    removed = 0
+    for cli_dir in _cli_skill_dirs().values():
+        if not cli_dir.is_dir():
+            continue
+        for entry in cli_dir.iterdir():
+            if not entry.is_symlink():
+                continue
+            try:
+                resolved = entry.resolve()
+            except OSError:
+                continue
+            if any(_is_under(resolved, root) for root in managed_roots):
+                entry.unlink()
+                removed += 1
+                logger.info("Removed ductor skill link: %s", entry)
+
+    if removed:
+        logger.info("Cleaned up %d ductor skill link(s) from CLI directories", removed)
+    return removed
 
 
 async def watch_skill_sync(

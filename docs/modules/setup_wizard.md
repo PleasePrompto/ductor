@@ -4,10 +4,11 @@ Interactive onboarding, CLI lifecycle commands, and the in-bot auto-update syste
 
 ## Files
 
-- `ductor_bot/__main__.py`: CLI entry point, command dispatch, help/status/stop/restart/upgrade/uninstall.
+- `ductor_bot/__main__.py`: CLI entry point, command dispatch, help/status/stop/restart/upgrade/uninstall/service.
 - `ductor_bot/cli/init_wizard.py`: onboarding wizard (banner, disclaimer, prompts, config write), smart reset.
 - `ductor_bot/infra/version.py`: PyPI version check, `VersionInfo` model.
 - `ductor_bot/infra/updater.py`: `UpdateObserver` background task, `perform_upgrade()`, upgrade sentinel.
+- `ductor_bot/infra/service.py`: systemd user-service installation and management commands.
 - `ductor_bot/orchestrator/commands.py`: `/upgrade` Telegram command.
 
 ## CLI Commands
@@ -22,6 +23,7 @@ Interactive onboarding, CLI lifecycle commands, and the in-bot auto-update syste
 | `ductor upgrade` | Stop bot, upgrade package (`pipx` or `pip`), re-exec. On dev/source installs: show `git pull` guidance instead of self-upgrade. |
 | `ductor uninstall` | Full removal: stop bot, remove Docker, delete `~/.ductor/`, uninstall package. |
 | `ductor status` | Show running state, provider/model, Docker, error count, all paths. |
+| `ductor service ...` | Manage Linux systemd user service (`install`, `status`, `start`, `stop`, `logs`, `uninstall`). |
 | `ductor help` | Command reference + status panel (if configured). |
 | `-v`, `--verbose` | Verbose logging (combinable with any command). |
 
@@ -39,9 +41,14 @@ Interactive flow using Rich panels and Questionary prompts:
 6. **Docker Detection** -- if `docker` binary found, offer to enable sandboxing (default: yes). If not found, show info panel and skip.
 7. **Timezone Selection** -- grouped list of common IANA zones + manual entry option. Validated via `zoneinfo.ZoneInfo`.
 8. **Write Config** -- merges wizard values into `AgentConfig` defaults, writes `config.json`, runs `init_workspace()`.
-9. **Success Panel** -- shows all file paths (Home, Config, Workspace, Logs), then starts bot.
+9. **Success Panel** -- shows all file paths (Home, Config, Workspace, Logs), then either installs service (Linux/systemd path) or returns control to the caller for normal bot startup.
 
-Returns `True` on completion. Any `None` response from Questionary (Ctrl+C) calls `_abort()` -> `sys.exit(0)`.
+Return value semantics:
+
+- `True`: user chose service install (caller may skip foreground bot start).
+- `False`: normal onboarding completion without service install.
+
+Any `None` response from Questionary (Ctrl+C) calls `_abort()` -> `sys.exit(0)`.
 
 ## Smart Reset (`run_smart_reset`)
 
@@ -74,6 +81,8 @@ This drives the auto-onboarding behavior: `ductor` with no arguments runs onboar
 - **Error count**: counts ` ERROR ` occurrences in latest `ductor*.log` file.
 - **Paths**: Home, Config, Workspace, Logs, Sessions.
 
+Note: runtime file logs are written to `agent.log`; the current status error counter scans `ductor*.log`.
+
 ## Auto-Update System
 
 ### Background Check (`UpdateObserver`)
@@ -99,7 +108,8 @@ In `orchestrator/commands.py`:
 
 1. Calls `check_pypi()`.
 2. If no update: shows "Already up to date" with version info.
-3. If update available: shows version diff + summary + inline keyboard:
+3. Shows inline changelog button (`upg:cl:<version>`).
+4. If update is available: shows upgrade buttons:
    - `[Yes, upgrade now]` -> callback `upg:yes:<version>`
    - `[Not now]` -> callback `upg:no`
 
@@ -107,8 +117,9 @@ In `orchestrator/commands.py`:
 
 In `TelegramBot._handle_upgrade_callback()`:
 
-1. `upg:yes:<version>`: remove keyboard, send "Upgrading..." message, run `perform_upgrade()`, write upgrade sentinel, exit with code 42 (supervisor restart).
-2. `upg:no`: remove keyboard and edit message to "Upgrade skipped.".
+1. `upg:cl:<version>`: fetch changelog from GitHub Releases and send it.
+2. `upg:yes:<version>`: remove keyboard, send "Upgrading..." message, run `perform_upgrade()`, write upgrade sentinel, exit with code 42 (supervisor restart).
+3. `upg:no`: remove keyboard and edit message to "Upgrade skipped.".
 
 ### Upgrade Execution (`perform_upgrade`)
 

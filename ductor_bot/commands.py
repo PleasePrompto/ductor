@@ -12,6 +12,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("info", "Docs, links & about"),
     ("upgrade", "Check for updates"),
     ("restart", "Restart bot"),
+    ("showfiles", "Browse ductor files"),
     ("diagnose", "Show system diagnostics"),
     ("help", "Show all commands"),
 ]

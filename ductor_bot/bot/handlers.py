@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from ductor_bot.bot.response_format import NEW_SESSION_TEXT, stop_text
 from ductor_bot.bot.sender import send_rich
 from ductor_bot.bot.typing import TypingContext
 
@@ -33,11 +34,7 @@ async def handle_abort(
 
     killed = await orchestrator.abort(chat_id)
     logger.info("Abort requested killed=%d", killed)
-    if killed:
-        provider = orchestrator.active_provider_name
-        text = f"**{provider} has been terminated!** All queued messages will be discarded."
-    else:
-        text = "Nothing running right now."
+    text = stop_text(bool(killed), orchestrator.active_provider_name)
     await send_rich(bot, chat_id, text, reply_to=message)
     return True
 
@@ -59,9 +56,7 @@ async def handle_new_session(orchestrator: Orchestrator, bot: Bot, message: Mess
     chat_id = message.chat.id
     async with TypingContext(bot, chat_id):
         await orchestrator.reset_session(chat_id)
-    await send_rich(
-        bot, chat_id, "**Fresh session.** Everything cleared -- ready to go.", reply_to=message
-    )
+    await send_rich(bot, chat_id, NEW_SESSION_TEXT, reply_to=message)
 
 
 def strip_mention(text: str, bot_username: str | None) -> str:

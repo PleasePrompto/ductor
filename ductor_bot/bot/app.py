@@ -16,6 +16,11 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import BotCommand, FSInputFile, ReplyParameters
 
+from ductor_bot.bot.file_browser import (
+    file_browser_start,
+    handle_file_browser_callback,
+    is_file_browser_callback,
+)
 from ductor_bot.bot.formatting import markdown_to_telegram_html
 from ductor_bot.bot.handlers import (
     handle_abort,
@@ -25,6 +30,7 @@ from ductor_bot.bot.handlers import (
 )
 from ductor_bot.bot.media import has_media, is_media_addressed, resolve_media_text
 from ductor_bot.bot.middleware import MQ_PREFIX, AuthMiddleware, SequentialMiddleware
+from ductor_bot.bot.response_format import SEP, fmt
 from ductor_bot.bot.sender import send_files_from_text, send_rich
 from ductor_bot.bot.streaming import create_stream_editor
 from ductor_bot.bot.typing import TypingContext
@@ -61,14 +67,24 @@ _CAPTION_LIMIT = 1024
 
 _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in _COMMAND_DEFS]
 
-_HELP_TEXT = "\n".join(
-    [
-        "**ductor.dev -- Command Reference**",
-        "",
-        *(f"/{cmd} -- {desc}" for cmd, desc in _COMMAND_DEFS),
-        "",
-        "Just send a message to start working with your AI agent.",
-    ],
+_HELP_TEXT = fmt(
+    "**Command Reference**",
+    SEP,
+    "Session\n"
+    "/new -- Start new session\n"
+    "/stop -- Stop the running agent\n"
+    "/status -- Show session info",
+    "AI\n/model -- Show/switch model\n/memory -- Show main memory",
+    "Automation\n/cron -- Show scheduled cron jobs",
+    "System\n"
+    "/showfiles -- Browse ductor files\n"
+    "/info -- Docs, links & about\n"
+    "/upgrade -- Check for updates\n"
+    "/restart -- Restart bot\n"
+    "/diagnose -- Show system diagnostics\n"
+    "/help -- Show all commands",
+    SEP,
+    "Send any message to start working with your agent.",
 )
 
 
@@ -194,6 +210,7 @@ class TelegramBot:
         r.message(Command("stop"))(self._on_stop)
         r.message(Command("restart"))(self._on_restart)
         r.message(Command("new"))(self._on_new)
+        r.message(Command("showfiles"))(self._on_showfiles)
         for cmd in ("status", "memory", "model", "cron", "diagnose", "upgrade"):
             r.message(Command(cmd))(self._on_command)
         r.message()(self._on_message)
@@ -267,20 +284,34 @@ class TelegramBot:
 
     async def _on_info(self, message: Message) -> None:
         """Handle /info: show project links and version."""
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
         version = get_current_version()
-        text = (
-            "**ductor.dev**\n\n"
-            f"Version: `{version}`\n\n"
-            "\u2500\u2500\u2500\n\n"
+        text = fmt(
+            "**ductor.dev**",
+            f"Version: `{version}`",
+            SEP,
             "Claude Code & OpenAI Codex as your Telegram agent.\n"
-            "Persistent memory, cron jobs, webhooks, live streaming.\n\n"
-            "\u2500\u2500\u2500\n\n"
-            "[Website & Docs](https://ductor.dev)\n"
-            "[GitHub](https://github.com/PleasePrompto/ductor)\n"
-            "[Changelog](https://ductor.dev/en/changelog/)\n"
-            "[PyPI](https://pypi.org/project/ductor/)"
+            "Persistent memory, cron jobs, webhooks, live streaming.",
         )
-        await send_rich(self._bot, message.chat.id, text, reply_to=message)
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Website & Docs", url="https://ductor.dev")],
+                [
+                    InlineKeyboardButton(
+                        text="GitHub", url="https://github.com/PleasePrompto/ductor"
+                    ),
+                    InlineKeyboardButton(text="Changelog", url="https://ductor.dev/en/changelog/"),
+                ],
+                [InlineKeyboardButton(text="PyPI", url="https://pypi.org/project/ductor/")],
+            ],
+        )
+        await send_rich(self._bot, message.chat.id, text, reply_to=message, reply_markup=keyboard)
+
+    async def _on_showfiles(self, message: Message) -> None:
+        """Handle /showfiles: interactive file browser for ~/.ductor."""
+        text, keyboard = await file_browser_start(self._orch.paths)
+        await send_rich(self._bot, message.chat.id, text, reply_to=message, reply_markup=keyboard)
 
     # -- Abort, commands, sessions ---------------------------------------------
 
@@ -298,11 +329,17 @@ class TelegramBot:
         ``/model`` is special: when the chat is busy it returns an immediate
         "agent is working" message; otherwise it acquires the lock for an
         atomic model switch.
+
+        ``/showfiles`` is handled directly (no orchestrator needed).
         """
         if self._orchestrator is None:
             return False
 
         text_lower = (message.text or "").strip().lower()
+        if text_lower.startswith("/showfiles"):
+            await self._on_showfiles(message)
+            return True
+
         if text_lower.startswith("/model"):
             if self._sequential.is_busy(chat_id) or self._orch.is_chat_busy(chat_id):
                 await send_rich(
@@ -342,7 +379,8 @@ class TelegramBot:
         await asyncio.to_thread(
             write_restart_sentinel, chat_id, "Restart completed.", sentinel_path=sentinel
         )
-        await message.answer("Bot is restarting...")
+        text = fmt("**Restarting**", SEP, "Bot is shutting down and will be back shortly.")
+        await send_rich(self._bot, message.chat.id, text, reply_to=message)
         self._exit_code = EXIT_RESTART
         asyncio.create_task(self._dp.stop_polling())  # noqa: RUF006
 
@@ -392,6 +430,10 @@ class TelegramBot:
             await self._handle_model_selector(chat_id, msg.message_id, data)
             return
 
+        if is_file_browser_callback(data):
+            await self._handle_file_browser(chat_id, msg.message_id, data)
+            return
+
         await self._mark_button_choice(chat_id, msg, display_label)
 
         async with self._sequential.get_lock(chat_id):
@@ -413,6 +455,37 @@ class TelegramBot:
 
         async with self._sequential.get_lock(chat_id):
             text, keyboard = await handle_model_callback(self._orch, chat_id, data)
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                text=markdown_to_telegram_html(text),
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
+            )
+
+    async def _handle_file_browser(self, chat_id: int, message_id: int, data: str) -> None:
+        """Handle file browser navigation or file request."""
+        text, keyboard, prompt = await handle_file_browser_callback(self._orch.paths, data)
+
+        if prompt:
+            # File request: remove the keyboard and send prompt to orchestrator
+            with contextlib.suppress(TelegramBadRequest):
+                await self._bot.edit_message_reply_markup(
+                    chat_id=chat_id, message_id=message_id, reply_markup=None
+                )
+            async with self._sequential.get_lock(chat_id):
+                if self._config.streaming.enabled:
+                    fake_msg = await self._bot.send_message(chat_id, prompt, parse_mode=None)
+                    await self._handle_streaming(fake_msg, chat_id, prompt)
+                else:
+                    async with TypingContext(self._bot, chat_id):
+                        result = await self._orch.handle_message(chat_id, prompt)
+                    roots = self._file_roots(self._orch.paths)
+                    await send_rich(self._bot, chat_id, result.text, allowed_roots=roots)
+            return
+
+        # Directory navigation: edit message in-place
         with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_text(
                 text=markdown_to_telegram_html(text),
@@ -624,8 +697,10 @@ class TelegramBot:
                 ],
             ],
         )
-        text = (
-            f"**New version available**\n\nInstalled: `{info.current}`\nNew:       `{info.latest}`"
+        text = fmt(
+            "**Update Available**",
+            SEP,
+            f"Installed: `{info.current}`\nNew:       `{info.latest}`",
         )
         for uid in self._config.allowed_user_ids:
             await send_rich(self._bot, uid, text, reply_markup=keyboard)

@@ -1,37 +1,44 @@
-# Skills Directory -- Shared Agent Skills
+# Skills Directory
 
-This directory is the ductor workspace's skill store. It participates in a **three-way symlink sync** with the Claude Code and Codex CLI skill directories.
+This directory is part of ductor's three-way skill sync.
 
-## How Sync Works
+## Sync Topology
 
-```
-~/.ductor/workspace/skills/  <-->  ~/.claude/skills/  <-->  ~/.codex/skills/
-```
-
-- On startup and every 30 seconds, ductor scans all three directories.
-- For each skill found: the **real** (non-symlink) directory is the canonical source.
-- Missing locations get a symlink pointing to the canonical source.
-- Priority when a skill exists in multiple locations: **ductor > claude > codex**.
-- Real directories are **never** overwritten or removed. Only symlinks are created.
-
-## Adding a Skill
-
-Place a subdirectory here with a `SKILL.md` file:
-
-```
-skills/
-  my-new-skill/
-    SKILL.md        <-- required: skill instructions
-    scripts/        <-- optional: helper scripts
-    ...
+```text
+~/.ductor/workspace/skills/
+<-> ~/.claude/skills/
+<-> $CODEX_HOME/skills (default: ~/.codex/skills)
 ```
 
-Within 30 seconds it will appear in `~/.claude/skills/` and `~/.codex/skills/` as symlinks.
+## Sync Rules
 
-Skills added via `claude` or `codex` CLI are synced here automatically (as symlinks).
+- Sync runs on startup and every 30 seconds.
+- Canonical source prefers real directories over symlinks.
+- Priority when duplicates exist: `ductor > claude > codex`.
+- Real directories are never overwritten.
+- Broken ductor-managed links are cleaned automatically.
 
-## What NOT to Do
+## Add a Skill
 
-- Do not manually create symlinks -- the sync system handles it.
-- Do not place files directly in `skills/` -- only subdirectories are recognized.
-- Do not touch directories starting with `.` (`.system`, `.claude`) -- they are CLI internals.
+Create a subdirectory containing `SKILL.md`:
+
+```text
+skills/my-skill/SKILL.md
+```
+
+Optional helpers can live in `scripts/`, `references/`, etc.
+
+## Bundled Skills
+
+Bundled skills may appear as symlinks.
+To customize one, replace the symlink with a real directory of the same name.
+
+## Do Not
+
+- Do not edit hidden/internal directories (`.system`, `.claude`).
+- Do not place loose files directly in `skills/` root.
+
+## Memory
+
+When the user creates or customizes skills, update `memory_system/MAINMEMORY.md`
+silently with inferred interests and workflow preferences.
