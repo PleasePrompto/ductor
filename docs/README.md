@@ -4,14 +4,15 @@ ductor is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI C
 
 ## Onboarding (Read in This Order)
 
-1. `docs/modules/setup_wizard.md` -- CLI commands, onboarding wizard, auto-update system.
-2. `docs/architecture.md` -- end-to-end runtime flow (startup, messages, callbacks, cron, heartbeat, webhooks, cleanup).
-3. `docs/config.md` -- config schema, merge behavior, provider/model resolution.
-4. `docs/modules/orchestrator.md` -- routing and flow control.
-5. `docs/modules/bot.md` -- Telegram ingress, middleware, streaming UX, callbacks.
-6. `docs/modules/cli.md` -- subprocess providers, stream event handling, fallback rules.
-7. `docs/modules/workspace.md` -- `~/.ductor` layout, seeding, auth-based RULES deployment, rule-file sync.
-8. Remaining module docs (`session`, `cron`, `heartbeat`, `webhook`, `cleanup`, `security`, `infra`, `logging`).
+1. `docs/developer_quickstart.md` -- fastest path for junior contributors: run, debug, and understand hot paths.
+2. `docs/modules/setup_wizard.md` -- CLI commands, onboarding wizard, auto-update system.
+3. `docs/architecture.md` -- end-to-end runtime flow (startup, messages, callbacks, cron, heartbeat, webhooks, cleanup).
+4. `docs/config.md` -- config schema, merge behavior, provider/model resolution.
+5. `docs/modules/orchestrator.md` -- routing and flow control.
+6. `docs/modules/bot.md` -- Telegram ingress, middleware, streaming UX, callbacks.
+7. `docs/modules/cli.md` -- subprocess providers, stream event handling, fallback rules.
+8. `docs/modules/workspace.md` -- `~/.ductor` layout, seeding, auth-based RULES deployment, rule-file sync.
+9. Remaining module docs (`session`, `cron`, `heartbeat`, `webhook`, `cleanup`, `security`, `infra`, `logging`).
 
 ## System in 60 Seconds
 
@@ -19,9 +20,9 @@ ductor is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI C
 - `ductor_bot/orchestrator/`: command dispatch, directives/hooks, normal and heartbeat flows, model selector.
 - `ductor_bot/cli/`: Claude/Codex wrappers, provider-specific CLI parameter routing, Codex model cache, process registry, normalized stream events.
 - `ductor_bot/session/`: per-chat session lifecycle in `sessions.json`.
-- `ductor_bot/cron/`: in-process scheduler for `cron_jobs.json` with per-job execution overrides.
+- `ductor_bot/cron/`: in-process scheduler for `cron_jobs.json` with per-job execution overrides, quiet-hour gates, and dependency queue locking.
 - `ductor_bot/heartbeat/`: periodic checks in active sessions.
-- `ductor_bot/webhook/`: HTTP ingress (`/hooks/{hook_id}`) with per-hook auth (`bearer` or `hmac`), `wake`/`cron_task` modes, and per-hook execution overrides.
+- `ductor_bot/webhook/`: HTTP ingress (`/hooks/{hook_id}`) with per-hook auth (`bearer` or `hmac`), `wake`/`cron_task` modes, per-hook execution overrides, quiet-hour gates, and dependency queue locking.
 - `ductor_bot/cleanup/`: daily retention cleanup for `telegram_files/` and `output_to_user/`.
 - `ductor_bot/workspace/`: path resolution, home seeding from `ductor_bot/_home_defaults/`, auth-based RULES template deployment to `CLAUDE.md`/`AGENTS.md`, rule sync, cross-platform skill directory sync.
 - `ductor_bot/infra/`: PID lock, restart sentinel, Docker helper, auto-update observer (upgradeable installs), version check.
@@ -31,6 +32,9 @@ ductor is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI C
 ## Documentation Index
 
 - [Architecture](architecture.md)
+- [Installation](installation.md)
+- [Automation Quickstart](automation.md)
+- [Developer Quickstart](developer_quickstart.md)
 - [Configuration](config.md)
 - Module docs:
   - [setup_wizard](modules/setup_wizard.md)

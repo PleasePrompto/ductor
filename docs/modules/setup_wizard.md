@@ -16,7 +16,7 @@ Interactive onboarding, CLI lifecycle commands, and the in-bot auto-update syste
 | Command | Behavior |
 |---|---|
 | `ductor` | Start bot. If unconfigured, runs onboarding first. |
-| `ductor onboarding` | Run setup wizard. If already configured, runs smart reset first. |
+| `ductor onboarding` | Run setup wizard. If already configured, runs smart reset first, then starts bot in foreground. |
 | `ductor reset` | Same as `onboarding` (alias). |
 | `ductor stop` | Stop running bot (PID kill) and Docker container if active. |
 | `ductor restart` | Stop bot, re-exec process. |
@@ -41,12 +41,17 @@ Interactive flow using Rich panels and Questionary prompts:
 6. **Docker Detection** -- if `docker` binary found, offer to enable sandboxing (default: yes). If not found, show info panel and skip.
 7. **Timezone Selection** -- grouped list of common IANA zones + manual entry option. Validated via `zoneinfo.ZoneInfo`.
 8. **Write Config** -- merges wizard values into `AgentConfig` defaults, writes `config.json`, runs `init_workspace()`.
-9. **Success Panel** -- shows all file paths (Home, Config, Workspace, Logs), then either installs service (Linux/systemd path) or returns control to the caller for normal bot startup.
+9. **Success Panel** -- shows all file paths (Home, Config, Workspace, Logs), then either installs service (Linux/systemd path) or returns control to caller.
 
 Return value semantics:
 
-- `True`: user chose service install (caller may skip foreground bot start).
-- `False`: normal onboarding completion without service install.
+- `True`: user chose service install.
+- `False`: onboarding completed without service install.
+
+Caller behavior in `__main__.py`:
+
+- `ductor` (default action): skips foreground start when return value is `True`.
+- `ductor onboarding` / `ductor reset`: always starts foreground bot after onboarding.
 
 Any `None` response from Questionary (Ctrl+C) calls `_abort()` -> `sys.exit(0)`.
 
@@ -118,13 +123,13 @@ In `orchestrator/commands.py`:
 In `TelegramBot._handle_upgrade_callback()`:
 
 1. `upg:cl:<version>`: fetch changelog from GitHub Releases and send it.
-2. `upg:yes:<version>`: remove keyboard, send "Upgrading..." message, run `perform_upgrade()`, write upgrade sentinel, exit with code 42 (supervisor restart).
+2. `upg:yes:<version>`: remove keyboard, send "Upgrading..." message, run `perform_upgrade()`, write upgrade sentinel, exit with code 42 (restart path).
 3. `upg:no`: remove keyboard and edit message to "Upgrade skipped.".
 
 ### Upgrade Execution (`perform_upgrade`)
 
 - Refuses dev/source installs (`detect_install_mode() == "dev"`).
-- Otherwise uses `pipx upgrade ductor` or falls back to `python -m pip install --upgrade ductor`.
+- Otherwise uses `pipx upgrade --force ductor` or falls back to `python -m pip install --upgrade ductor`.
 - Returns `(success, output)`.
 
 ### Post-Restart Notification

@@ -413,6 +413,16 @@ class TestReExecBot:
         assert exc_info.value.code == 0
 
 
+def _mock_asyncio_run(return_value: int):
+    """Create a side_effect for asyncio.run that closes the coroutine to avoid warnings."""
+
+    def _side_effect(coro):
+        coro.close()
+        return return_value
+
+    return _side_effect
+
+
 class TestStartBotRestart:
     """Test supervisor-aware restart in _start_bot."""
 
@@ -426,7 +436,7 @@ class TestStartBotRestart:
             patch("ductor_bot.__main__.resolve_paths"),
             patch("ductor_bot.__main__.setup_logging"),
             patch("ductor_bot.__main__.load_config", return_value=self._mock_config()),
-            patch("ductor_bot.__main__.asyncio.run", return_value=42),
+            patch("ductor_bot.__main__.asyncio.run", side_effect=_mock_asyncio_run(42)),
             patch.dict("os.environ", {"DUCTOR_SUPERVISOR": "1"}),
             pytest.raises(SystemExit) as exc_info,
         ):
@@ -441,7 +451,7 @@ class TestStartBotRestart:
             patch("ductor_bot.__main__.resolve_paths"),
             patch("ductor_bot.__main__.setup_logging"),
             patch("ductor_bot.__main__.load_config", return_value=self._mock_config()),
-            patch("ductor_bot.__main__.asyncio.run", return_value=42),
+            patch("ductor_bot.__main__.asyncio.run", side_effect=_mock_asyncio_run(42)),
             patch.dict("os.environ", {}, clear=True),
             patch("ductor_bot.__main__._re_exec_bot") as mock_exec,
         ):
@@ -456,7 +466,7 @@ class TestStartBotRestart:
             patch("ductor_bot.__main__.resolve_paths"),
             patch("ductor_bot.__main__.setup_logging"),
             patch("ductor_bot.__main__.load_config", return_value=self._mock_config()),
-            patch("ductor_bot.__main__.asyncio.run", return_value=0),
+            patch("ductor_bot.__main__.asyncio.run", side_effect=_mock_asyncio_run(0)),
             patch("ductor_bot.__main__._re_exec_bot") as mock_exec,
         ):
             _start_bot()
@@ -470,7 +480,7 @@ class TestStartBotRestart:
             patch("ductor_bot.__main__.resolve_paths"),
             patch("ductor_bot.__main__.setup_logging"),
             patch("ductor_bot.__main__.load_config", return_value=self._mock_config()),
-            patch("ductor_bot.__main__.asyncio.run", return_value=1),
+            patch("ductor_bot.__main__.asyncio.run", side_effect=_mock_asyncio_run(1)),
             pytest.raises(SystemExit) as exc_info,
         ):
             _start_bot()

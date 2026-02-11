@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import time_machine
 
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_discovery import CodexModelInfo
@@ -186,7 +189,10 @@ class TestCronObserverExecution:
         mgr.add_job(_make_job("missing-folder"))
 
         observer = _make_observer(paths, mgr)
-        await observer._execute_job("missing-folder", "do stuff", "missing-folder")
+
+        # Freeze time to active hours (14:00 UTC) to avoid quiet hour skip
+        with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
+            await observer._execute_job("missing-folder", "do stuff", "missing-folder")
 
         job = mgr.get_job("missing-folder")
         assert job is not None
@@ -199,7 +205,12 @@ class TestCronObserverExecution:
         (paths.cron_tasks_dir / "no-cli").mkdir()
 
         observer = _make_observer(paths, mgr)
-        with patch("ductor_bot.cron.execution.which", return_value=None):
+
+        # Freeze time to active hours (14:00 UTC) to avoid quiet hour skip
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("ductor_bot.cron.execution.which", return_value=None),
+        ):
             await observer._execute_job("no-cli", "do stuff", "no-cli")
 
         job = mgr.get_job("no-cli")
@@ -220,7 +231,9 @@ class TestCronObserverExecution:
         mock_proc.returncode = 0
         mock_proc.communicate = AsyncMock(return_value=(b'{"result": "Done."}', b""))
 
+        # Freeze time to active hours (14:00 UTC) to avoid quiet hour skip
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -273,7 +286,9 @@ class TestCronObserverExecution:
             )
         )
 
+        # Freeze time to active hours (14:00 UTC) to avoid quiet hour skip
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -301,6 +316,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b"", b"error output"))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -324,6 +340,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b'{"result": "ok"}', b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -348,6 +365,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b"", b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -372,6 +390,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b"", b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -394,6 +413,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b"", b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -421,6 +441,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b'{"result": "All done."}', b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -457,6 +478,7 @@ class TestCronObserverExecution:
         mock_proc.kill = MagicMock()
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -481,6 +503,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b'{"result": "ok"}', b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -503,6 +526,7 @@ class TestCronObserverExecution:
         mock_proc.communicate = AsyncMock(return_value=(b'{"result": "ok"}', b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):

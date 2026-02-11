@@ -7,7 +7,7 @@ Telegram Update
   -> aiogram Dispatcher/Router
   -> AuthMiddleware (allowlist)
   -> SequentialMiddleware (message updates only)
-       - /stop or bare abort keyword: kill active CLI process(es) + drain pending queue
+       - exact `/stop` (without suffix/args) or single-word abort keyword: kill active CLI process(es) + drain pending queue
        - quick command (/status /memory /cron /diagnose /model /showfiles): lock bypass
        - otherwise: dedupe + per-chat lock (with queue tracking when lock is held)
   -> TelegramBot handler
@@ -16,7 +16,8 @@ Telegram Update
        - /info -> links/version panel (URL inline buttons)
        - /showfiles -> interactive file browser (sf: / sf! callbacks)
        - /restart -> restart sentinel + exit 42
-       - /new /stop -> direct session/process handlers
+       - /new -> direct session reset handler
+       - /stop -> direct abort handler
        - normal text/media -> Orchestrator
   -> Orchestrator
        - slash command -> CommandRegistry
@@ -34,7 +35,7 @@ Also running in background:
 - `CleanupObserver`: daily retention cleanup for Telegram file directories.
 - `CodexCacheObserver`: periodic Codex model-cache refresh (`~/.ductor/config/codex_models.json`).
 - `UpdateObserver`: periodic PyPI version check + Telegram notification (upgradeable installs only).
-- rule-sync task: keeps `CLAUDE.md` and `AGENTS.md` mirrored.
+- rule-sync task: keeps `CLAUDE.md` and `AGENTS.md` mirrored inside `~/.ductor/workspace/`.
 - skill-sync task: three-way symlink sync between `~/.ductor/workspace/skills/`, `~/.claude/skills/`, and `~/.codex/skills/` (30s interval).
 
 ## Startup Flow
@@ -92,6 +93,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 - Bot-level handlers: `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/restart`, `/new`.
 - Orchestrator command registry: `/new`, `/stop`, `/status`, `/model`, `/memory`, `/cron`, `/diagnose`, `/upgrade`.
 - In regular chat usage, `/status`, `/memory`, `/model`, `/cron`, `/diagnose`, `/upgrade` are routed via `handle_command()`.
+- `/new` in bot handlers resets session state; orchestrator `cmd_reset` additionally kills active processes (used only when routing reaches command registry).
 - Quick-command bypass in middleware applies to `/status`, `/memory`, `/cron`, `/diagnose`, `/model`, and `/showfiles`.
 - `/showfiles` is handled directly in the quick-command path (no orchestrator needed).
 - `/model` bypass has a busy-check: when agent is active or messages are queued, it returns an immediate "agent is working" message instead of the model wizard.
@@ -161,6 +163,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
    - `upg:no` -> dismiss
 5. If callback data starts with `ms:` -> route to model selector wizard and edit message in place.
 6. If callback data starts with `sf:` or `sf!` -> route to file browser: `sf:` navigates directories (edit message in place), `sf!` sends file-request prompt to orchestrator.
+   - lock usage note: not all callbacks take the per-chat lock (`mq:*`, `upg:*`, and `sf:` directory navigation are handled without lock).
 7. Otherwise:
    - append `[USER ANSWER] ...` to the button message when possible (fallback: remove keyboard),
    - acquire per-chat lock via `SequentialMiddleware.get_lock(chat_id)`,
@@ -177,6 +180,9 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 4. On file change: `reload()` + cancel/reschedule all jobs.
 5. Execution (`_execute_job`):
    - ensure task folder exists under `workspace/cron_tasks/`,
+   - acquire dependency lock when `CronJob.dependency` is set,
+   - run quiet-hour gate (`quiet_start`/`quiet_end`, fallback to global heartbeat quiet hours),
+   - skip this occurrence when inside quiet window,
    - build `TaskOverrides` from job fields (`provider`, `model`, `reasoning_effort`, `cli_parameters`),
    - resolve final execution config via `resolve_cli_config(base_config, codex_cache, task_overrides=...)`,
    - enrich instruction with `<task_folder>_MEMORY.md` reminder,
@@ -217,7 +223,11 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
      - acquires per-chat lock via `SequentialMiddleware.get_lock()`,
      - processes through `Orchestrator.handle_message()`,
      - sends response to Telegram via `send_rich()`.
-   - `cron_task`: run fresh CLI process in `cron_tasks/<task_folder>/` (reuses `cron/execution.py`) with per-hook `TaskOverrides` resolved through `resolve_cli_config(...)`.
+   - `cron_task`: run fresh CLI process in `cron_tasks/<task_folder>/` (reuses `cron/execution.py`) with:
+     - quiet-hour gate (hook override or global fallback),
+     - optional dependency lock (`WebhookEntry.dependency`),
+     - per-hook `TaskOverrides` resolved through `resolve_cli_config(...)`.
+     - when quiet-hour gated, returns `WebhookResult(status="skipped:quiet_hours")`.
 7. Record trigger count and error status in `webhooks.json`.
 8. Result callback receives `WebhookResult`; bot forwards only `cron_task` results (`wake` is already sent by wake handler).
 
@@ -254,7 +264,9 @@ Repo template source:
 
 Copy rules in `ductor_bot/workspace/init.py` (`_walk_and_copy`):
 
-- Zone 2 (always overwritten): `CLAUDE.md`, `AGENTS.md`.
+- Zone 2 (always overwritten):
+  - `CLAUDE.md`, `AGENTS.md`
+  - all `.py` files in `workspace/tools/cron_tools/` and `workspace/tools/webhook_tools/`
 - Zone 3 (seed once): all other files (never overwritten if target exists).
 - `RULES*.md` template files are skipped here and deployed separately by `RulesSelector`.
 - Skips hidden and ignored dirs (`.venv`, `.git`, `.mypy_cache`, `__pycache__`, `node_modules`).
@@ -277,5 +289,5 @@ Rule deployment (`ductor_bot/workspace/rules_selector.py`):
 
 - JSON files over DB: transparent and easy to debug, but no query/transaction layer.
 - In-process cron/heartbeat/webhook/cleanup: simple deployment, lifecycle tied to bot process.
-- Per-chat lock with queue tracking: prevents race conditions and duplicate execution, limits chat-level parallelism. Pending messages are tracked with visual indicators and individual cancel buttons. `/stop` drains the entire queue.
+- Per-chat lock with queue tracking: prevents race conditions and duplicate execution, limits chat-level parallelism. Pending messages are tracked with visual indicators and individual cancel buttons. Abort-trigger handling (exact `/stop` or bare abort word) drains the entire queue.
 - Streaming with coalescing and edit mode: better UX with controlled message churn.

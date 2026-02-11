@@ -20,6 +20,7 @@ from ductor_bot.webhook.server import WebhookServer
 
 _TOKEN = "test-secret-token"
 _HOOK_TOKEN = "per-hook-secret-token"
+_DISPATCH_MOCK_KEY: web.AppKey[AsyncMock] = web.AppKey("_dispatch_mock")
 
 
 def _make_config(**overrides: Any) -> WebhookConfig:
@@ -107,7 +108,7 @@ async def server_client(tmp_path: Any) -> AsyncIterator[TestClient[Any, Any]]:
     app = web.Application(client_max_size=config.max_body_bytes)
     app.router.add_get("/health", server._handle_health)
     app.router.add_post("/hooks/{hook_id}", server._handle_hook)
-    app["_dispatch_mock"] = dispatch_mock
+    app[_DISPATCH_MOCK_KEY] = dispatch_mock
 
     test_server = TestServer(app)
     client = TestClient(test_server)
@@ -303,7 +304,7 @@ class TestDispatch:
 
         await asyncio.sleep(0.1)
 
-        dispatch_mock = server_client.app["_dispatch_mock"]
+        dispatch_mock = server_client.app[_DISPATCH_MOCK_KEY]
         dispatch_mock.assert_awaited_once_with("test-hook", {"msg": "hello"})
 
     async def test_no_dispatch_handler_still_202(self, tmp_path: Any) -> None:

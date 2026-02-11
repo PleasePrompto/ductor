@@ -48,6 +48,7 @@ def _setup_home_defaults(fw_root: Path) -> None:
     user_dir = tools / "user_tools"
     user_dir.mkdir()
     (user_dir / "CLAUDE.md").write_text("# User Tools CLAUDE.md")
+    (user_dir / "my_tool.py").write_text("# user tool stub")
 
     # config.example.json at framework root (for smart-merge)
     (fw_root / "config.example.json").write_text('{"provider": "claude", "model": "opus"}')
@@ -227,14 +228,14 @@ def test_seeds_tool_subdirectories(tmp_path: Path) -> None:
 
 
 def test_does_not_overwrite_user_tool_scripts(tmp_path: Path) -> None:
-    """User-modified tool scripts are not overwritten."""
+    """User-modified tool scripts in user_tools/ (Zone 3) are not overwritten."""
     paths = _make_paths(tmp_path)
-    cron_dir = paths.tools_dir / "cron_tools"
-    cron_dir.mkdir(parents=True)
-    (cron_dir / "cron_list.py").write_text("# my custom version")
+    user_dir = paths.tools_dir / "user_tools"
+    user_dir.mkdir(parents=True)
+    (user_dir / "my_tool.py").write_text("# my custom version")
 
     init_workspace(paths)
-    assert (cron_dir / "cron_list.py").read_text() == "# my custom version"
+    assert (user_dir / "my_tool.py").read_text() == "# my custom version"
 
 
 def test_ductor_home_claude_md_overwritten(tmp_path: Path) -> None:

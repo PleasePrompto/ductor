@@ -8,7 +8,7 @@ Process/runtime infrastructure: PID locking, restart signaling, Docker sandbox h
 - `restart.py`: restart sentinel/marker helpers + `EXIT_RESTART = 42`.
 - `docker.py`: `DockerManager` for optional persistent sidecar container.
 - `install.py`: installation mode detection (`pipx` / `pip` / `dev`).
-- `service.py`: Linux systemd user-service install/start/stop/logs/uninstall.
+- `service.py`: Linux systemd user-service install/status/start/stop/logs/uninstall.
 - `version.py`: PyPI version check, GitHub changelog fetch, `VersionInfo` model, installed version detection.
 - `updater.py`: `UpdateObserver` background task, `perform_upgrade()`, upgrade sentinel read/write.
 - `ductor_bot/run.py`: supervisor (hot reload + crash recovery).
@@ -74,7 +74,7 @@ Usage:
 `perform_upgrade()`:
 
 - refuses dev/source installs (`detect_install_mode() == "dev"`),
-- otherwise detects `pipx` or falls back to `python -m pip install --upgrade ductor`,
+- otherwise uses `pipx upgrade --force ductor` or falls back to `python -m pip install --upgrade ductor`,
 - returns `(success: bool, output: str)`.
 
 Upgrade sentinel (`upgrade-sentinel.json`):

@@ -1,7 +1,6 @@
 """Test that framework tools in cron_tools/ and webhook_tools/ are Zone 2."""
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 

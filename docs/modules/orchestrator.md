@@ -58,6 +58,11 @@ Registered commands:
 
 `CommandRegistry` supports exact and prefix matching (`name.endswith(" ")`).
 
+Routing note:
+
+- In normal Telegram command handling, `/new` and `/stop` are handled in the bot layer.
+- These registry entries are still valid for orchestrator-routed text paths.
+
 `/diagnose` includes Codex cache status (`loaded/not loaded`, `last_updated`, cached model count, default model).
 
 ## Directives

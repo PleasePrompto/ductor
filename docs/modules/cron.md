@@ -7,6 +7,7 @@ In-process cron scheduling with JSON persistence.
 - `manager.py`: `CronJob`, `CronManager` (CRUD + persistence).
 - `observer.py`: `CronObserver` (schedule, watch, execute, callback).
 - `execution.py`: provider command builders + output parsers + prompt enrichment.
+- `dependency_queue.py`: shared dependency locks for sequential task execution across cron + webhook `cron_task` runs.
 
 ## Data Model (`CronJob`)
 
@@ -26,6 +27,12 @@ Per-job execution overrides:
 - `model` (`str` or `null`)
 - `reasoning_effort` (`str` or `null`, Codex only)
 - `cli_parameters` (`list[str]`, default `[]`)
+
+Per-job scheduling guards:
+
+- `quiet_start` (`int | null`, hour 0-23)
+- `quiet_end` (`int | null`, hour 0-23)
+- `dependency` (`str | null`, shared lock key for sequential execution)
 
 Missing/`null` override fields fall back to global config via `resolve_cli_config()`.
 
@@ -66,16 +73,21 @@ Watcher behavior:
 When a job is due:
 
 1. validate task folder exists (`workspace/cron_tasks/<task_folder>`).
-2. build `TaskOverrides` from the job (`provider`, `model`, `reasoning_effort`, `cli_parameters`).
-3. resolve `TaskExecutionConfig` via `resolve_cli_config(config, codex_cache, task_overrides=...)`.
-4. enrich instruction with `<task_folder>_MEMORY.md` reminder.
-5. build provider command via `build_cmd(exec_config, prompt)`.
-6. run subprocess in task folder (`stdin=DEVNULL`).
-7. enforce timeout (`config.cli_timeout`).
-8. parse result (`parse_claude_result` or `parse_codex_result`).
-9. persist run status.
-10. fire optional callback `(title, result_text, status)`.
-11. reschedule next run.
+2. acquire dependency lock (`DependencyQueue.acquire`) when `CronJob.dependency` is set.
+3. evaluate quiet hours with fallback to global heartbeat quiet settings:
+   - per-job: `quiet_start`/`quiet_end`
+   - fallback: `config.heartbeat.quiet_start`/`config.heartbeat.quiet_end`
+4. if in quiet hours: skip execution for this occurrence (no subprocess spawn).
+5. build `TaskOverrides` from the job (`provider`, `model`, `reasoning_effort`, `cli_parameters`).
+6. resolve `TaskExecutionConfig` via `resolve_cli_config(config, codex_cache, task_overrides=...)`.
+7. enrich instruction with `<task_folder>_MEMORY.md` reminder.
+8. build provider command via `build_cmd(exec_config, prompt)`.
+9. run subprocess in task folder (`stdin=DEVNULL`).
+10. enforce timeout (`config.cli_timeout`).
+11. parse result (`parse_claude_result` or `parse_codex_result`).
+12. persist run status.
+13. fire optional callback `(title, result_text, status)`.
+14. reschedule next run.
 
 ## Status Codes
 
@@ -87,6 +99,8 @@ Typical status values:
 - `error:cli_not_found_codex`
 - `error:timeout`
 - `error:exit_<code>`
+
+Quiet-hour skips do not currently write a `last_run_status` entry.
 
 ## `execution.py` Command Rules
 
@@ -125,6 +139,13 @@ Resolution order per job:
 Implementation: `_schedule_job()` converts `datetime.now()` to the resolved timezone, passes naive local time to `CronSim`, then re-attaches the timezone to compute UTC delay.
 
 Workspace tools: `cron_add.py` and `cron_edit.py` accept `--timezone`. `cron_time.py` shows current time in configured/common timezones. `cron_list.py` reports the active `user_timezone`.
+
+## Quiet Hours and Dependency Queue
+
+- Quiet-hour checks use `check_quiet_hour(...)` in `utils/quiet_hours.py`.
+- Window logic supports wrap-around ranges (for example `21 -> 8`).
+- Dependency locking is global across cron and webhook `cron_task` runs because both use `cron/dependency_queue.py`.
+- Tasks with the same `dependency` run FIFO; tasks without dependency (or with different dependency keys) run in parallel.
 
 ## Design Choice
 

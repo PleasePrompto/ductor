@@ -41,6 +41,13 @@ class WebhookEntry:
     reasoning_effort: str | None = None
     cli_parameters: list[str] = field(default_factory=list)
 
+    # Quiet hours (None = use global config defaults)
+    quiet_start: int | None = None
+    quiet_end: int | None = None
+
+    # Optional dependency for sequential execution
+    dependency: str | None = None
+
     def __post_init__(self) -> None:
         if not self.created_at:
             self.created_at = datetime.now(UTC).isoformat()
@@ -71,6 +78,9 @@ class WebhookEntry:
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
             "cli_parameters": self.cli_parameters,
+            "quiet_start": self.quiet_start,
+            "quiet_end": self.quiet_end,
+            "dependency": self.dependency,
         }
 
     @classmethod
@@ -100,6 +110,9 @@ class WebhookEntry:
             model=data.get("model"),
             reasoning_effort=data.get("reasoning_effort"),
             cli_parameters=data.get("cli_parameters", []),
+            quiet_start=data.get("quiet_start"),
+            quiet_end=data.get("quiet_end"),
+            dependency=data.get("dependency"),
         )
 
 

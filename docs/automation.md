@@ -70,13 +70,18 @@ Each cron job can optionally override execution settings in `cron_jobs.json`:
   "provider": "codex",
   "model": "gpt-5.2-codex",
   "reasoning_effort": "high",
-  "cli_parameters": ["--chrome"]
+  "cli_parameters": ["--chrome"],
+  "quiet_start": 22,
+  "quiet_end": 7,
+  "dependency": "nightly-reports"
 }
 ```
 
 - Omit a field to use the global config value.
 - `reasoning_effort` is only used for Codex models that support it.
 - `cli_parameters` are passed to that job's command before `--`.
+- `quiet_start` / `quiet_end` pause this specific job during a local-time window.
+- `dependency` serializes jobs that share the same key (FIFO), even across webhook `cron_task` runs.
 
 ### Timezones
 
@@ -136,6 +141,11 @@ Same endpoint, but the webhook points to a task folder. A fresh subagent session
 Good for: heavy processing, data analysis, tasks that don't need conversation context.
 
 In `cron_task` mode, a webhook can also override execution settings (`provider`, `model`, `reasoning_effort`, `cli_parameters`) exactly like cron jobs.
+
+Webhook `cron_task` mode also supports:
+
+- `quiet_start` / `quiet_end` to skip runs during local quiet hours
+- `dependency` to serialize with other tasks using the same key
 
 ### Prompt templates
 

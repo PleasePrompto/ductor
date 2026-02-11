@@ -52,7 +52,9 @@ This function is intentionally called from both `__main__.py` and `Orchestrator.
 
 ## Copy Rules (`_walk_and_copy`)
 
-- Zone 2 (always overwrite): `CLAUDE.md`, `AGENTS.md`.
+- Zone 2 (always overwrite):
+  - `CLAUDE.md`, `AGENTS.md`
+  - all `.py` files in `workspace/tools/cron_tools/` and `workspace/tools/webhook_tools/` (framework-managed tool scripts)
 - Zone 3 (seed once): all other files copied only if missing.
 - Rule template files are skipped here (`RULES.md`, `RULES-claude-only.md`, `RULES-codex-only.md`, `RULES-claude-and-codex.md`).
 - Targets that are already symlinks are skipped (preserves bundled skill links).

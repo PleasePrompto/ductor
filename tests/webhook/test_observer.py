@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import time_machine
+
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.config import AgentConfig, ModelRegistry, WebhookConfig
 from ductor_bot.webhook.manager import WebhookManager
@@ -284,7 +286,9 @@ class TestDispatchCronTask:
         mgr.add_hook(_make_hook("ct-hook", mode="cron_task", task_folder="missing"))
         observer = _make_observer(paths, mgr)
 
-        result = await observer._dispatch("ct-hook", {})
+        with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
+            result = await observer._dispatch("ct-hook", {})
+
         assert result.status == "error:folder_missing"
 
     async def test_cron_task_missing_cli(self, tmp_path: Path) -> None:
@@ -294,7 +298,10 @@ class TestDispatchCronTask:
         (paths.cron_tasks_dir / "my-task").mkdir()
         observer = _make_observer(paths, mgr)
 
-        with patch("ductor_bot.cron.execution.which", return_value=None):
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("ductor_bot.cron.execution.which", return_value=None),
+        ):
             result = await observer._dispatch("ct-hook", {"msg": "go"})
 
         assert result.status.startswith("error:cli_not_found")
@@ -311,6 +318,7 @@ class TestDispatchCronTask:
         mock_proc.communicate = AsyncMock(return_value=(b'{"result": "Done."}', b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):
@@ -332,6 +340,7 @@ class TestDispatchCronTask:
         mock_proc.communicate = AsyncMock(return_value=(b"", b"error"))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -362,6 +371,7 @@ class TestDispatchCronTask:
         mock_proc.communicate = AsyncMock(side_effect=_communicate_side_effect)
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         ):
@@ -382,6 +392,7 @@ class TestDispatchCronTask:
         mock_proc.communicate = AsyncMock(return_value=(b'{"result": "ok"}', b""))
 
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as exec_mock,
         ):

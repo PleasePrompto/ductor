@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from ductor_bot.cli.auth import AuthResult, AuthStatus
+from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_discovery import CodexModelInfo
 from ductor_bot.orchestrator.core import Orchestrator
 from ductor_bot.orchestrator.model_selector import (
@@ -48,12 +51,21 @@ def _patch_auth(auth_map: dict[str, AuthResult]) -> Any:
     )
 
 
-def _patch_discovery(models: list[CodexModelInfo] | None = None) -> Any:
-    return patch(
-        "ductor_bot.orchestrator.model_selector.discover_codex_models",
-        new_callable=AsyncMock,
-        return_value=models if models is not None else _CODEX_MODELS,
+@contextmanager
+def _with_codex_cache(orch: Orchestrator, models: list[CodexModelInfo] | None = None) -> Any:
+    """Set up a mock _codex_cache_observer with the given models."""
+    cache = CodexModelCache(
+        last_updated=datetime.now(UTC).isoformat(),
+        models=models if models is not None else _CODEX_MODELS,
     )
+    mock_observer = MagicMock()
+    mock_observer.get_cache = MagicMock(return_value=cache)
+    old = getattr(orch, "_codex_cache_observer", None)
+    object.__setattr__(orch, "_codex_cache_observer", mock_observer)
+    try:
+        yield
+    finally:
+        object.__setattr__(orch, "_codex_cache_observer", old)
 
 
 # -- is_model_selector_callback --
@@ -90,7 +102,7 @@ async def test_start_one_provider_claude(orch: Orchestrator) -> None:
 async def test_start_one_provider_codex(orch: Orchestrator) -> None:
     with (
         _patch_auth({"claude": _NOT_FOUND_CLAUDE, "codex": _AUTHED_CODEX}),
-        _patch_discovery(),
+        _with_codex_cache(orch),
     ):
         text, keyboard = await model_selector_start(orch, 1)
     assert "Select Codex model" in text
@@ -120,7 +132,7 @@ async def test_callback_provider_claude(orch: Orchestrator) -> None:
 
 
 async def test_callback_provider_codex(orch: Orchestrator) -> None:
-    with _patch_discovery():
+    with _with_codex_cache(orch):
         text, keyboard = await handle_model_callback(orch, 1, "ms:p:codex")
     assert "Select Codex model" in text
     assert keyboard is not None
@@ -129,7 +141,7 @@ async def test_callback_provider_codex(orch: Orchestrator) -> None:
 
 
 async def test_callback_provider_codex_fallback(orch: Orchestrator) -> None:
-    with _patch_discovery(models=[]):
+    with _with_codex_cache(orch, models=[]):
         _text, keyboard = await handle_model_callback(orch, 1, "ms:p:codex")
     assert keyboard is not None
     labels = [btn.text for row in keyboard.inline_keyboard for btn in row]
@@ -149,7 +161,7 @@ async def test_callback_model_claude_switches(orch: Orchestrator) -> None:
 
 
 async def test_callback_model_codex_shows_reasoning(orch: Orchestrator) -> None:
-    with _patch_discovery():
+    with _with_codex_cache(orch):
         text, keyboard = await handle_model_callback(orch, 1, "ms:m:gpt-5.2-codex")
     assert "Thinking level" in text
     assert keyboard is not None
@@ -160,7 +172,7 @@ async def test_callback_model_codex_shows_reasoning(orch: Orchestrator) -> None:
 
 
 async def test_callback_model_codex_mini_limited_efforts(orch: Orchestrator) -> None:
-    with _patch_discovery():
+    with _with_codex_cache(orch):
         _text, keyboard = await handle_model_callback(orch, 1, "ms:m:gpt-5.1-codex-mini")
     assert keyboard is not None
     labels = [btn.text for row in keyboard.inline_keyboard for btn in row]

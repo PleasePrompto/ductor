@@ -43,6 +43,25 @@ OPTIONAL:
   --hmac-header       Header name containing the HMAC signature (required for --auth-mode hmac).
                       Examples: "X-Hub-Signature-256" (GitHub), "Stripe-Signature" (Stripe).
 
+EXECUTION OVERRIDES (optional, for mode "cron_task"):
+  --provider          CLI provider: 'claude' or 'codex'
+  --model             Model name (e.g. 'opus', 'sonnet', 'gpt-5.2-codex')
+  --reasoning-effort  Thinking level for Codex: 'low', 'medium', 'high', 'xhigh'
+  --cli-parameters    Additional CLI flags as JSON array (e.g. '["--chrome"]')
+
+QUIET HOURS (optional, prevent hooks from running during specific hours):
+  --quiet-start       Start of quiet hours (0-23, hook WON'T run during this time)
+  --quiet-end         End of quiet hours (0-23, exclusive)
+                      If omitted, uses global heartbeat.quiet_start/quiet_end from config.
+                      Supports wrap-around: --quiet-start 21 --quiet-end 8 means 21:00-07:59.
+                      Example: --quiet-start 22 --quiet-end 7 (no execution 22:00-06:59)
+
+DEPENDENCIES (optional, prevent concurrent resource conflicts):
+  --dependency        Resource identifier (e.g. 'chrome_browser', 'api_token')
+                      Hooks with the SAME dependency run sequentially (one at a time, FIFO).
+                      Hooks with DIFFERENT dependencies or no dependency run in parallel.
+                      Use when webhooks trigger tasks that share resources.
+
 HMAC ADVANCED (only when --auth-mode hmac):
   --hmac-algorithm    Hash algorithm: sha256 (default), sha1, sha512.
   --hmac-encoding     Signature encoding: hex (default) or base64.
@@ -232,6 +251,27 @@ def main() -> None:
         help="Additional CLI flags as JSON array (e.g. '[\"--verbose\"]'). "
         "If omitted, uses only global config parameters.",
     )
+    parser.add_argument(
+        "--quiet-start",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="Start of quiet hours (0-23). Hook won't run during quiet hours. "
+        "If omitted, uses global heartbeat.quiet_start from config.",
+    )
+    parser.add_argument(
+        "--quiet-end",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="End of quiet hours (0-23, exclusive). "
+        "If omitted, uses global heartbeat.quiet_end from config.",
+    )
+    parser.add_argument(
+        "--dependency",
+        help="Resource dependency (e.g. 'chrome_browser'). "
+        "Hooks with same dependency run sequentially, different dependencies run in parallel.",
+    )
     args = parser.parse_args()
 
     required = ["name", "title", "description", "mode", "prompt_template"]
@@ -315,6 +355,9 @@ def main() -> None:
         "model": args.model,
         "reasoning_effort": args.reasoning_effort,
         "cli_parameters": cli_params_list,
+        "quiet_start": args.quiet_start,
+        "quiet_end": args.quiet_end,
+        "dependency": args.dependency.strip() if args.dependency else None,
     }
     data["hooks"].append(hook)
     save_hooks(HOOKS_PATH, data)

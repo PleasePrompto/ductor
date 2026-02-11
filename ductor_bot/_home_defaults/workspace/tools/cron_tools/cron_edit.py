@@ -43,6 +43,11 @@ CHANGES:
   --description "<text>"     Update metadata description
   --schedule "<cron-expr>"   Update execution schedule
   --timezone "<iana>"        Set per-job timezone override (e.g. 'Europe/Berlin')
+  --quiet-start <hour>       Start of quiet hours (0-23, job won't run during this time)
+  --quiet-end <hour>         End of quiet hours (0-23, exclusive)
+  --dependency "<name>"      Resource dependency for sequential execution (e.g. 'chrome_browser')
+  --clear-quiet-hours        Remove quiet hour settings (use global config)
+  --clear-dependency         Remove dependency (allow parallel execution)
   --enable                   Set enabled=true
   --disable                  Set enabled=false
 
@@ -51,6 +56,10 @@ EXAMPLES:
   python tools/cron_tools/cron_edit.py "weather-check" --title "Weather 08:30"
   python tools/cron_tools/cron_edit.py "weather-check" --name "weather-morning"
   python tools/cron_tools/cron_edit.py "weather-check" --disable
+  python tools/cron_tools/cron_edit.py "web-scraper" --quiet-start 22 --quiet-end 7
+  python tools/cron_tools/cron_edit.py "web-scraper" --dependency chrome_browser
+  python tools/cron_tools/cron_edit.py "web-scraper" --clear-quiet-hours
+  python tools/cron_tools/cron_edit.py "web-scraper" --clear-dependency
 """
 
 
@@ -65,6 +74,34 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--description", help="New description text")
     parser.add_argument("--schedule", help="New cron expression")
     parser.add_argument("--timezone", help="IANA timezone for this job (e.g. 'Europe/Berlin')")
+    parser.add_argument(
+        "--quiet-start",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="Start of quiet hours (0-23). Job won't run during quiet hours.",
+    )
+    parser.add_argument(
+        "--quiet-end",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="End of quiet hours (0-23, exclusive).",
+    )
+    parser.add_argument(
+        "--dependency",
+        help="Resource dependency (e.g. 'chrome_browser'). Jobs with same dependency run sequentially.",
+    )
+    parser.add_argument(
+        "--clear-quiet-hours",
+        action="store_true",
+        help="Remove quiet hour settings (use global config).",
+    )
+    parser.add_argument(
+        "--clear-dependency",
+        action="store_true",
+        help="Remove dependency (allow parallel execution).",
+    )
     enabled_group = parser.add_mutually_exclusive_group()
     enabled_group.add_argument("--enable", action="store_true", help="Enable the job")
     enabled_group.add_argument("--disable", action="store_true", help="Disable the job")
@@ -149,6 +186,33 @@ def _apply_updates(args: argparse.Namespace, job: dict[str, Any]) -> tuple[list[
             job["timezone"] = tz_val
             updated_fields.append("timezone")
 
+    if args.quiet_start is not None:
+        if job.get("quiet_start") != args.quiet_start:
+            job["quiet_start"] = args.quiet_start
+            updated_fields.append("quiet_start")
+
+    if args.quiet_end is not None:
+        if job.get("quiet_end") != args.quiet_end:
+            job["quiet_end"] = args.quiet_end
+            updated_fields.append("quiet_end")
+
+    if args.dependency is not None:
+        dep_val = args.dependency.strip()
+        if job.get("dependency") != dep_val:
+            job["dependency"] = dep_val
+            updated_fields.append("dependency")
+
+    if args.clear_quiet_hours:
+        if "quiet_start" in job or "quiet_end" in job:
+            job.pop("quiet_start", None)
+            job.pop("quiet_end", None)
+            updated_fields.append("quiet_hours (cleared)")
+
+    if args.clear_dependency:
+        if "dependency" in job:
+            job.pop("dependency", None)
+            updated_fields.append("dependency (cleared)")
+
     if args.enable and job.get("enabled", True) is not True:
         job["enabled"] = True
         updated_fields.append("enabled")
@@ -177,6 +241,11 @@ def main() -> None:
             args.description is not None,
             args.schedule is not None,
             args.timezone is not None,
+            args.quiet_start is not None,
+            args.quiet_end is not None,
+            args.dependency is not None,
+            args.clear_quiet_hours,
+            args.clear_dependency,
             args.enable,
             args.disable,
         ]

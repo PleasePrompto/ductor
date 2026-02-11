@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from ductor_bot.config import resolve_user_timezone
 from ductor_bot.log_context import set_log_context
+from ductor_bot.utils.quiet_hours import is_quiet_hour
 
 if TYPE_CHECKING:
     from ductor_bot.config import AgentConfig, HeartbeatConfig
@@ -20,16 +21,6 @@ logger = logging.getLogger(__name__)
 
 # Callback signature: (chat_id, alert_text)
 HeartbeatResultCallback = Callable[[int, str], Awaitable[None]]
-
-
-def is_quiet_hour(now_hour: int, quiet_start: int, quiet_end: int) -> bool:
-    """Check if *now_hour* falls within the quiet window.
-
-    Handles wrap-around: quiet_start=21, quiet_end=8 means 21-23 and 0-7 are quiet.
-    """
-    if quiet_start <= quiet_end:
-        return quiet_start <= now_hour < quiet_end
-    return now_hour >= quiet_start or now_hour < quiet_end
 
 
 class HeartbeatObserver:

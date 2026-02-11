@@ -20,6 +20,18 @@ Scripts for creating, editing, listing, and removing scheduled jobs.
    - `xhigh` - Maximum reasoning depth
    - Note: `gpt-5.1-codex-mini` only supports `medium` and `high`
 
+3. **Should this job respect quiet hours?**
+   - Ask: "Should this job skip execution during specific hours (e.g., at night)?"
+   - If YES: Ask for start/end hours (e.g., "Don't run between 22:00-08:00")
+   - Explain: "Quiet hours prevent jobs from running during specified times (default: 21:00-08:00)"
+   - Use `--quiet-start <hour>` and `--quiet-end <hour>` (0-23, supports wrap-around)
+
+4. **Does this job share resources with other jobs?**
+   - Ask: "Does this job use Chrome/browser, or compete for API rate limits/tokens?"
+   - If YES: "Use a dependency name (e.g., `chrome_browser`) so jobs run one at a time"
+   - Explain: "Jobs with the SAME dependency run sequentially. Different dependencies run in parallel."
+   - Use `--dependency <name>` (e.g., `chrome_browser`, `api_rate_limit`, `database`)
+
 **Present these options and wait for the user's choice!**
 
 Do NOT suggest `--cli-parameters` proactively. Only mention it exists if the user asks.

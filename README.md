@@ -77,7 +77,7 @@ I picked Python because it's easy to modify. The agents can write their own auto
 
 ### Automation
 
-- **Cron jobs** -recurring tasks with cron expressions and timezone support. Each job runs as its own subagent with a dedicated workspace and memory file
+- **Cron jobs** -recurring tasks with cron expressions and timezone support. Each job runs as its own subagent with a dedicated workspace and memory file (plus optional per-job quiet hours and dependency locks)
 - **Webhooks** -HTTP endpoints with Bearer or HMAC auth. Two modes: *wake* injects a prompt into your active chat, *cron_task* runs a separate task session. Works with GitHub, Stripe, or anything that sends POST
 - **Heartbeat** -the agent checks in periodically during active sessions. Quiet hours respected
 - **Cleanup** -daily retention cleanup for `telegram_files/` and `output_to_user/`
@@ -91,6 +91,7 @@ ductor creates a task folder with everything the subagent needs:
 ```
 ~/.ductor/workspace/cron_tasks/hn-ai-digest/
     CLAUDE.md              # Agent rules (managed by ductor)
+    AGENTS.md              # Same rules for Codex
     TASK_DESCRIPTION.md    # What the agent should do
     hn-ai-digest_MEMORY.md # The subagent's own memory across runs
     scripts/               # Helper scripts if needed
@@ -110,7 +111,7 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 ### Infrastructure
 
 - `ductor service install` -Linux systemd user service (start on boot, restart on crash)
-- Docker sandbox (Debian Bookworm) -both CLIs have full filesystem access by default, so a container keeps your host safe
+- Docker sandbox image (built via `Dockerfile.sandbox`) -both CLIs have full filesystem access by default, so a container keeps your host safe
 - `/upgrade` checks PyPI, offers in-chat upgrade, then restarts automatically on success
 - Supervisor with PID lock. Exit code 42 triggers restart
 - Prompt injection detection, path traversal checks, per-user allowlist
@@ -119,8 +120,8 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 
 - First-run wizard detects your CLIs, walks through config, seeds the workspace
 - New config fields merge automatically on upgrade
-- `/diagnose` dumps recent logs, `/status` shows session stats
-- `/stop` terminates the agent and discards all queued messages, `/new` clears the session
+- `/diagnose` shows system diagnostics (version/provider/model, Codex cache status, recent logs), `/status` shows session stats
+- `/stop` terminates the active run and drains queued messages, `/new` starts a fresh session
 - `/showfiles` lets you browse `~/.ductor/` as a clickable file tree inside Telegram
 - Messages sent while the agent is working show `[Message in queue...]` with a cancel button
 - Bundled skills (e.g. `skill-creator`) are symlinked into the workspace and stay current with the installed version
@@ -231,7 +232,10 @@ Cron tasks support per-task execution overrides:
   "provider": "codex",
   "model": "gpt-5.2-codex",
   "reasoning_effort": "high",
-  "cli_parameters": ["--chrome"]
+  "cli_parameters": ["--chrome"],
+  "quiet_start": 22,
+  "quiet_end": 7,
+  "dependency": "nightly-reports"
 }
 ```
 
@@ -242,7 +246,7 @@ All fields are optional and fall back to global config values if not specified.
 | Command | Description |
 |---|---|
 | `/new` | Start a fresh session |
-| `/stop` | Terminate agent and discard queued messages |
+| `/stop` | Stop active agent execution and discard queued messages |
 | `/model` | Switch AI model (interactive keyboard) |
 | `/model opus` | Switch directly to a specific model |
 | `/status` | Session info, tokens, cost, auth status |
@@ -252,7 +256,7 @@ All fields are optional and fall back to global config values if not specified.
 | `/info` | Project links and version info |
 | `/upgrade` | Check for updates and show upgrade prompt |
 | `/restart` | Restart the bot |
-| `/diagnose` | Show recent log output |
+| `/diagnose` | Show system diagnostics and recent logs |
 | `/help` | Command reference |
 
 ## Documentation
@@ -260,6 +264,7 @@ All fields are optional and fall back to global config values if not specified.
 | Document | Description |
 |---|---|
 | [Installation](https://github.com/PleasePrompto/ductor/blob/main/docs/installation.md) | Platform-specific setup (Linux, macOS, WSL, Windows, VPS) |
+| [Developer Quickstart](https://github.com/PleasePrompto/ductor/blob/main/docs/developer_quickstart.md) | Fast onboarding for contributors and junior devs |
 | [Automation](https://github.com/PleasePrompto/ductor/blob/main/docs/automation.md) | Cron jobs, webhooks, heartbeat |
 | [Configuration](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md) | Full config schema and options |
 | [Architecture](https://github.com/PleasePrompto/ductor/blob/main/docs/architecture.md) | System design and runtime flow |

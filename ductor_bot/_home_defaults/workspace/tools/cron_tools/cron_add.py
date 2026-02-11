@@ -59,6 +59,22 @@ EXECUTION OVERRIDES (optional, override global config for this specific job):
   --reasoning-effort  Thinking level for Codex: 'low', 'medium', 'high', 'xhigh'
   --cli-parameters    Additional CLI flags as JSON array (e.g. '["--chrome"]' for Claude only)
 
+QUIET HOURS (optional, prevent jobs from running during specific hours):
+  --quiet-start       Start of quiet hours (0-23, job WON'T run during this time)
+  --quiet-end         End of quiet hours (0-23, exclusive)
+                      If omitted, uses global heartbeat.quiet_start/quiet_end from config.
+                      Supports wrap-around: --quiet-start 21 --quiet-end 8 means 21:00-07:59.
+                      Set both to same value to disable quiet hours for this job.
+                      Example: --quiet-start 22 --quiet-end 7 (no execution 22:00-06:59)
+
+DEPENDENCIES (optional, prevent concurrent resource conflicts):
+  --dependency        Resource identifier (e.g. 'chrome_browser', 'api_token', 'database')
+                      Jobs with the SAME dependency run sequentially (one at a time, FIFO).
+                      Jobs with DIFFERENT dependencies or no dependency run in parallel.
+                      Use this when jobs share resources that can't be used concurrently.
+                      Examples: --dependency chrome_browser (multiple browser automation jobs)
+                                --dependency api_rate_limit (API calls with rate limiting)
+
 TIMEZONE REMINDER:
   Hours in cron expressions are interpreted in the user's timezone.
   If user_timezone is NOT set in config.json, ask the user where they are
@@ -109,6 +125,26 @@ Claude job with browser automation:
       --provider claude \\
       --model sonnet \\
       --cli-parameters '["--chrome"]'
+
+Job with quiet hours (don't run at night):
+  python tools/cron_tools/cron_add.py \\
+      --name "daily-summary" \\
+      --title "Daily Summary" \\
+      --description "Summarize day's activities" \\
+      --schedule "0 20 * * *" \\
+      --quiet-start 22 \\
+      --quiet-end 8
+  # This job is scheduled for 20:00, but if it's delayed it won't run 22:00-07:59
+
+Job with dependency (prevent Chrome conflicts):
+  python tools/cron_tools/cron_add.py \\
+      --name "linkedin-scraper" \\
+      --title "LinkedIn Scraper" \\
+      --description "Scrape LinkedIn with browser" \\
+      --schedule "0 10 * * *" \\
+      --dependency chrome_browser \\
+      --cli-parameters '["--chrome"]'
+  # If multiple jobs have --dependency chrome_browser, they run one at a time
 
 WHAT HAPPENS AFTER CREATION:
   1. Open cron_tasks/<name>/TASK_DESCRIPTION.md
@@ -191,6 +227,27 @@ def main() -> None:
         help="Additional CLI flags as JSON array (e.g. '[\"--chrome\"]'). "
         "If omitted, uses only global config parameters.",
     )
+    parser.add_argument(
+        "--quiet-start",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="Start of quiet hours (0-23). Job won't run during quiet hours. "
+        "If omitted, uses global heartbeat.quiet_start from config.",
+    )
+    parser.add_argument(
+        "--quiet-end",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="End of quiet hours (0-23, exclusive). "
+        "If omitted, uses global heartbeat.quiet_end from config.",
+    )
+    parser.add_argument(
+        "--dependency",
+        help="Resource dependency (e.g. 'chrome_browser'). "
+        "Jobs with same dependency run sequentially, different dependencies run in parallel.",
+    )
     args = parser.parse_args()
 
     missing = [p for p in ("name", "title", "description", "schedule") if not getattr(args, p)]
@@ -250,6 +307,12 @@ def main() -> None:
         except json.JSONDecodeError as e:
             print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
             sys.exit(1)
+    if args.quiet_start is not None:
+        job["quiet_start"] = args.quiet_start
+    if args.quiet_end is not None:
+        job["quiet_end"] = args.quiet_end
+    if args.dependency:
+        job["dependency"] = args.dependency.strip()
     data["jobs"].append(job)
     save_jobs(JOBS_PATH, data)
 

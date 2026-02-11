@@ -21,6 +21,7 @@ from ductor_bot.cron.execution import (
 )
 from ductor_bot.cron.manager import CronManager
 from ductor_bot.log_context import set_log_context
+from ductor_bot.utils.quiet_hours import check_quiet_hour
 
 if TYPE_CHECKING:
     from ductor_bot.cli.codex_cache import CodexModelCache
@@ -207,97 +208,125 @@ class CronObserver:
         set_log_context(operation="cron")
         job = self._manager.get_job(job_id)
         job_title = job.title if job else job_id
-        logger.info("Cron job starting job=%s", job_title)
-        t0 = time.monotonic()
-        folder = self._paths.cron_tasks_dir / task_folder
-        if not await asyncio.to_thread(folder.is_dir):
-            logger.error("Cron task folder missing: %s", folder)
-            self._manager.update_run_status(job_id, status="error:folder_missing")
-            return
 
-        # Build TaskOverrides from job
-        overrides = TaskOverrides(
-            provider=job.provider if job else None,
-            model=job.model if job else None,
-            reasoning_effort=job.reasoning_effort if job else None,
-            cli_parameters=job.cli_parameters if job else [],
-        )
+        # Acquire dependency lock (if needed)
+        from ductor_bot.cron.dependency_queue import get_dependency_queue
 
-        exec_config = self._resolve_execution_config(overrides)
-        enriched = enrich_instruction(instruction, task_folder)
-        cmd = build_cmd(exec_config, enriched)
+        dep_queue = get_dependency_queue()
+        dependency = job.dependency if job else None
 
-        if cmd is None:
-            logger.error("%s CLI not found for cron job %s", exec_config.provider, job_id)
-            self._manager.update_run_status(
-                job_id,
-                status=f"error:cli_not_found_{exec_config.provider}",
+        async with dep_queue.acquire(job_id, job_title, dependency):
+            logger.info("Cron job starting job=%s", job_title)
+
+            # Check quiet hours (use job-specific or global defaults)
+            is_quiet, now_hour, tz = check_quiet_hour(
+                quiet_start=job.quiet_start if job else None,
+                quiet_end=job.quiet_end if job else None,
+                user_timezone=self._config.user_timezone,
+                global_quiet_start=self._config.heartbeat.quiet_start,
+                global_quiet_end=self._config.heartbeat.quiet_end,
             )
-            return
+            if is_quiet:
+                logger.debug(
+                    "Cron job skipped: quiet hours (%d:00 %s) job=%s",
+                    now_hour,
+                    tz.key,
+                    job_title,
+                )
+                return
 
-        timeout = self._config.cli_timeout
-        logger.debug(
-            "Cron subprocess cmd=%s cwd=%s provider=%s model=%s timeout=%.0fs",
-            " ".join(cmd[:3]),
-            folder,
-            exec_config.provider,
-            exec_config.model,
-            timeout,
-        )
+            t0 = time.monotonic()
+            folder = self._paths.cron_tasks_dir / task_folder
+            if not await asyncio.to_thread(folder.is_dir):
+                logger.error("Cron task folder missing: %s", folder)
+                self._manager.update_run_status(job_id, status="error:folder_missing")
+                return
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(folder),
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        timed_out = False
-        try:
-            async with asyncio.timeout(timeout):
-                stdout, stderr = await proc.communicate()
-        except TimeoutError:
-            timed_out = True
-            logger.warning("Cron job %s timed out after %.0fs, killing process", job_id, timeout)
-            proc.kill()
-            stdout, stderr = await proc.communicate()
-        except asyncio.CancelledError:
-            logger.debug("Cron job %s cancelled, killing subprocess", job_id)
-            proc.kill()
-            await proc.wait()
-            raise
-
-        if stderr:
-            logger.debug("Cron stderr (%s): %s", job_id, stderr.decode(errors="replace")[:500])
-
-        if timed_out:
-            status = "error:timeout"
-            result_text = f"[Cron job timed out after {timeout:.0f}s]"
-        else:
-            result_text = (
-                parse_codex_result(stdout)
-                if exec_config.provider == "codex"
-                else parse_claude_result(stdout)
+            # Build TaskOverrides from job
+            overrides = TaskOverrides(
+                provider=job.provider if job else None,
+                model=job.model if job else None,
+                reasoning_effort=job.reasoning_effort if job else None,
+                cli_parameters=job.cli_parameters if job else [],
             )
-            status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
 
-        self._manager.update_run_status(job_id, status=status)
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        logger.info(
-            "Cron job completed job=%s status=%s duration_ms=%.0f stdout=%d result=%d",
-            job_title,
-            status,
-            elapsed_ms,
-            len(stdout),
-            len(result_text),
-        )
+            exec_config = self._resolve_execution_config(overrides)
+            enriched = enrich_instruction(instruction, task_folder)
+            cmd = build_cmd(exec_config, enriched)
 
-        if self._on_result and job:
+            if cmd is None:
+                logger.error("%s CLI not found for cron job %s", exec_config.provider, job_id)
+                self._manager.update_run_status(
+                    job_id,
+                    status=f"error:cli_not_found_{exec_config.provider}",
+                )
+                return
+
+            timeout = self._config.cli_timeout
+            logger.debug(
+                "Cron subprocess cmd=%s cwd=%s provider=%s model=%s timeout=%.0fs",
+                " ".join(cmd[:3]),
+                folder,
+                exec_config.provider,
+                exec_config.model,
+                timeout,
+            )
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(folder),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            timed_out = False
             try:
-                await self._on_result(job.title, result_text, status)
-            except Exception:
-                logger.exception("Error in cron result handler for job %s", job_id)
+                async with asyncio.timeout(timeout):
+                    stdout, stderr = await proc.communicate()
+            except TimeoutError:
+                timed_out = True
+                logger.warning(
+                    "Cron job %s timed out after %.0fs, killing process", job_id, timeout
+                )
+                proc.kill()
+                stdout, stderr = await proc.communicate()
+            except asyncio.CancelledError:
+                logger.debug("Cron job %s cancelled, killing subprocess", job_id)
+                proc.kill()
+                await proc.wait()
+                raise
+
+            if stderr:
+                logger.debug("Cron stderr (%s): %s", job_id, stderr.decode(errors="replace")[:500])
+
+            if timed_out:
+                status = "error:timeout"
+                result_text = f"[Cron job timed out after {timeout:.0f}s]"
+            else:
+                result_text = (
+                    parse_codex_result(stdout)
+                    if exec_config.provider == "codex"
+                    else parse_claude_result(stdout)
+                )
+                status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
+
+            self._manager.update_run_status(job_id, status=status)
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            logger.info(
+                "Cron job completed job=%s status=%s duration_ms=%.0f stdout=%d result=%d",
+                job_title,
+                status,
+                elapsed_ms,
+                len(stdout),
+                len(result_text),
+            )
+
+            if self._on_result and job:
+                try:
+                    await self._on_result(job.title, result_text, status)
+                except Exception:
+                    logger.exception("Error in cron result handler for job %s", job_id)
 
     async def _update_mtime(self) -> None:
         """Cache the current mtime of the jobs file."""

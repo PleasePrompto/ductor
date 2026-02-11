@@ -8,13 +8,14 @@ import os
 import re
 import yaml
 from pathlib import Path
+from typing import Tuple, Union
 
-def validate_skill(skill_path):
+def validate_skill(skill_path: Union[str, Path]) -> Tuple[bool, str]:
     """Basic validation of a skill"""
-    skill_path = Path(skill_path)
+    skill_path_obj = Path(skill_path)
 
     # Check SKILL.md exists
-    skill_md = skill_path / 'SKILL.md'
+    skill_md = skill_path_obj / 'SKILL.md'
     if not skill_md.exists():
         return False, "SKILL.md not found"
 
@@ -93,11 +94,14 @@ def validate_skill(skill_path):
 
     return True, "Skill is valid!"
 
-if __name__ == "__main__":
+def main() -> None:
     if len(sys.argv) != 2:
         print("Usage: python quick_validate.py <skill_directory>")
         sys.exit(1)
-    
+
     valid, message = validate_skill(sys.argv[1])
     print(message)
     sys.exit(0 if valid else 1)
+
+if __name__ == "__main__":
+    main()

@@ -139,7 +139,7 @@ Not supported. Use WSL.
 
 ## Docker sandboxing
 
-Both CLIs have full file system access by default. They can read, write, and delete anything your user can. Docker sandboxing puts the CLI process inside a Debian Bookworm container so it can only touch mounted directories.
+Both CLIs have full file system access by default. They can read, write, and delete anything your user can. Docker sandboxing runs the CLI process inside a container image built from `Dockerfile.sandbox`, so it can only touch mounted directories.
 
 ### Why bother?
 
@@ -318,6 +318,56 @@ The wizard asks whether to install the systemd service. If you skip it, run `duc
 ### Resource usage
 
 Idle: ~50-100 MB RAM, almost no CPU. During CLI execution the subprocess uses more, but ductor itself stays light. Disk is about 200 MB for the package and dependencies. The workspace grows over time, and a daily cleanup pass removes old top-level files from `telegram_files/` and `output_to_user/` (default retention: 30 days). All network traffic is outbound to Telegram and the AI provider.
+
+---
+
+## Troubleshooting
+
+### Bot does not answer in Telegram
+
+1. Check config basics:
+   - `telegram_token` is valid
+   - your numeric ID is in `allowed_user_ids`
+2. Check runtime status:
+
+```bash
+ductor status
+```
+
+3. Check logs:
+   - `~/.ductor/logs/agent.log`
+4. In Telegram, run:
+   - `/diagnose`
+
+### CLI installed but not authenticated
+
+Auth must be valid for at least one provider:
+
+```bash
+claude auth
+# or
+codex auth
+```
+
+Then restart ductor.
+
+### Docker enabled but sandbox not starting
+
+1. Verify Docker works without `sudo`:
+
+```bash
+docker info
+```
+
+2. Check `docker.enabled` and container/image names in `~/.ductor/config/config.json`.
+3. If needed, disable Docker temporarily and verify host-mode runtime works.
+
+### Webhooks not arriving
+
+1. Ensure webhook server is enabled in config (`webhooks.enabled: true`).
+2. If sender is external, expose `127.0.0.1:8742` with a tunnel or reverse proxy.
+3. Confirm auth mode and token/signature match your webhook definition.
+4. Check `~/.ductor/webhooks.json` trigger/error fields.
 
 ---
 

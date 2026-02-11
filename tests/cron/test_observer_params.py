@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import time_machine
 
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_discovery import CodexModelInfo
@@ -166,6 +168,7 @@ class TestExecuteJobWithOverrides:
 
         # Mock CLI execution
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.observer.build_cmd") as mock_build,
             patch("ductor_bot.cron.observer.resolve_cli_config") as mock_resolve,
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_subprocess,
@@ -221,6 +224,7 @@ class TestExecuteJobWithOverrides:
 
         # Mock CLI execution
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.observer.build_cmd") as mock_build,
             patch("ductor_bot.cron.observer.resolve_cli_config") as mock_resolve,
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_subprocess,
@@ -278,6 +282,7 @@ class TestExecuteJobWithOverrides:
 
         # Mock CLI execution
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.observer.build_cmd") as mock_build,
             patch("ductor_bot.cron.observer.resolve_cli_config") as mock_resolve,
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_subprocess,
@@ -337,6 +342,7 @@ class TestExecuteJobWithOverrides:
 
         # Mock CLI execution
         with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
             patch("ductor_bot.cron.observer.build_cmd") as mock_build,
             patch("ductor_bot.cron.observer.resolve_cli_config") as mock_resolve,
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_subprocess,

@@ -11,6 +11,18 @@ Scripts for managing incoming HTTP webhook endpoints.
    - `sonnet` - Balanced performance (recommended)
    - `opus` - Most capable, highest quality
 
+2. **Should this webhook respect quiet hours?**
+   - Ask: "Should this webhook skip execution during specific hours (e.g., at night)?"
+   - If YES: Ask for start/end hours (e.g., "Don't run between 22:00-08:00")
+   - Explain: "Quiet hours prevent webhooks from running during specified times (default: 21:00-08:00)"
+   - Use `--quiet-start <hour>` and `--quiet-end <hour>` (0-23, supports wrap-around)
+
+3. **Does this webhook share resources with other tasks?**
+   - Ask: "Does this webhook use Chrome/browser, or compete for API rate limits/tokens?"
+   - If YES: "Use a dependency name (e.g., `chrome_browser`) so tasks run one at a time"
+   - Explain: "Tasks with the SAME dependency run sequentially. Different dependencies run in parallel."
+   - Use `--dependency <name>` (e.g., `chrome_browser`, `api_rate_limit`, `database`)
+
 **Present these options and wait for the user's choice!**
 
 For `wake` mode webhooks, these parameters are not applicable (uses current main session).

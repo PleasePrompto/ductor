@@ -13,10 +13,11 @@ Example:
 import sys
 import zipfile
 from pathlib import Path
+from typing import Optional, Union
 from quick_validate import validate_skill
 
 
-def package_skill(skill_path, output_dir=None):
+def package_skill(skill_path: Union[str, Path], output_dir: Optional[Union[str, Path]] = None) -> Optional[Path]:
     """
     Package a skill folder into a .skill file.
 
@@ -27,26 +28,26 @@ def package_skill(skill_path, output_dir=None):
     Returns:
         Path to the created .skill file, or None if error
     """
-    skill_path = Path(skill_path).resolve()
+    skill_path_obj = Path(skill_path).resolve()
 
     # Validate skill folder exists
-    if not skill_path.exists():
-        print(f"❌ Error: Skill folder not found: {skill_path}")
+    if not skill_path_obj.exists():
+        print(f"❌ Error: Skill folder not found: {skill_path_obj}")
         return None
 
-    if not skill_path.is_dir():
-        print(f"❌ Error: Path is not a directory: {skill_path}")
+    if not skill_path_obj.is_dir():
+        print(f"❌ Error: Path is not a directory: {skill_path_obj}")
         return None
 
     # Validate SKILL.md exists
-    skill_md = skill_path / "SKILL.md"
+    skill_md = skill_path_obj / "SKILL.md"
     if not skill_md.exists():
-        print(f"❌ Error: SKILL.md not found in {skill_path}")
+        print(f"❌ Error: SKILL.md not found in {skill_path_obj}")
         return None
 
     # Run validation before packaging
     print("🔍 Validating skill...")
-    valid, message = validate_skill(skill_path)
+    valid, message = validate_skill(skill_path_obj)
     if not valid:
         print(f"❌ Validation failed: {message}")
         print("   Please fix the validation errors before packaging.")
@@ -54,7 +55,7 @@ def package_skill(skill_path, output_dir=None):
     print(f"✅ {message}\n")
 
     # Determine output location
-    skill_name = skill_path.name
+    skill_name = skill_path_obj.name
     if output_dir:
         output_path = Path(output_dir).resolve()
         output_path.mkdir(parents=True, exist_ok=True)
@@ -67,10 +68,10 @@ def package_skill(skill_path, output_dir=None):
     try:
         with zipfile.ZipFile(skill_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
             # Walk through the skill directory
-            for file_path in skill_path.rglob('*'):
+            for file_path in skill_path_obj.rglob('*'):
                 if file_path.is_file():
                     # Calculate the relative path within the zip
-                    arcname = file_path.relative_to(skill_path.parent)
+                    arcname = file_path.relative_to(skill_path_obj.parent)
                     zipf.write(file_path, arcname)
                     print(f"  Added: {arcname}")
 
@@ -82,7 +83,7 @@ def package_skill(skill_path, output_dir=None):
         return None
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: python utils/package_skill.py <path/to/skill-folder> [output-directory]")
         print("\nExample:")

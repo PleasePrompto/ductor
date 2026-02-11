@@ -61,6 +61,54 @@ def _sync_home_defaults(paths: DuctorPaths) -> None:
     paths.logs_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _should_skip_entry(entry: Path) -> bool:
+    """Check if entry should be skipped during workspace sync."""
+    return entry.name.startswith(".") or entry.name in _SKIP_DIRS or entry.name in _SKIP_FILES
+
+
+def _is_zone2_py_file(entry: Path, src: Path, root_src: Path) -> bool:
+    """Check if a .py file is in a Zone 2 directory (always overwritten)."""
+    if entry.suffix != ".py":
+        return False
+    try:
+        rel_dir = src.relative_to(root_src)
+        return str(rel_dir) in _ZONE2_PY_DIRS
+    except ValueError:
+        return False
+
+
+def _copy_with_symlink_check(entry: Path, target: Path) -> None:
+    """Copy file to target, removing symlink if present."""
+    if target.is_symlink():
+        target.unlink()
+    shutil.copy2(entry, target)
+
+
+def _handle_zone2_file(entry: Path, target: Path, dst: Path) -> None:
+    """Handle Zone 2 file copy (always overwrite) and AGENTS.md mirroring."""
+    _copy_with_symlink_check(entry, target)
+    logger.debug("Zone 2 copy: %s", target)
+    # Auto-create AGENTS.md mirror for every CLAUDE.md
+    if entry.name == "CLAUDE.md":
+        agents_target = dst / "AGENTS.md"
+        _copy_with_symlink_check(entry, agents_target)
+        logger.debug("Zone 2 copy: %s", agents_target)
+
+
+def _handle_regular_file(entry: Path, target: Path, src: Path, root_src: Path) -> None:
+    """Handle regular file with Zone 2 .py or Zone 3 logic."""
+    if _is_zone2_py_file(entry, src, root_src):
+        # Zone 2 .py file: always overwrite (framework-controlled)
+        _copy_with_symlink_check(entry, target)
+        logger.debug("Zone 2 copy (framework tool): %s", target)
+    elif not target.exists():
+        # Zone 3: seed only (user-owned, never overwritten)
+        shutil.copy2(entry, target)
+        logger.debug("Zone 3 seed: %s", target)
+    else:
+        logger.debug("Zone 3 skip: %s (exists)", target)
+
+
 def _walk_and_copy(src: Path, dst: Path, root_src: Path | None = None) -> None:
     """Recursively copy *src* tree into *dst* with zone-based overwrite rules.
 
@@ -74,7 +122,7 @@ def _walk_and_copy(src: Path, dst: Path, root_src: Path | None = None) -> None:
 
     dst.mkdir(parents=True, exist_ok=True)
     for entry in sorted(src.iterdir()):
-        if entry.name.startswith(".") or entry.name in _SKIP_DIRS or entry.name in _SKIP_FILES:
+        if _should_skip_entry(entry):
             continue
         target = dst / entry.name
         if entry.is_dir():
@@ -83,41 +131,9 @@ def _walk_and_copy(src: Path, dst: Path, root_src: Path | None = None) -> None:
                 continue
             _walk_and_copy(entry, target, root_src)
         elif entry.name in _ZONE2_FILES:
-            # Zone 2: always overwrite (framework-controlled)
-            if target.is_symlink():
-                target.unlink()
-            shutil.copy2(entry, target)
-            logger.debug("Zone 2 copy: %s", target)
-            # Auto-create AGENTS.md mirror for every CLAUDE.md
-            if entry.name == "CLAUDE.md":
-                agents_target = dst / "AGENTS.md"
-                if agents_target.is_symlink():
-                    agents_target.unlink()
-                shutil.copy2(entry, agents_target)
-                logger.debug("Zone 2 copy: %s", agents_target)
+            _handle_zone2_file(entry, target, dst)
         else:
-            # Check if this .py file is in a Zone 2 directory
-            try:
-                rel_dir = src.relative_to(root_src)
-                is_zone2_py = (
-                    entry.suffix == ".py"
-                    and str(rel_dir) in _ZONE2_PY_DIRS
-                )
-            except ValueError:
-                is_zone2_py = False
-
-            if is_zone2_py:
-                # Zone 2 .py file: always overwrite (framework-controlled)
-                if target.is_symlink():
-                    target.unlink()
-                shutil.copy2(entry, target)
-                logger.debug("Zone 2 copy (framework tool): %s", target)
-            elif not target.exists():
-                # Zone 3: seed only (user-owned, never overwritten)
-                shutil.copy2(entry, target)
-                logger.debug("Zone 3 seed: %s", target)
-            else:
-                logger.debug("Zone 3 skip: %s (exists)", target)
+            _handle_regular_file(entry, target, src, root_src)
 
 
 # ---------------------------------------------------------------------------

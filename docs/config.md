@@ -60,6 +60,28 @@ Runtime edits from `/model` switches (model/provider/reasoning) and webhook toke
 
 Used by `CLIServiceConfig` for main-chat calls. Cron/webhook runs use task-level `cli_parameters` from `cron_jobs.json` / `webhooks.json`.
 
+## Task-Level Automation Overrides
+
+Stored outside `config.json` in:
+
+- `~/.ductor/cron_jobs.json` (`CronJob`)
+- `~/.ductor/webhooks.json` (`WebhookEntry`, `cron_task` mode)
+
+Common per-task fields:
+
+- execution: `provider`, `model`, `reasoning_effort`, `cli_parameters`
+- scheduling guards: `quiet_start`, `quiet_end`, `dependency`
+
+Cron-only field:
+
+- `timezone` (per-job timezone override)
+
+Behavior notes:
+
+- missing execution fields fall back to global `AgentConfig` (validated by `resolve_cli_config()`),
+- `dependency` is global across cron + webhook `cron_task` runs (shared `DependencyQueue`),
+- quiet-hour checks fall back to global heartbeat quiet settings when per-task values are omitted.
+
 ## `StreamingConfig`
 
 | Field | Type | Default |

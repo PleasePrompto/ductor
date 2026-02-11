@@ -68,7 +68,7 @@ async def perform_upgrade() -> tuple[bool, str]:
     if mode == "dev":
         return False, "Running from source (editable install). Use `git pull` to update."
     if mode == "pipx":
-        cmd = ["pipx", "upgrade", "ductor"]
+        cmd = ["pipx", "upgrade", "--force", "ductor"]
     else:
         cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "ductor"]
 

@@ -42,6 +42,12 @@ Per-hook execution overrides (`cron_task` mode):
 - `reasoning_effort` (`str` or `null`, Codex only)
 - `cli_parameters` (`list[str]`, default `[]`)
 
+Per-hook scheduling guards (`cron_task` mode):
+
+- `quiet_start` (`int | null`, hour 0-23)
+- `quiet_end` (`int | null`, hour 0-23)
+- `dependency` (`str | null`, shared lock key for sequential execution)
+
 ## Persistence (`WebhookManager`)
 
 - File: `~/.ductor/webhooks.json`
@@ -144,12 +150,15 @@ Spawns a fresh CLI session in `cron_tasks/<task_folder>/`.
 Execution path:
 
 1. validate `task_folder` exists.
-2. build `TaskOverrides` from webhook entry.
-3. resolve `TaskExecutionConfig` via `resolve_cli_config(config, codex_cache, task_overrides=...)`.
-4. build command with `build_cmd(exec_config, prompt)`.
-5. run subprocess with timeout.
-6. parse output via `parse_claude_result` / `parse_codex_result`.
-7. return `WebhookResult`.
+2. evaluate quiet hours with fallback to global heartbeat quiet settings.
+3. if in quiet hours, return `WebhookResult(status="skipped:quiet_hours")`.
+4. acquire dependency lock (`DependencyQueue.acquire`) when `WebhookEntry.dependency` is set.
+5. build `TaskOverrides` from webhook entry.
+6. resolve `TaskExecutionConfig` via `resolve_cli_config(config, codex_cache, task_overrides=...)`.
+7. build command with `build_cmd(exec_config, prompt)`.
+8. run subprocess with timeout.
+9. parse output via `parse_claude_result` / `parse_codex_result`.
+10. return `WebhookResult`.
 
 Current behavior: webhook `cli_parameters` are taken from the hook entry itself (no merge with global `AgentConfig.cli_parameters`).
 
@@ -166,8 +175,15 @@ Typical `WebhookResult.status` values:
 - `error:cli_not_found_claude` / `error:cli_not_found_codex`
 - `error:timeout`
 - `error:exit_<code>`
+- `skipped:quiet_hours`
 - `error:unknown_mode_<mode>`
 - `error:exception`
+
+## Quiet Hours and Dependency Queue
+
+- Quiet-hour checks use `check_quiet_hour(...)` in `utils/quiet_hours.py`.
+- Window logic supports wrap-around ranges (for example `21 -> 8`).
+- Dependency locking reuses `cron/dependency_queue.py` so webhook `cron_task` runs and cron jobs honor the same dependency keys.
 
 ## Template Rendering
 

@@ -16,6 +16,7 @@ from ductor_bot.cron.execution import (
     parse_claude_result,
     parse_codex_result,
 )
+from ductor_bot.utils.quiet_hours import check_quiet_hour
 from ductor_bot.webhook.models import WebhookResult, render_template
 from ductor_bot.webhook.server import WebhookServer
 
@@ -270,93 +271,128 @@ class WebhookObserver:
                 status="error:no_task_folder",
             )
 
-        folder = self._paths.cron_tasks_dir / task_folder
-        if not await asyncio.to_thread(folder.is_dir):
+        # Get webhook entry for quiet hour settings
+        hook = self._manager.get_hook(hook_id)
+
+        # Check quiet hours (use hook-specific or global defaults)
+        is_quiet, now_hour, tz = check_quiet_hour(
+            quiet_start=hook.quiet_start if hook else None,
+            quiet_end=hook.quiet_end if hook else None,
+            user_timezone=self._config.user_timezone,
+            global_quiet_start=self._config.heartbeat.quiet_start,
+            global_quiet_end=self._config.heartbeat.quiet_end,
+        )
+        if is_quiet:
+            logger.debug(
+                "Webhook cron_task skipped: quiet hours (%d:00 %s) hook=%s",
+                now_hour,
+                tz.key,
+                title,
+            )
             return WebhookResult(
                 hook_id=hook_id,
                 hook_title=title,
                 mode="cron_task",
                 result_text="",
-                status="error:folder_missing",
+                status="skipped:quiet_hours",
             )
 
-        exec_config = self._resolve_execution_config(overrides)
-        enriched = enrich_instruction(prompt, task_folder)
-        cmd = build_cmd(exec_config, enriched)
+        # Acquire dependency lock (if needed)
+        from ductor_bot.cron.dependency_queue import get_dependency_queue
 
-        if cmd is None:
-            return WebhookResult(
-                hook_id=hook_id,
-                hook_title=title,
-                mode="cron_task",
-                result_text="",
-                status=f"error:cli_not_found_{exec_config.provider}",
+        dep_queue = get_dependency_queue()
+        dependency = hook.dependency if hook else None
+
+        async with dep_queue.acquire(hook_id, title, dependency):
+            folder = self._paths.cron_tasks_dir / task_folder
+            if not await asyncio.to_thread(folder.is_dir):
+                return WebhookResult(
+                    hook_id=hook_id,
+                    hook_title=title,
+                    mode="cron_task",
+                    result_text="",
+                    status="error:folder_missing",
+                )
+
+            exec_config = self._resolve_execution_config(overrides)
+            enriched = enrich_instruction(prompt, task_folder)
+            cmd = build_cmd(exec_config, enriched)
+
+            if cmd is None:
+                return WebhookResult(
+                    hook_id=hook_id,
+                    hook_title=title,
+                    mode="cron_task",
+                    result_text="",
+                    status=f"error:cli_not_found_{exec_config.provider}",
+                )
+
+            timeout = self._config.cli_timeout
+            logger.info(
+                "--- WEBHOOK CRON_TASK SPAWN ---\n"
+                "  Hook:     %s\n  Folder:   %s\n  Provider: %s\n  Model:    %s\n"
+                "  Timeout:  %.0fs\n  Prompt:\n%s",
+                hook_id,
+                folder,
+                exec_config.provider,
+                exec_config.model,
+                timeout,
+                indent(enriched, "    "),
             )
 
-        timeout = self._config.cli_timeout
-        logger.info(
-            "--- WEBHOOK CRON_TASK SPAWN ---\n"
-            "  Hook:     %s\n  Folder:   %s\n  Provider: %s\n  Model:    %s\n"
-            "  Timeout:  %.0fs\n  Prompt:\n%s",
-            hook_id,
-            folder,
-            exec_config.provider,
-            exec_config.model,
-            timeout,
-            indent(enriched, "    "),
-        )
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(folder),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(folder),
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        timed_out = False
-        try:
-            async with asyncio.timeout(timeout):
+            timed_out = False
+            try:
+                async with asyncio.timeout(timeout):
+                    stdout, stderr = await proc.communicate()
+            except TimeoutError:
+                timed_out = True
+                logger.warning("Webhook cron_task %s timed out after %.0fs", hook_id, timeout)
+                proc.kill()
                 stdout, stderr = await proc.communicate()
-        except TimeoutError:
-            timed_out = True
-            logger.warning("Webhook cron_task %s timed out after %.0fs", hook_id, timeout)
-            proc.kill()
-            stdout, stderr = await proc.communicate()
-        except asyncio.CancelledError:
-            proc.kill()
-            await proc.wait()
-            raise
+            except asyncio.CancelledError:
+                proc.kill()
+                await proc.wait()
+                raise
 
-        if stderr:
-            logger.debug("Webhook stderr (%s): %s", hook_id, stderr.decode(errors="replace")[:500])
+            if stderr:
+                logger.debug(
+                    "Webhook stderr (%s): %s", hook_id, stderr.decode(errors="replace")[:500]
+                )
 
-        if timed_out:
-            status = "error:timeout"
-            result_text = f"[Webhook cron_task timed out after {timeout:.0f}s]"
-        else:
-            result_text = (
-                parse_codex_result(stdout)
-                if exec_config.provider == "codex"
-                else parse_claude_result(stdout)
+            if timed_out:
+                status = "error:timeout"
+                result_text = f"[Webhook cron_task timed out after {timeout:.0f}s]"
+            else:
+                result_text = (
+                    parse_codex_result(stdout)
+                    if exec_config.provider == "codex"
+                    else parse_claude_result(stdout)
+                )
+                status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
+
+            logger.info(
+                "--- WEBHOOK CRON_TASK DONE ---\n"
+                "  Hook:     %s\n  Provider: %s\n  Status:   %s\n"
+                "  Stdout:   %d bytes\n  Result:   %d chars",
+                hook_id,
+                exec_config.provider,
+                status,
+                len(stdout),
+                len(result_text),
             )
-            status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
 
-        logger.info(
-            "--- WEBHOOK CRON_TASK DONE ---\n"
-            "  Hook:     %s\n  Provider: %s\n  Status:   %s\n"
-            "  Stdout:   %d bytes\n  Result:   %d chars",
-            hook_id,
-            exec_config.provider,
-            status,
-            len(stdout),
-            len(result_text),
-        )
-
-        return WebhookResult(
-            hook_id=hook_id,
-            hook_title=title,
-            mode="cron_task",
-            result_text=result_text,
-            status=status,
-        )
+            return WebhookResult(
+                hook_id=hook_id,
+                hook_title=title,
+                mode="cron_task",
+                result_text=result_text,
+                status=status,
+            )

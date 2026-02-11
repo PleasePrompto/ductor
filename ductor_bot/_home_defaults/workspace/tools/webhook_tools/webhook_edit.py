@@ -42,6 +42,11 @@ OPTIONS:
   --model "..."         Change model name
   --reasoning-effort    Change thinking level for Codex (low, medium, high, xhigh)
   --cli-parameters      Change CLI flags as JSON array
+  --quiet-start <hour>  Start of quiet hours (0-23, webhook won't run during this time)
+  --quiet-end <hour>    End of quiet hours (0-23, exclusive)
+  --dependency "..."    Resource dependency (e.g. 'chrome_browser', 'api_rate_limit')
+  --clear-quiet-hours   Remove quiet hour settings (use global config)
+  --clear-dependency    Remove dependency (allow parallel execution)
 
 EXAMPLES:
   python tools/webhook_tools/webhook_edit.py "email-notify" --disable
@@ -49,6 +54,10 @@ EXAMPLES:
   python tools/webhook_tools/webhook_edit.py "email-notify" --regenerate-token
   python tools/webhook_tools/webhook_edit.py "github-pr" --hmac-secret "new-secret-from-github"
   python tools/webhook_tools/webhook_edit.py "stripe-hook" --hmac-sig-regex "v1=([a-f0-9]+)"
+  python tools/webhook_tools/webhook_edit.py "email-notify" --quiet-start 22 --quiet-end 7
+  python tools/webhook_tools/webhook_edit.py "web-scraper" --dependency chrome_browser
+  python tools/webhook_tools/webhook_edit.py "web-scraper" --clear-quiet-hours
+  python tools/webhook_tools/webhook_edit.py "web-scraper" --clear-dependency
 """
 
 
@@ -91,6 +100,34 @@ def main() -> None:
     parser.add_argument(
         "--cli-parameters",
         help="Change CLI flags as JSON array (e.g. '[\"--verbose\"]')",
+    )
+    parser.add_argument(
+        "--quiet-start",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="Start of quiet hours (0-23). Webhook won't run during quiet hours.",
+    )
+    parser.add_argument(
+        "--quiet-end",
+        type=int,
+        choices=range(24),
+        metavar="HOUR",
+        help="End of quiet hours (0-23, exclusive).",
+    )
+    parser.add_argument(
+        "--dependency",
+        help="Resource dependency (e.g. 'chrome_browser'). Tasks with same dependency run sequentially.",
+    )
+    parser.add_argument(
+        "--clear-quiet-hours",
+        action="store_true",
+        help="Remove quiet hour settings (use global config).",
+    )
+    parser.add_argument(
+        "--clear-dependency",
+        action="store_true",
+        help="Remove dependency (allow parallel execution).",
     )
     args = parser.parse_args()
 
@@ -203,6 +240,22 @@ def main() -> None:
         except json.JSONDecodeError as e:
             print(json.dumps({"error": f"Invalid --cli-parameters JSON: {e}"}))
             sys.exit(1)
+    if args.quiet_start is not None:
+        hook["quiet_start"] = args.quiet_start
+        changes["quiet_start"] = args.quiet_start
+    if args.quiet_end is not None:
+        hook["quiet_end"] = args.quiet_end
+        changes["quiet_end"] = args.quiet_end
+    if args.dependency is not None:
+        hook["dependency"] = args.dependency.strip()
+        changes["dependency"] = args.dependency.strip()
+    if args.clear_quiet_hours:
+        hook.pop("quiet_start", None)
+        hook.pop("quiet_end", None)
+        changes["quiet_hours"] = "cleared"
+    if args.clear_dependency:
+        hook.pop("dependency", None)
+        changes["dependency"] = "cleared"
 
     if not changes:
         print(json.dumps({"error": "No changes specified. Use --help for options."}))

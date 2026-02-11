@@ -39,7 +39,7 @@ Registered in `TelegramBot._register_handlers()`:
 
 `SequentialMiddleware` order (message updates only):
 
-1. abort trigger check (`/stop` + bare abort words), handled before lock. On abort: kills processes **and** drains the pending message queue (edits all indicators to `[Message discarded.]`).
+1. abort trigger check (exact `/stop` without suffix/args + bare abort words), handled before lock. On abort: kills processes **and** drains the pending message queue (edits all indicators to `[Message discarded.]`).
 2. quick command check (`/status`, `/memory`, `/cron`, `/diagnose`, `/model`, `/showfiles`), bypasses lock. `/showfiles` is handled directly (no orchestrator). `/model` has a busy-check: when agent is active or messages are queued, returns immediate feedback instead of the wizard.
 3. dedupe by `chat_id:message_id`.
 4. per-chat `asyncio.Lock` for regular messages. When the lock is held, queued messages get a `[Message in queue...]` indicator (reply to the user's message) with a "Cancel message" inline button (`mq:<entry_id>` callback).
@@ -52,7 +52,10 @@ Queue management methods:
 - `cancel_entry(chat_id, entry_id)`: cancel a single queued message, edit indicator to `[Message cancelled.]`.
 - `drain_pending(chat_id)`: cancel all pending messages, edit indicators to `[Message discarded.]`.
 
-Callback queries are not processed through `SequentialMiddleware.__call__`; `TelegramBot` acquires the same lock explicitly for callback execution paths.
+Callback queries are not processed through `SequentialMiddleware.__call__`; lock usage is explicit and path-dependent in `TelegramBot`:
+
+- locked: model selector callbacks (`ms:*`), file browser file-request callbacks (`sf!`), generic callbacks routed through orchestrator.
+- not locked: queue cancel callbacks (`mq:*`), upgrade callbacks (`upg:*`), file browser directory navigation (`sf:`).
 
 ## Message Resolution
 
@@ -131,7 +134,7 @@ Bot passes roots from `config.file_access`:
   - `upg:yes:<version>` -> upgrade + restart
   - `upg:no` -> dismiss
 - `ms:*` callbacks -> model selector wizard (edits message in place).
-- `sf:*` / `sf!*` callbacks -> file browser: `sf:<rel_path>` navigates directories (edit message in place), `sf!<rel_path>` sends file-request prompt to orchestrator.
+- `sf:*` / `sf!` callbacks -> file browser: `sf:<rel_path>` navigates directories (edit message in place), `sf!<rel_path>` sends file-request prompt to orchestrator.
 - all other callbacks:
   - append `[USER ANSWER] <label>` to original message when possible (fallback: keyboard-only removal),
   - run callback text through normal message pipeline under per-chat lock.

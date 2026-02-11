@@ -13,6 +13,7 @@ Examples:
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 SKILL_TEMPLATE = """---
@@ -186,12 +187,12 @@ Note: This is a text placeholder. Actual assets can be any file type.
 """
 
 
-def title_case_skill_name(skill_name):
+def title_case_skill_name(skill_name: str) -> str:
     """Convert hyphenated skill name to Title Case for display."""
     return ' '.join(word.capitalize() for word in skill_name.split('-'))
 
 
-def init_skill(skill_name, path):
+def init_skill(skill_name: str, path: str) -> Optional[Path]:
     """
     Initialize a new skill directory with template SKILL.md.
 
@@ -270,7 +271,7 @@ def init_skill(skill_name, path):
     return skill_dir
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 4 or sys.argv[2] != '--path':
         print("Usage: init_skill.py <skill-name> --path <path>")
         print("\nSkill name requirements:")
