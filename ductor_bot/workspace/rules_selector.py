@@ -214,22 +214,32 @@ class RulesSelector:
     def _remove_files_by_name(self, filename: str) -> int:
         """Remove all files with given name in ~/.ductor/.
 
+        Skips files inside ``workspace/cron_tasks/`` — those are user-owned
+        rule files created per task and must not be deleted on auth-status
+        changes.
+
         Args:
             filename: Name of files to remove (e.g., "CLAUDE.md" or "AGENTS.md")
 
         Returns:
             Number of files removed
         """
+        cron_tasks_path = self._paths.ductor_home / "workspace" / "cron_tasks"
         removed_count = 0
         for file_path in self._paths.ductor_home.rglob(filename):
-            if file_path.is_file():
-                try:
-                    file_path.unlink()
-                    removed_count += 1
-                    logger.debug(
-                        "Removed stale file: %s", file_path.relative_to(self._paths.ductor_home)
-                    )
-                except OSError:
-                    logger.exception("Failed to remove stale file: %s", file_path)
+            if not file_path.is_file():
+                continue
+            # Protect user-owned cron task rule files
+            if file_path.is_relative_to(cron_tasks_path):
+                logger.debug("Skipping user-owned cron task file: %s", file_path)
+                continue
+            try:
+                file_path.unlink()
+                removed_count += 1
+                logger.debug(
+                    "Removed stale file: %s", file_path.relative_to(self._paths.ductor_home)
+                )
+            except OSError:
+                logger.exception("Failed to remove stale file: %s", file_path)
 
         return removed_count

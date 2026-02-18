@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -176,6 +177,9 @@ class ClaudeCodeCLI(BaseCLI):
                     logger.debug("Stream line: %s", line[:120])
                     for event in parse_stream_line(line):
                         yield event
+            # Normal end-of-stream: collect stderr now while still in the try block
+            # so the finally clause can cancel the task if needed.
+            stderr_bytes = await stderr_drain
         except TimeoutError:
             process.kill()
             await process.wait()
@@ -183,10 +187,10 @@ class ClaudeCodeCLI(BaseCLI):
             yield ResultEvent(type="result", result="", is_error=True)
             return
         finally:
+            await _cancel_drain(stderr_drain)
             if tracked and reg:
                 reg.unregister(tracked)
 
-        stderr_bytes = await stderr_drain
         await process.wait()
         stderr_text = stderr_bytes.decode(errors="replace")[:2000] if stderr_bytes else ""
 
@@ -197,6 +201,14 @@ class ClaudeCodeCLI(BaseCLI):
                 stderr_text[:200] if stderr_text else "(no stderr)",
             )
             yield ResultEvent(type="result", result=stderr_text[:500], is_error=True)
+
+
+async def _cancel_drain(drain: asyncio.Task[bytes]) -> None:
+    """Cancel a stderr drain task and silently absorb any resulting exception."""
+    if not drain.done():
+        drain.cancel()
+        with contextlib.suppress(BaseException):
+            await drain
 
 
 def _add_opt(cmd: list[str], flag: str, value: str | None) -> None:

@@ -127,7 +127,9 @@ class SequentialMiddleware(BaseMiddleware):
         if chat_id not in self._locks:
             if len(self._locks) >= _MAX_LOCKS:
                 idle = [k for k, v in self._locks.items() if not v.locked()]
-                for k in idle[: len(idle) // 2]:
+                # Always remove at least one idle lock so the dict stays bounded.
+                to_remove = max(1, len(idle) // 2) if idle else 0
+                for k in idle[:to_remove]:
                     del self._locks[k]
             self._locks[chat_id] = asyncio.Lock()
         return self._locks[chat_id]

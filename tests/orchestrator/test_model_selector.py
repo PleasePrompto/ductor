@@ -109,6 +109,18 @@ async def test_start_one_provider_codex(orch: Orchestrator) -> None:
     assert keyboard is not None
 
 
+async def test_start_shows_effective_model_when_fallback_is_active(orch: Orchestrator) -> None:
+    object.__setattr__(orch, "_available_providers", frozenset({"codex"}))
+    with (
+        _patch_auth({"claude": _NOT_FOUND_CLAUDE, "codex": _AUTHED_CODEX}),
+        _with_codex_cache(orch),
+    ):
+        text, keyboard = await model_selector_start(orch, 1)
+    assert keyboard is not None
+    assert "Current: gpt-5.2-codex" in text
+    assert "Configured default: opus" in text
+
+
 async def test_start_two_providers(orch: Orchestrator) -> None:
     with _patch_auth({"claude": _AUTHED_CLAUDE, "codex": _AUTHED_CODEX}):
         text, keyboard = await model_selector_start(orch, 1)

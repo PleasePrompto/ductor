@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -217,6 +218,9 @@ class CodexCLI(BaseCLI):
                 for event in thinking_filter.flush():
                     state.track(event)
                     yield event
+            # Normal end-of-stream: collect stderr now while still in the try
+            # block so the finally clause can cancel the drain task if needed.
+            stderr_bytes = await stderr_drain
         except TimeoutError:
             process.kill()
             await process.wait()
@@ -224,10 +228,10 @@ class CodexCLI(BaseCLI):
             yield ResultEvent(type="result", result="", is_error=True)
             return
         finally:
+            await _cancel_drain(stderr_drain)
             if tracked and reg:
                 reg.unregister(tracked)
 
-        stderr_bytes = await stderr_drain
         yield await _codex_final_result(
             process, state.accumulated_text, state.thread_id, stderr_bytes
         )
@@ -269,6 +273,14 @@ class CodexCLI(BaseCLI):
             )
 
         return response
+
+
+async def _cancel_drain(drain: asyncio.Task[bytes]) -> None:
+    """Cancel a stderr drain task and silently absorb any resulting exception."""
+    if not drain.done():
+        drain.cancel()
+        with contextlib.suppress(BaseException):
+            await drain
 
 
 async def _codex_final_result(

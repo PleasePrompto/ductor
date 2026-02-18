@@ -134,6 +134,64 @@ async def test_skip_refresh_if_recent(tmp_path: Path) -> None:
         assert len(result.models) == 1
 
 
+async def test_refresh_if_recent_but_empty(
+    tmp_path: Path,
+    sample_models: list[CodexModelInfo],
+) -> None:
+    """Should refresh if cache is recent but contains zero models."""
+    cache_path = tmp_path / "codex_models.json"
+    recent_time = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    cache_path.write_text(
+        f"""{{
+        "last_updated": "{recent_time}",
+        "models": []
+    }}"""
+    )
+
+    with patch(
+        "ductor_bot.cli.codex_cache.discover_codex_models",
+        AsyncMock(return_value=sample_models),
+    ) as mock_discover:
+        result = await CodexModelCache.load_or_refresh(cache_path)
+
+        mock_discover.assert_called_once()
+        assert len(result.models) == 2
+
+
+async def test_force_refresh_ignores_fresh_cache(
+    tmp_path: Path,
+    sample_models: list[CodexModelInfo],
+) -> None:
+    """Should refresh when force_refresh=True even if cache is fresh."""
+    cache_path = tmp_path / "codex_models.json"
+    recent_time = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
+    cache_path.write_text(
+        f"""{{
+        "last_updated": "{recent_time}",
+        "models": [
+            {{
+                "id": "stale-model",
+                "display_name": "stale-model",
+                "description": "old",
+                "supported_efforts": ["low"],
+                "default_effort": "low",
+                "is_default": true
+            }}
+        ]
+    }}"""
+    )
+
+    with patch(
+        "ductor_bot.cli.codex_cache.discover_codex_models",
+        AsyncMock(return_value=sample_models),
+    ) as mock_discover:
+        result = await CodexModelCache.load_or_refresh(cache_path, force_refresh=True)
+
+        mock_discover.assert_called_once()
+        assert len(result.models) == 2
+        assert result.models[0].id == "gpt-4o"
+
+
 def test_validate_model_exists(fresh_cache: CodexModelCache) -> None:
     """Should return True for existing model."""
     assert fresh_cache.validate_model("gpt-4o") is True

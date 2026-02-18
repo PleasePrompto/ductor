@@ -251,7 +251,7 @@ All fields are optional and fall back to global config values if not specified.
 | `/model opus` | Switch directly to a specific model |
 | `/status` | Session info, tokens, cost, auth status |
 | `/memory` | View persistent memory |
-| `/cron` | List scheduled tasks |
+| `/cron` | View/manage scheduled tasks (toggle enable/disable) |
 | `/showfiles` | Browse `~/.ductor/` as an interactive file tree |
 | `/info` | Project links and version info |
 | `/upgrade` | Check for updates and show upgrade prompt |

@@ -94,7 +94,20 @@ def acquire_lock(*, pid_file: Path, kill_existing: bool = False) -> None:
         else:
             logger.warning("Stale PID file found (pid=%s), overwriting", existing_pid)
 
-    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    # Write atomically: temp file + rename so that a partial write can never
+    # leave a corrupt PID file, and the final rename is atomic on POSIX.
+    import tempfile
+    fd, tmp_str = tempfile.mkstemp(dir=str(pid_file.parent), suffix=".tmp")
+    tmp = Path(tmp_str)
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        tmp.replace(pid_file)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise
     logger.info("PID lock acquired (pid=%d)", os.getpid())
 
 

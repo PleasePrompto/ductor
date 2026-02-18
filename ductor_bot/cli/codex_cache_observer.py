@@ -28,7 +28,7 @@ class CodexCacheObserver:
     async def start(self) -> None:
         """Load initial cache and start refresh loop."""
         logger.info("CodexCacheObserver starting, cache_path=%s", self._cache_path)
-        self._cache = await CodexModelCache.load_or_refresh(self._cache_path)
+        self._cache = await CodexModelCache.load_or_refresh(self._cache_path, force_refresh=True)
         logger.info(
             "Codex cache loaded: %d models, last_updated=%s",
             len(self._cache.models),

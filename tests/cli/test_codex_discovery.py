@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -55,10 +56,17 @@ _STDOUT = f"{_INIT_RESPONSE}\n{_MODEL_LIST_RESPONSE}\n"
 
 
 def _mock_process(stdout: str = _STDOUT, returncode: int = 0) -> AsyncMock:
-    proc = AsyncMock()
-    proc.communicate = AsyncMock(return_value=(stdout.encode(), b""))
+    proc = MagicMock()
+    proc.stdin = MagicMock()
+    proc.stdin.write = MagicMock()
+    proc.stdin.drain = AsyncMock()
+    proc.stdin.close = MagicMock()
+    proc.stdout = MagicMock()
+    lines = [f"{line}\n".encode() for line in stdout.splitlines()] + [b""]
+    proc.stdout.readline = AsyncMock(side_effect=lines)
     proc.returncode = returncode
-    proc.kill = AsyncMock()
+    proc.kill = MagicMock()
+    proc.wait = AsyncMock(return_value=returncode)
     return proc
 
 
@@ -83,6 +91,7 @@ async def test_discover_models_parses_response() -> None:
     assert second.id == "gpt-5.1-codex-mini"
     assert second.supported_efforts == ("medium", "high")
     assert second.is_default is False
+    proc.stdin.close.assert_not_called()
 
 
 async def test_discover_models_codex_not_installed() -> None:
@@ -92,8 +101,12 @@ async def test_discover_models_codex_not_installed() -> None:
 
 
 async def test_discover_models_timeout() -> None:
-    proc = AsyncMock()
-    proc.communicate = AsyncMock(side_effect=TimeoutError)
+    async def _hang() -> bytes:
+        await asyncio.sleep(1)
+        return b""
+
+    proc = _mock_process(stdout="")
+    proc.stdout.readline = AsyncMock(side_effect=_hang)
     proc.kill = MagicMock()
 
     with (
@@ -103,6 +116,7 @@ async def test_discover_models_timeout() -> None:
         models = await discover_codex_models(deadline=0.1)
 
     assert models == []
+    proc.kill.assert_called()
 
 
 async def test_discover_models_invalid_json() -> None:

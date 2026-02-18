@@ -147,6 +147,12 @@ Workspace tools: `cron_add.py` and `cron_edit.py` accept `--timezone`. `cron_tim
 - Dependency locking is global across cron and webhook `cron_task` runs because both use `cron/dependency_queue.py`.
 - Tasks with the same `dependency` run FIFO; tasks without dependency (or with different dependency keys) run in parallel.
 
+## Telegram Management
+
+- `/cron` renders an interactive panel from `orchestrator/cron_selector.py`.
+- Inline callbacks (`crn:*`) support page navigation, refresh, per-job enable/disable, and bulk `All ON` / `All OFF`.
+- Toggle actions persist directly via `CronManager.set_enabled(...)` / `set_all_enabled(...)`, then call `CronObserver.reschedule_now()` so changes apply immediately.
+
 ## Design Choice
 
 - No system crontab integration.

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -27,7 +30,18 @@ def write_restart_sentinel(
         "message": message,
         "timestamp": datetime.now(UTC).isoformat(),
     }
-    sentinel_path.write_text(json.dumps(data), encoding="utf-8")
+    content = json.dumps(data)
+    fd, tmp_str = tempfile.mkstemp(dir=str(sentinel_path.parent), suffix=".tmp")
+    tmp = Path(tmp_str)
+    try:
+        os.write(fd, content.encode())
+        os.close(fd)
+        tmp.replace(sentinel_path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise
     logger.info("Restart sentinel written for chat=%d", chat_id)
 
 

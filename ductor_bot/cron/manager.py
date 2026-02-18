@@ -6,6 +6,7 @@ for changes and schedules jobs in-process.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -139,6 +140,30 @@ class CronManager:
         """Return a job by ID, or None."""
         return next((j for j in self._jobs if j.id == job_id), None)
 
+    def set_enabled(self, job_id: str, *, enabled: bool) -> bool:
+        """Set ``enabled`` for one job. Returns True if state changed."""
+        job = self.get_job(job_id)
+        if job is None:
+            return False
+        if job.enabled == enabled:
+            return False
+        job.enabled = enabled
+        self._save()
+        logger.info("Cron job %s: enabled=%s", job_id, enabled)
+        return True
+
+    def set_all_enabled(self, *, enabled: bool) -> int:
+        """Set ``enabled`` for all jobs. Returns number of changed jobs."""
+        changed = 0
+        for job in self._jobs:
+            if job.enabled != enabled:
+                job.enabled = enabled
+                changed += 1
+        if changed:
+            self._save()
+            logger.info("Cron jobs bulk update: enabled=%s changed=%d", enabled, changed)
+        return changed
+
     def update_run_status(self, job_id: str, *, status: str) -> None:
         """Update last_run_at and last_run_status for a job."""
         job = self.get_job(job_id)
@@ -180,5 +205,9 @@ class CronManager:
                 f.write(content)
             tmp.replace(self._jobs_path)
         except BaseException:
+            # If os.fdopen raised before taking ownership the fd is still open.
+            # Suppress OSError in case the file object already closed it.
+            with contextlib.suppress(OSError):
+                os.close(fd)
             tmp.unlink(missing_ok=True)
             raise

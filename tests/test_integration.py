@@ -206,14 +206,15 @@ class TestCommandRouting:
         assert "**Main Memory**" in result.text
         mock_execute.assert_not_awaited()
 
-    async def test_stop_command_with_no_processes(
+    async def test_stop_aborts_via_direct_call(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
     ) -> None:
+        # /stop is intercepted by the Middleware abort path before reaching the
+        # orchestrator.  Direct abort() returns 0 when nothing is running.
         orch, mock_execute = orch_with_mock_cli
 
-        result = await orch.handle_message(CHAT_ID, "/stop")
-
-        assert "Nothing running" in result.text
+        killed = await orch.abort(CHAT_ID)
+        assert killed == 0
         mock_execute.assert_not_awaited()
 
     async def test_model_command_no_args_returns_selector(

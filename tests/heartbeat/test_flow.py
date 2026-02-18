@@ -224,3 +224,31 @@ async def test_heartbeat_runs_after_cooldown(
         assert result is None
         # CLI WAS called (cooldown passed, returned OK)
         after_cooldown_mock.assert_awaited_once()
+
+
+async def test_heartbeat_syncs_effective_model_for_legacy_session(
+    orch: Orchestrator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Heartbeat should persist effective model for legacy sessions without model tracking."""
+    # Simulate runtime fallback: configured "opus", only Codex available.
+    object.__setattr__(orch, "_available_providers", frozenset({"codex"}))
+
+    session, _ = await orch._sessions.resolve_session(1, provider="codex", model="opus")
+    session.session_id = "legacy-heartbeat-sid"
+    await orch._sessions.update_session(session)
+    count_before = session.message_count
+
+    with _past_cooldown():
+        monkeypatch.setattr(
+            orch._cli_service,
+            "execute",
+            AsyncMock(return_value=_mock_response(result="HEARTBEAT_OK")),
+        )
+        result = await heartbeat_flow(orch, 1)
+        assert result is None
+
+    session_after = await orch._sessions.get_active(1)
+    assert session_after is not None
+    assert session_after.provider == "codex"
+    assert session_after.model == "gpt-5.2-codex"
+    assert session_after.message_count == count_before

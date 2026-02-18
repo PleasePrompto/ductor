@@ -92,7 +92,7 @@ Each job can also have its own timezone override if needed.
 ### Managing jobs
 
 From Telegram:
-- `/cron` lists all jobs with their schedule and last run status
+- `/cron` opens an interactive cron panel (schedule/status overview + one-tap enable/disable)
 - Tell the agent to edit, disable, or remove a job
 
 Behind the scenes, the agent uses CLI tools in `~/.ductor/workspace/tools/cron_tools/` to manage everything. The tools handle both the JSON registry and the task folders atomically - you never need to touch files manually.

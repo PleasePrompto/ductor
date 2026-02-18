@@ -87,6 +87,7 @@ class _EditorState:
     messages_sent: int = 0
     last_edit_time: float = 0.0
     edit_timer: asyncio.TimerHandle | None = None
+    edit_task: asyncio.Task[None] | None = None
     consecutive_failures: int = 0
     fallen_back: bool = False
 
@@ -232,11 +233,16 @@ class EditStreamEditor:
         loop = asyncio.get_running_loop()
         task = loop.create_task(self._do_edit())
         task.add_done_callback(_log_task_error)
+        self._s.edit_task = task
 
     def _cancel_timer(self) -> None:
         if self._s.edit_timer is not None:
             self._s.edit_timer.cancel()
             self._s.edit_timer = None
+        # Also cancel any pending deferred edit task that already fired.
+        if self._s.edit_task is not None and not self._s.edit_task.done():
+            self._s.edit_task.cancel()
+            self._s.edit_task = None
 
     # ------------------------------------------------------------------
     # Internal: message creation / editing

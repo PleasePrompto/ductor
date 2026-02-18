@@ -95,18 +95,24 @@ def write_upgrade_sentinel(
     new_version: str,
 ) -> None:
     """Write sentinel so the bot can notify the user after upgrade restart."""
+    import contextlib as _ctx
+    import os as _os
+    import tempfile as _tmp
+
     sentinel_dir.mkdir(parents=True, exist_ok=True)
     path = sentinel_dir / _UPGRADE_SENTINEL_NAME
-    path.write_text(
-        json.dumps(
-            {
-                "chat_id": chat_id,
-                "old_version": old_version,
-                "new_version": new_version,
-            }
-        ),
-        encoding="utf-8",
-    )
+    content = json.dumps({"chat_id": chat_id, "old_version": old_version, "new_version": new_version})
+    fd, tmp_str = _tmp.mkstemp(dir=str(sentinel_dir), suffix=".tmp")
+    tmp = Path(tmp_str)
+    try:
+        _os.write(fd, content.encode())
+        _os.close(fd)
+        tmp.replace(path)
+    except BaseException:
+        with _ctx.suppress(OSError):
+            _os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def consume_upgrade_sentinel(sentinel_dir: Path) -> dict[str, str | int] | None:

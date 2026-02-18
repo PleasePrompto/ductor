@@ -230,14 +230,18 @@ def test_skip_directory_without_templates(mock_paths: DuctorPaths) -> None:
 
 
 def test_cleanup_removes_agents_md_when_only_claude(mock_paths: DuctorPaths) -> None:
-    """Test that stale AGENTS.md files are removed when only Claude is authenticated."""
+    """Test that stale AGENTS.md files are removed when only Claude is authenticated.
+
+    Files inside workspace/cron_tasks/ are user-owned and must NOT be deleted.
+    """
     # Pre-create old AGENTS.md files (simulating previous Codex installation)
     old_agents1 = mock_paths.ductor_home / "config" / "AGENTS.md"
-    old_agents2 = mock_paths.ductor_home / "workspace" / "cron_tasks" / "AGENTS.md"
+    # cron_tasks files are user-owned — they must survive cleanup
+    cron_task_agents = mock_paths.ductor_home / "workspace" / "cron_tasks" / "my-task" / "AGENTS.md"
     old_agents1.parent.mkdir(parents=True, exist_ok=True)
-    old_agents2.parent.mkdir(parents=True, exist_ok=True)
+    cron_task_agents.parent.mkdir(parents=True, exist_ok=True)
     old_agents1.write_text("# Old Agents File")
-    old_agents2.write_text("# Old Agents File")
+    cron_task_agents.write_text("# User-owned cron task rules")
 
     auth = {
         "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
@@ -248,23 +252,26 @@ def test_cleanup_removes_agents_md_when_only_claude(mock_paths: DuctorPaths) -> 
         selector = RulesSelector(mock_paths)
         selector.deploy_rules()
 
-        # AGENTS.md files should be removed
+        # Non-cron AGENTS.md should be removed
         assert not old_agents1.exists()
-        assert not old_agents2.exists()
+        # User-owned cron task AGENTS.md must be preserved
+        assert cron_task_agents.exists()
 
         # CLAUDE.md files should exist
         assert (mock_paths.ductor_home / "config" / "CLAUDE.md").exists()
 
 
 def test_cleanup_removes_claude_md_when_only_codex(mock_paths: DuctorPaths) -> None:
-    """Test that stale CLAUDE.md files are removed when only Codex is authenticated."""
-    # Pre-create old CLAUDE.md files (simulating previous Claude installation)
+    """Test that stale CLAUDE.md files are removed when only Codex is authenticated.
+
+    Files inside workspace/cron_tasks/ are user-owned and must NOT be deleted.
+    """
     old_claude1 = mock_paths.ductor_home / "config" / "CLAUDE.md"
-    old_claude2 = mock_paths.ductor_home / "workspace" / "cron_tasks" / "CLAUDE.md"
+    cron_task_claude = mock_paths.ductor_home / "workspace" / "cron_tasks" / "my-task" / "CLAUDE.md"
     old_claude1.parent.mkdir(parents=True, exist_ok=True)
-    old_claude2.parent.mkdir(parents=True, exist_ok=True)
+    cron_task_claude.parent.mkdir(parents=True, exist_ok=True)
     old_claude1.write_text("# Old Claude File")
-    old_claude2.write_text("# Old Claude File")
+    cron_task_claude.write_text("# User-owned cron task rules")
 
     auth = {
         "claude": AuthResult(provider="claude", status=AuthStatus.NOT_FOUND),
@@ -275,9 +282,10 @@ def test_cleanup_removes_claude_md_when_only_codex(mock_paths: DuctorPaths) -> N
         selector = RulesSelector(mock_paths)
         selector.deploy_rules()
 
-        # CLAUDE.md files should be removed
+        # Non-cron CLAUDE.md should be removed
         assert not old_claude1.exists()
-        assert not old_claude2.exists()
+        # User-owned cron task CLAUDE.md must be preserved
+        assert cron_task_claude.exists()
 
         # AGENTS.md files should exist
         assert (mock_paths.ductor_home / "config" / "AGENTS.md").exists()

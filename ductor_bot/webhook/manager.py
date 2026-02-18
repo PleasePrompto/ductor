@@ -6,6 +6,7 @@ for changes and keeps the in-memory registry in sync.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -109,5 +110,7 @@ class WebhookManager:
                 f.write(content)
             tmp.replace(self._hooks_path)
         except BaseException:
+            with contextlib.suppress(OSError):
+                os.close(fd)
             tmp.unlink(missing_ok=True)
             raise

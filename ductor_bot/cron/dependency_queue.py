@@ -18,7 +18,7 @@ class _QueuedTask:
     task_id: str
     task_label: str
     dependency: str
-    queued_at: float = field(default_factory=lambda: asyncio.get_event_loop().time())
+    queued_at: float = field(default_factory=lambda: asyncio.get_running_loop().time())
 
 
 class DependencyQueue:
@@ -100,9 +100,18 @@ class DependencyQueue:
     async def _mark_active(self, dependency: str, task_id: str, task_label: str) -> None:
         async with self._state_lock:
             queue = self._queues.get(dependency, [])
-            queue = [t for t in queue if t.task_id != task_id]
-            if queue:
-                self._queues[dependency] = queue
+            # Remove only the first matching entry so that if two tasks share
+            # the same task_id (possible after a rapid reschedule), the second
+            # one is not inadvertently evicted from the queue.
+            new_queue: list[_QueuedTask] = []
+            removed = False
+            for t in queue:
+                if not removed and t.task_id == task_id:
+                    removed = True
+                else:
+                    new_queue.append(t)
+            if new_queue:
+                self._queues[dependency] = new_queue
             else:
                 self._queues.pop(dependency, None)
             self._active[dependency] = task_label
@@ -131,7 +140,7 @@ class DependencyQueue:
                 {
                     "task_id": t.task_id,
                     "task_label": t.task_label,
-                    "queued_seconds": asyncio.get_event_loop().time() - t.queued_at,
+                    "queued_seconds": asyncio.get_running_loop().time() - t.queued_at,
                 }
                 for t in self._queues.get(dependency, [])
             ],

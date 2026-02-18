@@ -45,15 +45,25 @@ class CodexModelCache:
         return effort in model.supported_efforts
 
     @classmethod
-    async def load_or_refresh(cls, cache_path: Path) -> CodexModelCache:
+    async def load_or_refresh(
+        cls,
+        cache_path: Path,
+        *,
+        force_refresh: bool = False,
+    ) -> CodexModelCache:
         """Load from disk, refresh if stale (>24h) or missing.
 
         Args:
             cache_path: Path to JSON cache file
+            force_refresh: If True, ignore on-disk cache and rediscover models
 
         Returns:
             CodexModelCache (possibly refreshed)
         """
+        if force_refresh:
+            logger.info("Codex cache refresh forced")
+            return await cls._refresh_and_save(cache_path)
+
         # Try to load from disk (use asyncio.to_thread for I/O)
         exists = await asyncio.to_thread(cache_path.exists)
         if exists:
@@ -67,10 +77,13 @@ class CodexModelCache:
                 age = datetime.now(UTC) - last_updated
 
                 if age < _CACHE_MAX_AGE:
-                    logger.debug("Codex cache is fresh, using cached models")
-                    return cache
+                    if cache.models:
+                        logger.debug("Codex cache is fresh, using cached models")
+                        return cache
 
-                logger.info("Codex cache is stale (age: %s), refreshing", age)
+                    logger.info("Codex cache is fresh but empty, forcing refresh")
+                else:
+                    logger.info("Codex cache is stale (age: %s), refreshing", age)
             except Exception:
                 logger.warning("Failed to load Codex cache, will refresh", exc_info=True)
 

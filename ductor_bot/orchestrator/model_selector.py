@@ -41,7 +41,7 @@ def is_model_selector_callback(data: str) -> bool:
 
 async def model_selector_start(
     orch: Orchestrator,
-    chat_id: int,  # noqa: ARG001
+    chat_id: int,
 ) -> tuple[str, InlineKeyboardMarkup | None]:
     """Build the initial ``/model`` response with provider buttons.
 
@@ -51,7 +51,7 @@ async def model_selector_start(
     auth = await asyncio.to_thread(check_all_auth)
     authed = [name for name, res in auth.items() if res.status == AuthStatus.AUTHENTICATED]
 
-    header = _status_line(orch)
+    header = await _status_line(orch, chat_id)
 
     if not authed:
         return (
@@ -95,7 +95,7 @@ async def handle_model_callback(
     codex_cache = orch._codex_cache_observer.get_cache() if orch._codex_cache_observer else None
 
     if action == "p":
-        return await _build_model_step(payload, _status_line(orch), codex_cache)
+        return await _build_model_step(payload, await _status_line(orch, chat_id), codex_cache)
 
     if action == "m":
         return await _handle_model_selected(orch, chat_id, payload, codex_cache)
@@ -106,7 +106,7 @@ async def handle_model_callback(
     if action == "b":
         if payload == "root":
             return await model_selector_start(orch, chat_id)
-        return await _build_model_step(payload, _status_line(orch), codex_cache)
+        return await _build_model_step(payload, await _status_line(orch, chat_id), codex_cache)
 
     logger.warning("Unknown model selector callback: %s", data)
     return "Unknown action.", None
@@ -136,7 +136,7 @@ async def switch_model(
 
     if not same_model:
         await orch._process_registry.kill_all(chat_id)
-        await orch._sessions.reset_session(chat_id)
+        await orch._sessions.reset_session(chat_id, provider=new_provider, model=model_id)
 
     orch._config.model = model_id
     orch._cli_service.update_default_model(model_id)
@@ -175,14 +175,27 @@ async def switch_model(
 # ---------------------------------------------------------------------------
 
 
-def _status_line(orch: Orchestrator) -> str:
+async def _status_line(orch: Orchestrator, chat_id: int) -> str:
     """Current model + reasoning effort as a short header."""
-    model = orch._config.model
+    session = await orch._sessions.get_active(chat_id)
+    if session:
+        model = session.model
+        provider = session.provider
+    else:
+        model, provider = orch.resolve_runtime_target(orch._config.model)
+
+    configured = orch._config.model
     effort = orch._config.reasoning_effort
-    provider = orch._models.provider_for(model)
+
     if provider == "codex":
-        return f"**Model Selector**\nCurrent: {model} ({effort})"
-    return f"**Model Selector**\nCurrent: {model}"
+        current = f"**Model Selector**\nCurrent: {model} ({effort})"
+    else:
+        current = f"**Model Selector**\nCurrent: {model}"
+
+    if model != configured:
+        current += f"\nConfigured default: {configured}"
+
+    return current
 
 
 async def _build_model_step(
@@ -254,7 +267,7 @@ async def _handle_model_selected(
         ]
     )
 
-    header = _status_line(orch)
+    header = await _status_line(orch, chat_id)
     return f"{header}\n\nThinking level for {model_id}:", keyboard
 
 

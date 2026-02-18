@@ -63,7 +63,12 @@ class WebhookServer:
         )
 
     async def stop(self) -> None:
-        """Shut down the server."""
+        """Shut down the server and cancel any in-flight dispatch tasks."""
+        if self._background_tasks:
+            for task in list(self._background_tasks):
+                task.cancel()
+            await asyncio.gather(*list(self._background_tasks), return_exceptions=True)
+            self._background_tasks.clear()
         if self._runner:
             await self._runner.cleanup()
             self._runner = None

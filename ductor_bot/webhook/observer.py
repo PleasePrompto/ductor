@@ -135,7 +135,12 @@ class WebhookObserver:
                 continue
             if current_mtime != self._last_mtime:
                 self._last_mtime = current_mtime
-                await asyncio.to_thread(self._manager.reload)
+                # Call reload() in the event loop (not a thread) so that
+                # concurrent record_trigger() calls in the same thread cannot
+                # race with an in-progress _load() that would overwrite their
+                # in-memory mutations.  The webhook JSON file is small so the
+                # synchronous read is negligible.
+                self._manager.reload()
                 logger.info("Webhooks reloaded (%d hooks)", len(self._manager.list_hooks()))
 
     # -- Dispatch --

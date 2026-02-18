@@ -54,7 +54,7 @@ Queue management methods:
 
 Callback queries are not processed through `SequentialMiddleware.__call__`; lock usage is explicit and path-dependent in `TelegramBot`:
 
-- locked: model selector callbacks (`ms:*`), file browser file-request callbacks (`sf!`), generic callbacks routed through orchestrator.
+- locked: model selector callbacks (`ms:*`), cron selector callbacks (`crn:*`), file browser file-request callbacks (`sf!`), generic callbacks routed through orchestrator.
 - not locked: queue cancel callbacks (`mq:*`), upgrade callbacks (`upg:*`), file browser directory navigation (`sf:`).
 
 ## Message Resolution

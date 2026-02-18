@@ -115,8 +115,10 @@ class CleanupObserver:
         if self._last_run_date == today:
             return
 
-        self._last_run_date = today
         await self._execute()
+        # Set AFTER successful execution so a transient error doesn't
+        # permanently suppress cleanup for the rest of the day.
+        self._last_run_date = today
 
     async def _execute(self) -> None:
         """Perform the actual cleanup in a thread to avoid blocking the loop."""

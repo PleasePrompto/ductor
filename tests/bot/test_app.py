@@ -696,6 +696,22 @@ class TestCallbackQueryHandler:
         bot_instance.edit_message_text.assert_called_once()
         orch.handle_message_streaming.assert_not_called()
 
+    async def test_cron_selector_callback_edits_message(self) -> None:
+        tg_bot, bot_instance = _make_tg_bot()
+        orch = _make_orchestrator()
+        tg_bot._orchestrator = orch
+
+        with patch(
+            "ductor_bot.orchestrator.cron_selector.handle_cron_callback",
+            new_callable=AsyncMock,
+            return_value=("Scheduled Tasks", MagicMock()),
+        ):
+            cb = _make_callback_query(data="crn:r:0", message_id=56)
+            await tg_bot._on_callback_query(cb)
+
+        bot_instance.edit_message_text.assert_called_once()
+        orch.handle_message_streaming.assert_not_called()
+
     async def test_non_model_selector_callback_routes_normally(self) -> None:
         tg_bot, _ = _make_tg_bot()
         orch = _make_orchestrator()
@@ -814,6 +830,47 @@ class TestHandleModelSelector:
             return_value=("Pick:", MagicMock()),
         ):
             await tg_bot._handle_model_selector(chat_id=1, message_id=50, data="ms:p:claude")
+
+        # Should not raise
+
+
+class TestHandleCronSelector:
+    async def test_edits_message_in_place(self) -> None:
+        tg_bot, bot_instance = _make_tg_bot()
+        tg_bot._orchestrator = _make_orchestrator()
+        keyboard = MagicMock()
+
+        with patch(
+            "ductor_bot.orchestrator.cron_selector.handle_cron_callback",
+            new_callable=AsyncMock,
+            return_value=("Cron panel", keyboard),
+        ):
+            await tg_bot._handle_cron_selector(chat_id=1, message_id=60, data="crn:r:0")
+
+        from aiogram.enums import ParseMode
+
+        bot_instance.edit_message_text.assert_called_once_with(
+            text="Cron panel",
+            chat_id=1,
+            message_id=60,
+            reply_markup=keyboard,
+            parse_mode=ParseMode.HTML,
+        )
+
+    async def test_suppresses_bad_request(self) -> None:
+        tg_bot, bot_instance = _make_tg_bot()
+        tg_bot._orchestrator = _make_orchestrator()
+
+        bot_instance.edit_message_text = AsyncMock(
+            side_effect=TelegramBadRequest(method=MagicMock(), message="msg not modified")
+        )
+
+        with patch(
+            "ductor_bot.orchestrator.cron_selector.handle_cron_callback",
+            new_callable=AsyncMock,
+            return_value=("Cron panel", MagicMock()),
+        ):
+            await tg_bot._handle_cron_selector(chat_id=1, message_id=60, data="crn:r:0")
 
         # Should not raise
 

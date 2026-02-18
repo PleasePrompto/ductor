@@ -51,7 +51,7 @@ class TestCodexCacheObserver:
             await observer.start()
 
             # Verify cache was loaded
-            mock_load.assert_called_once_with(cache_path)
+            mock_load.assert_called_once_with(cache_path, force_refresh=True)
             assert observer.get_cache() is mock_cache
             assert observer._running is True
             assert observer._task is not None

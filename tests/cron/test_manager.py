@@ -137,6 +137,35 @@ class TestCronManagerCRUD:
         assert updated.last_run_status == "success"
         assert updated.last_run_at is not None
 
+    def test_set_enabled_updates_single_job(self, tmp_path: Path) -> None:
+        mgr = _make_manager(tmp_path)
+        mgr.add_job(_make_job())
+
+        changed = mgr.set_enabled("daily", enabled=False)
+
+        assert changed is True
+        job = mgr.get_job("daily")
+        assert job is not None
+        assert job.enabled is False
+
+    def test_set_enabled_no_change_returns_false(self, tmp_path: Path) -> None:
+        mgr = _make_manager(tmp_path)
+        mgr.add_job(_make_job())
+
+        changed = mgr.set_enabled("daily", enabled=True)
+        assert changed is False
+
+    def test_set_all_enabled_updates_multiple_jobs(self, tmp_path: Path) -> None:
+        mgr = _make_manager(tmp_path)
+        mgr.add_job(_make_job("job-1", enabled=True))
+        mgr.add_job(_make_job("job-2", enabled=False))
+
+        changed = mgr.set_all_enabled(enabled=False)
+
+        assert changed == 1
+        jobs = mgr.list_jobs()
+        assert all(not job.enabled for job in jobs)
+
     def test_reload_picks_up_external_changes(self, tmp_path: Path) -> None:
         mgr = _make_manager(tmp_path)
         mgr.add_job(_make_job("original"))

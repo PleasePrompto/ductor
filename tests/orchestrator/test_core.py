@@ -42,9 +42,11 @@ async def test_new_command(orch: Orchestrator) -> None:
     mock_kill.assert_called_once_with(1)
 
 
-async def test_stop_command_nothing_running(orch: Orchestrator) -> None:
-    result = await orch.handle_message(1, "/stop")
-    assert "Nothing running" in result.text
+async def test_stop_aborts_nothing_running(orch: Orchestrator) -> None:
+    # /stop is handled by the middleware abort path before reaching the orchestrator.
+    # Direct abort() returns 0 when no process is active.
+    killed = await orch.abort(1)
+    assert killed == 0
 
 
 async def test_status_command(orch: Orchestrator) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -60,6 +61,7 @@ class CronObserver:
         self._on_result: CronResultCallback | None = None
         self._scheduled: dict[str, asyncio.Task[None]] = {}
         self._watcher_task: asyncio.Task[None] | None = None
+        self._reschedule_lock = asyncio.Lock()
         self._last_mtime: float = 0.0
         self._running = False
 
@@ -79,11 +81,23 @@ class CronObserver:
         self._running = False
         if self._watcher_task:
             self._watcher_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._watcher_task
             self._watcher_task = None
-        for task in self._scheduled.values():
+        tasks = list(self._scheduled.values())
+        for task in tasks:
             task.cancel()
         self._scheduled.clear()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         logger.info("CronObserver stopped")
+
+    async def reschedule_now(self) -> None:
+        """Reschedule all jobs immediately (used by interactive cron toggles)."""
+        if not self._running:
+            return
+        await self._update_mtime()
+        await self._reschedule_locked()
 
     # -- File watcher --
 
@@ -100,7 +114,7 @@ class CronObserver:
             if current_mtime != self._last_mtime:
                 self._last_mtime = current_mtime
                 await asyncio.to_thread(self._manager.reload)
-                await self._reschedule_all()
+                await self._reschedule_locked()
 
     # -- Scheduling --
 
@@ -118,12 +132,25 @@ class CronObserver:
                 )
 
     async def _reschedule_all(self) -> None:
-        """Cancel existing schedules and reschedule from current JSON state."""
-        for task in self._scheduled.values():
+        """Cancel existing schedules, await their termination, then reschedule.
+
+        Awaiting cancellation prevents a race where the old task (executing a
+        subprocess via asyncio.to_thread) is not yet interrupted and runs
+        concurrently with the newly created replacement task.
+        """
+        tasks = list(self._scheduled.values())
+        for task in tasks:
             task.cancel()
         self._scheduled.clear()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         await self._schedule_all()
         logger.info("Rescheduled %d jobs", len(self._scheduled))
+
+    async def _reschedule_locked(self) -> None:
+        """Serialize reschedules from watcher and interactive updates."""
+        async with self._reschedule_lock:
+            await self._reschedule_all()
 
     def _schedule_job(
         self,
@@ -148,9 +175,16 @@ class CronObserver:
             now_naive = now_local.replace(tzinfo=None)
             it = CronSim(schedule, now_naive)
             next_naive: datetime = next(it)
-            # Re-attach the timezone and compute delay against real UTC clock.
-            next_aware = next_naive.replace(fold=1, tzinfo=tz)
+            # Re-attach the timezone using fold=0 (prefer pre-DST interpretation
+            # for ambiguous times).  For non-existent times (DST spring-forward
+            # gap) the delay becomes negative; in that case advance to the next
+            # cron slot so the job fires at the correct wall-clock time.
+            next_aware = next_naive.replace(tzinfo=tz)  # fold=0 default
             delay = (next_aware - datetime.now(tz)).total_seconds()
+            if delay < 0:
+                next_naive = next(it)
+                next_aware = next_naive.replace(tzinfo=tz)
+                delay = (next_aware - datetime.now(tz)).total_seconds()
             delay = max(delay, 0)
             task = asyncio.create_task(
                 self._run_at(delay, job_id, instruction, task_folder, schedule, job_timezone),
@@ -312,6 +346,10 @@ class CronObserver:
                 status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
 
             self._manager.update_run_status(job_id, status=status)
+            # Refresh our mtime baseline so the file-watcher doesn't treat the
+            # run-status write as a user-initiated change and trigger a full
+            # reschedule of all other jobs.
+            await self._update_mtime()
             elapsed_ms = (time.monotonic() - t0) * 1000
             logger.info(
                 "Cron job completed job=%s status=%s duration_ms=%.0f stdout=%d result=%d",

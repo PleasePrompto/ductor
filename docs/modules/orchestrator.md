@@ -65,6 +65,8 @@ Routing note:
 
 `/diagnose` includes Codex cache status (`loaded/not loaded`, `last_updated`, cached model count, default model).
 
+`/cron` now returns an interactive panel with inline callbacks for paging, refresh, per-job enable/disable toggles, and bulk `All ON` / `All OFF`.
+
 ## Directives
 
 `parse_directives(text, known_models)` consumes only the beginning of a message.

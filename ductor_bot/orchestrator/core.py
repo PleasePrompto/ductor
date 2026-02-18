@@ -33,7 +33,6 @@ from ductor_bot.orchestrator.commands import (
     cmd_model,
     cmd_reset,
     cmd_status,
-    cmd_stop,
     cmd_upgrade,
 )
 from ductor_bot.orchestrator.directives import parse_directives
@@ -313,7 +312,8 @@ class Orchestrator:
     def _register_commands(self) -> None:
         reg = self._command_registry
         reg.register_async("/new", cmd_reset)
-        reg.register_async("/stop", cmd_stop)
+        # /stop is handled entirely by the Middleware abort path (before the lock)
+        # and never reaches the orchestrator command registry.
         reg.register_async("/status", cmd_status)
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
@@ -330,6 +330,13 @@ class Orchestrator:
     async def abort(self, chat_id: int) -> int:
         """Kill all active CLI processes for chat_id."""
         return await self._process_registry.kill_all(chat_id)
+
+    def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
+        """Resolve requested model to the effective ``(model, provider)`` pair."""
+        model_name = requested_model or self._config.model
+        if self._available_providers:
+            return self._models.resolve_for_provider(model_name, self._available_providers)
+        return model_name, self._models.provider_for(model_name)
 
     def set_cron_result_handler(
         self,
@@ -370,7 +377,8 @@ class Orchestrator:
     @property
     def active_provider_name(self) -> str:
         """Human-readable name for the active CLI provider."""
-        return "Claude Code" if self._config.provider == "claude" else "Codex"
+        _model, provider = self.resolve_runtime_target(self._config.model)
+        return "Claude Code" if provider == "claude" else "Codex"
 
     def is_chat_busy(self, chat_id: int) -> bool:
         """Check if a chat has active CLI processes."""

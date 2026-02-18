@@ -42,7 +42,10 @@ class CodexModelInfo:
     is_default: bool
 
 
-async def discover_codex_models(*, deadline: float = 10.0) -> list[CodexModelInfo]:
+DISCOVERY_TIMEOUT = 30.0
+
+
+async def discover_codex_models(*, deadline: float = DISCOVERY_TIMEOUT) -> list[CodexModelInfo]:
     """Query ``codex app-server`` for available models.
 
     Returns an empty list on timeout, missing CLI, or parse error.
@@ -53,6 +56,9 @@ async def discover_codex_models(*, deadline: float = 10.0) -> list[CodexModelInf
         logger.debug("codex CLI not found, skipping model discovery")
         return []
 
+    process: asyncio.subprocess.Process | None = None
+    lines: list[str] = []
+
     try:
         process = await asyncio.create_subprocess_exec(
             codex_path,
@@ -61,25 +67,49 @@ async def discover_codex_models(*, deadline: float = 10.0) -> list[CodexModelInf
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
+        if process.stdin is None or process.stdout is None:
+            logger.warning("Codex app-server spawned without pipes")
+            return []
+
+        process.stdin.write(_INPUT.encode())
+        await process.stdin.drain()
+        # Keep stdin open while reading; closing early can terminate app-server
+        # before it sends the model/list response.
+
         async with asyncio.timeout(deadline):
-            stdout, _ = await process.communicate(input=_INPUT.encode())
+            while True:
+                line_bytes = await process.stdout.readline()
+                if not line_bytes:
+                    break
+                line = line_bytes.decode(errors="replace")
+                lines.append(line)
+                with contextlib.suppress(json.JSONDecodeError):
+                    if json.loads(line).get("id") == 2:
+                        break
     except TimeoutError:
         logger.warning("Codex discovery timeout after %.0fs", deadline)
-        return _kill_process(process)
+        return []
     except OSError:
         logger.warning("Failed to spawn codex app-server", exc_info=True)
         return []
+    finally:
+        if process is not None:
+            if process.stdin is not None and not process.stdin.is_closing():
+                with contextlib.suppress(Exception):
+                    process.stdin.close()
+            await _kill_process(process)
 
-    models = _parse_response(stdout.decode(errors="replace"))
+    models = _parse_response("".join(lines))
     logger.info("Codex discovery found %d models", len(models))
     return models
 
 
-def _kill_process(process: asyncio.subprocess.Process) -> list[CodexModelInfo]:
+async def _kill_process(process: asyncio.subprocess.Process) -> None:
     """Best-effort kill of a hung process."""
     with contextlib.suppress(OSError):
         process.kill()
-    return []
+    with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
+        await asyncio.wait_for(process.wait(), timeout=0.2)
 
 
 def _parse_response(raw: str) -> list[CodexModelInfo]:

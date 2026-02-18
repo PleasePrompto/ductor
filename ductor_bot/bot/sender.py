@@ -74,9 +74,12 @@ async def _send_text_chunks(
             logger.warning(
                 "HTML send failed at chunk %d/%d, falling back to plain text", i, len(chunks)
             )
-            remaining = split_html_message(clean_text)
-            # Skip chunks already sent successfully as HTML.
-            for pc in remaining[i:]:
+            # Re-split the original text for plain-text sending.  We send the
+            # full text rather than trying to skip already-sent HTML chunks
+            # because HTML and plain-text chunk boundaries don't align
+            # (HTML tags inflate chunk size), so using the HTML chunk index on a
+            # plain-text split would skip wrong content.
+            for pc in split_html_message(clean_text):
                 last_msg = await bot.send_message(chat_id=chat_id, text=pc, parse_mode=None)
             break
     return last_msg

@@ -144,6 +144,23 @@ async def test_normal_model_override(orch: Orchestrator) -> None:
     assert request.model_override == "sonnet"
 
 
+async def test_normal_resolves_effective_model_for_available_provider(orch: Orchestrator) -> None:
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    object.__setattr__(orch, "_available_providers", frozenset({"codex"}))
+
+    await normal(orch, 1, "Hello")
+
+    request = mock_execute.call_args[0][0]
+    assert request.model_override == "gpt-5.2-codex"
+    assert request.provider_override == "codex"
+
+    session = await orch._sessions.get_active(1)
+    assert session is not None
+    assert session.provider == "codex"
+    assert session.model == "gpt-5.2-codex"
+
+
 # -- streaming flow --
 
 
@@ -183,7 +200,7 @@ async def test_streaming_error_resets_session(orch: Orchestrator) -> None:
     assert "Session error" in result.text
     assert "[opus]" in result.text
     mock_kill.assert_called_once_with(1)
-    mock_reset.assert_called_once_with(1)
+    mock_reset.assert_called_once_with(1, provider="claude", model="opus")
 
 
 async def test_streaming_error_with_model_override(orch: Orchestrator) -> None:

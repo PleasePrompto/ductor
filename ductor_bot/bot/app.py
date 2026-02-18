@@ -75,7 +75,7 @@ _HELP_TEXT = fmt(
     "/stop -- Stop the running agent\n"
     "/status -- Show session info",
     "AI\n/model -- Show/switch model\n/memory -- Show main memory",
-    "Automation\n/cron -- Show scheduled cron jobs",
+    "Automation\n/cron -- View/manage scheduled cron jobs",
     "System\n"
     "/showfiles -- Browse ductor files\n"
     "/info -- Docs, links & about\n"
@@ -416,22 +416,7 @@ class TelegramBot:
                 return
             data = resolved
 
-        if data.startswith(MQ_PREFIX):
-            await self._handle_queue_cancel(chat_id, data)
-            return
-
-        if data.startswith("upg:"):
-            await self._handle_upgrade_callback(chat_id, msg.message_id, data)
-            return
-
-        from ductor_bot.orchestrator.model_selector import is_model_selector_callback
-
-        if is_model_selector_callback(data):
-            await self._handle_model_selector(chat_id, msg.message_id, data)
-            return
-
-        if is_file_browser_callback(data):
-            await self._handle_file_browser(chat_id, msg.message_id, data)
+        if await self._route_special_callback(chat_id, msg.message_id, data):
             return
 
         await self._mark_button_choice(chat_id, msg, display_label)
@@ -445,6 +430,34 @@ class TelegramBot:
                 roots = self._file_roots(self._orch.paths)
                 await send_rich(self._bot, chat_id, result.text, allowed_roots=roots)
 
+    async def _route_special_callback(self, chat_id: int, message_id: int, data: str) -> bool:
+        """Handle known callback namespaces. Returns True when handled."""
+        if data.startswith(MQ_PREFIX):
+            await self._handle_queue_cancel(chat_id, data)
+            return True
+
+        if data.startswith("upg:"):
+            await self._handle_upgrade_callback(chat_id, message_id, data)
+            return True
+
+        from ductor_bot.orchestrator.model_selector import is_model_selector_callback
+
+        if is_model_selector_callback(data):
+            await self._handle_model_selector(chat_id, message_id, data)
+            return True
+
+        from ductor_bot.orchestrator.cron_selector import is_cron_selector_callback
+
+        if is_cron_selector_callback(data):
+            await self._handle_cron_selector(chat_id, message_id, data)
+            return True
+
+        if is_file_browser_callback(data):
+            await self._handle_file_browser(chat_id, message_id, data)
+            return True
+
+        return False
+
     async def _handle_model_selector(self, chat_id: int, message_id: int, data: str) -> None:
         """Handle model selector wizard by editing the message in-place.
 
@@ -455,6 +468,21 @@ class TelegramBot:
 
         async with self._sequential.get_lock(chat_id):
             text, keyboard = await handle_model_callback(self._orch, chat_id, data)
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                text=markdown_to_telegram_html(text),
+                chat_id=chat_id,
+                message_id=message_id,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
+            )
+
+    async def _handle_cron_selector(self, chat_id: int, message_id: int, data: str) -> None:
+        """Handle cron selector wizard by editing the message in-place."""
+        from ductor_bot.orchestrator.cron_selector import handle_cron_callback
+
+        async with self._sequential.get_lock(chat_id):
+            text, keyboard = await handle_cron_callback(self._orch, data)
         with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_text(
                 text=markdown_to_telegram_html(text),

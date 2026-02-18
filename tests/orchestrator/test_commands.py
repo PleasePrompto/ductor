@@ -100,6 +100,13 @@ async def test_status_with_session(orch: Orchestrator) -> None:
     assert "Messages:" in result.text
 
 
+async def test_status_prefers_session_model_over_config(orch: Orchestrator) -> None:
+    await orch._sessions.resolve_session(1, provider="codex", model="gpt-5.2-codex")
+    with patch("ductor_bot.orchestrator.commands.check_all_auth", return_value={}):
+        result = await cmd_status(orch, 1, "/status")
+    assert "Model: gpt-5.2-codex (configured: opus)" in result.text
+
+
 # -- cmd_memory --
 
 
@@ -137,9 +144,10 @@ async def test_cron_lists_jobs(orch: Orchestrator) -> None:
         ),
     )
     result = await cmd_cron(orch, 0, "/cron")
-    assert "test-job" not in result.text  # IDs are no longer shown in the new format
+    assert result.reply_markup is not None
     assert "0 9 * * *" in result.text
     assert "Test Job" in result.text
+    assert "Tap a button to toggle" in result.text
 
 
 # -- cmd_diagnose --
@@ -192,6 +200,15 @@ async def test_diagnose_shows_cache_status(orch: Orchestrator) -> None:
     assert "Codex Model Cache" in result.text
     assert "Models cached: 1" in result.text
     assert "Default model: gpt-4o" in result.text
+
+
+async def test_diagnose_shows_effective_runtime_target(orch: Orchestrator) -> None:
+    object.__setattr__(orch, "_available_providers", frozenset({"codex"}))
+
+    result = await cmd_diagnose(orch, 0, "/diagnose")
+
+    assert "Configured: claude / opus" in result.text
+    assert "Effective runtime: codex / gpt-5.2-codex" in result.text
 
 
 # -- cmd_stop --

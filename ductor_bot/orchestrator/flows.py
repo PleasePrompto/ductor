@@ -32,10 +32,19 @@ async def _prepare_normal(
 
     Returns (request, session) so the caller can update the session after the CLI call.
     """
-    req_model = model_override or orch._config.model
-    req_provider = orch._models.provider_for(req_model)
+    requested_model = model_override or orch._config.model
+    req_model, req_provider = orch.resolve_runtime_target(requested_model)
 
-    session, is_new = await orch._sessions.resolve_session(chat_id, provider=req_provider)
+    session, is_new = await orch._sessions.resolve_session(
+        chat_id,
+        provider=req_provider,
+        model=req_model,
+    )
+    await orch._sessions.sync_session_target(
+        session,
+        provider=req_provider,
+        model=req_model,
+    )
     if session.session_id:
         set_log_context(session_id=session.session_id)
     logger.info(
@@ -64,6 +73,7 @@ async def _prepare_normal(
         prompt=prompt,
         append_system_prompt=append_prompt,
         model_override=req_model,
+        provider_override=req_provider,
         chat_id=chat_id,
         resume_session=None if is_new else session.session_id,
         timeout_seconds=orch._config.cli_timeout,
@@ -90,16 +100,24 @@ async def _update_session(
 async def _reset_on_error(
     orch: Orchestrator,
     chat_id: int,
-    model_override: str | None,
+    *,
+    model_name: str,
+    provider_name: str,
 ) -> OrchestratorResult:
     """Kill processes, reset session, return user-facing error."""
-    model_name = model_override or orch._config.model
     await orch._process_registry.kill_all(chat_id)
-    await orch._sessions.reset_session(chat_id)
+    await orch._sessions.reset_session(chat_id, provider=provider_name, model=model_name)
     logger.warning("Session error reset model=%s", model_name)
     return OrchestratorResult(
         text=f"[{model_name}] Session error. New session started.",
     )
+
+
+def _request_target(orch: Orchestrator, request: AgentRequest) -> tuple[str, str]:
+    """Return the effective model/provider target of a prepared request."""
+    model_name = request.model_override or orch._config.model
+    provider_name = request.provider_override or orch._models.provider_for(model_name)
+    return model_name, provider_name
 
 
 async def normal(
@@ -122,14 +140,21 @@ async def normal(
             "Resume failed sid=%s, retrying fresh",
             request.resume_session[:8],
         )
-        await orch._sessions.reset_session(chat_id)
+        model_name, provider_name = _request_target(orch, request)
+        await orch._sessions.reset_session(chat_id, provider=provider_name, model=model_name)
         request, session = await _prepare_normal(orch, chat_id, text, model_override=model_override)
         response = await orch._cli_service.execute(request)
     if response.is_error:
         if orch._process_registry.was_aborted(chat_id):
             logger.info("Normal flow aborted by user (after retry)")
             return OrchestratorResult(text="")
-        return await _reset_on_error(orch, chat_id, model_override)
+        model_name, provider_name = _request_target(orch, request)
+        return await _reset_on_error(
+            orch,
+            chat_id,
+            model_name=model_name,
+            provider_name=provider_name,
+        )
     await _update_session(orch, session, response)
     logger.info("Normal flow completed")
     return _finish_normal(response, session, orch._config.session_age_warning_hours)
@@ -163,7 +188,8 @@ async def normal_streaming(  # noqa: PLR0913
             "Resume failed sid=%s, retrying fresh",
             request.resume_session[:8],
         )
-        await orch._sessions.reset_session(chat_id)
+        model_name, provider_name = _request_target(orch, request)
+        await orch._sessions.reset_session(chat_id, provider=provider_name, model=model_name)
         request, session = await _prepare_normal(orch, chat_id, text, model_override=model_override)
         response = await orch._cli_service.execute_streaming(
             request,
@@ -175,7 +201,13 @@ async def normal_streaming(  # noqa: PLR0913
         if orch._process_registry.was_aborted(chat_id):
             logger.info("Streaming flow aborted by user (after retry)")
             return OrchestratorResult(text="")
-        return await _reset_on_error(orch, chat_id, model_override)
+        model_name, provider_name = _request_target(orch, request)
+        return await _reset_on_error(
+            orch,
+            chat_id,
+            model_name=model_name,
+            provider_name=provider_name,
+        )
     await _update_session(orch, session, response)
     logger.info("Streaming flow completed")
     return _finish_normal(response, session, orch._config.session_age_warning_hours)
@@ -247,8 +279,7 @@ async def heartbeat_flow(orch: Orchestrator, chat_id: int) -> str | None:
     (last_active, message_count) for ack responses.
     """
     hb_cfg = orch._config.heartbeat
-    req_model = orch._config.model
-    req_provider = orch._models.provider_for(req_model)
+    req_model, req_provider = orch.resolve_runtime_target(orch._config.model)
 
     # Read-only check: never create/overwrite a session from the heartbeat path.
     session = await orch._sessions.get_active(chat_id)
@@ -267,6 +298,8 @@ async def heartbeat_flow(orch: Orchestrator, chat_id: int) -> str | None:
         )
         return None
 
+    await orch._sessions.sync_session_target(session, model=req_model)
+
     idle_seconds = (datetime.now(UTC) - datetime.fromisoformat(session.last_active)).total_seconds()
     cooldown_seconds = hb_cfg.cooldown_minutes * 60
     if idle_seconds < cooldown_seconds:
@@ -280,6 +313,7 @@ async def heartbeat_flow(orch: Orchestrator, chat_id: int) -> str | None:
     request = AgentRequest(
         prompt=hb_cfg.prompt,
         model_override=req_model,
+        provider_override=req_provider,
         chat_id=chat_id,
         resume_session=session.session_id,
         timeout_seconds=orch._config.cli_timeout,

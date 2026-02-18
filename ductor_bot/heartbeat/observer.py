@@ -94,10 +94,11 @@ class HeartbeatObserver:
 
     async def _loop(self) -> None:
         """Sleep -> check -> execute -> repeat."""
-        interval = self._hb.interval_minutes * 60
         last_wall = time.time()
         try:
             while self._running:
+                # Read interval fresh each iteration so config-reload changes take effect.
+                interval = self._hb.interval_minutes * 60
                 await asyncio.sleep(interval)
                 if not self._running or not self._hb.enabled:
                     continue

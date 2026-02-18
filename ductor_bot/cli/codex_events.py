@@ -36,7 +36,10 @@ def parse_codex_jsonl(raw: str) -> tuple[str, str | None, dict[str, Any] | None]
 
         thread_id = _extract_thread_id(data, thread_id)
         usage = _extract_usage(data, usage)
-        if _is_tool_item(data):
+        # Only clear pre-tool "thinking" text on item.started; clearing on
+        # item.updated / item.completed would discard the final agent response
+        # if the model emits it before calling a tool.
+        if _is_tool_item(data) and data.get("type") == "item.started":
             result_parts.clear()
         _extract_text(data, result_parts)
 
@@ -67,14 +70,22 @@ def _extract_thread_id(data: dict[str, Any], current: str | None) -> str | None:
 
 
 def _extract_usage(data: dict[str, Any], current: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Extract usage from turn.completed event or top-level field."""
+    """Extract usage from turn.completed event; fall back to top-level only when unknown.
+
+    ``turn.completed`` is the authoritative source.  Usage dicts on intermediate
+    events are ignored so a later partial event cannot overwrite the final total.
+    """
     if data.get("type") == "turn.completed":
         raw_usage = data.get("usage")
         if isinstance(raw_usage, dict):
             return raw_usage
-    raw_usage = data.get("usage")
-    if isinstance(raw_usage, dict):
-        return raw_usage
+        # turn.completed without usage — keep whatever we have
+        return current
+    # Only use non-turn.completed usage when we have nothing yet
+    if current is None:
+        raw_usage = data.get("usage")
+        if isinstance(raw_usage, dict):
+            return raw_usage
     return current
 
 

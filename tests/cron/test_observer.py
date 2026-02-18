@@ -179,6 +179,21 @@ class TestCronObserverScheduling:
         assert "added" in observer._scheduled
         await observer.stop()
 
+    async def test_reschedule_now_runs_immediately(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        observer = _make_observer(paths, mgr)
+        observer._running = True
+
+        with (
+            patch.object(observer, "_update_mtime", new_callable=AsyncMock) as mtime_mock,
+            patch.object(observer, "_reschedule_all", new_callable=AsyncMock) as reschedule_mock,
+        ):
+            await observer.reschedule_now()
+
+        mtime_mock.assert_awaited_once()
+        reschedule_mock.assert_awaited_once()
+
 
 class TestCronObserverExecution:
     """Job execution tests."""

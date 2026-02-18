@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from ductor_bot.workspace.paths import DuctorPaths
@@ -13,6 +15,24 @@ from ductor_bot.workspace.rules_selector import RulesSelector
 from ductor_bot.workspace.skill_sync import sync_bundled_skills, sync_skills
 
 logger = logging.getLogger(__name__)
+
+
+def _write_atomic(path: Path, content: str) -> None:
+    """Write *content* to *path* atomically using a temp file + rename."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_str = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    tmp = Path(tmp_str)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        tmp.replace(path)
+    except BaseException:
+        import contextlib
+        with contextlib.suppress(OSError):
+            os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise
+
 
 # Files that are ALWAYS overwritten on every start (Zone 2).
 # Everything else is seeded only once (Zone 3).
@@ -196,10 +216,7 @@ def _smart_merge_config(paths: DuctorPaths) -> None:
         return
 
     if not paths.config_path.exists():
-        paths.config_path.write_text(
-            json.dumps(defaults, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        _write_atomic(paths.config_path, json.dumps(defaults, indent=2, ensure_ascii=False))
         return
 
     try:
@@ -210,10 +227,7 @@ def _smart_merge_config(paths: DuctorPaths) -> None:
     merged = {**defaults, **existing}
 
     if merged != existing:
-        paths.config_path.write_text(
-            json.dumps(merged, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        _write_atomic(paths.config_path, json.dumps(merged, indent=2, ensure_ascii=False))
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +350,7 @@ def inject_runtime_environment(paths: DuctorPaths, *, docker_container: str) -> 
         # Avoid duplicate injection on restart without workspace re-init
         if "## Runtime Environment" in content:
             continue
-        target.write_text(content + notice, encoding="utf-8")
+        _write_atomic(target, content + notice)
     logger.info(
         "Runtime environment injected: %s",
         "docker" if docker_container else "host",

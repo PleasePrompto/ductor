@@ -12,6 +12,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from ductor_bot.bot.response_format import NEW_SESSION_TEXT, SEP, fmt, stop_text
 from ductor_bot.cli.auth import check_all_auth
 from ductor_bot.infra.version import check_pypi, get_current_version
+from ductor_bot.orchestrator.cron_selector import cron_selector_start
 from ductor_bot.orchestrator.model_selector import model_selector_start, switch_model
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.workspace.loader import read_mainmemory
@@ -86,31 +87,8 @@ async def cmd_memory(orch: Orchestrator, _chat_id: int, _text: str) -> Orchestra
 async def cmd_cron(orch: Orchestrator, _chat_id: int, _text: str) -> OrchestratorResult:
     """Handle /cron."""
     logger.info("Cron requested")
-    jobs = orch._cron_manager.list_jobs()
-    if not jobs:
-        return OrchestratorResult(
-            text=fmt(
-                "**Scheduled Tasks**",
-                SEP,
-                "No cron jobs configured.",
-                SEP,
-                '*Ask your agent: "Run a backup check every day at 9am"*',
-            ),
-        )
-    job_lines: list[str] = []
-    for j in jobs:
-        status = f" [{j.last_run_status}]" if j.last_run_status else ""
-        enabled = "" if j.enabled else " (disabled)"
-        job_lines.append(f"  `{j.schedule}` -- {j.title}{enabled}{status}")
-    return OrchestratorResult(
-        text=fmt(
-            "**Scheduled Tasks**",
-            SEP,
-            "\n".join(job_lines),
-            SEP,
-            "*Manage jobs by asking your agent to add, edit, or remove them.*",
-        ),
-    )
+    text, keyboard = await cron_selector_start(orch)
+    return OrchestratorResult(text=text, reply_markup=keyboard)
 
 
 async def cmd_upgrade(_orch: Orchestrator, _chat_id: int, _text: str) -> OrchestratorResult:
@@ -189,8 +167,11 @@ async def cmd_diagnose(orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
     """Handle /diagnose."""
     logger.info("Diagnose requested")
     version = get_current_version()
+    effective_model, effective_provider = orch.resolve_runtime_target(orch._config.model)
     info_block = (
-        f"Version: `{version}`\nProvider: {orch._config.provider}\nModel: {orch._config.model}"
+        f"Version: `{version}`\n"
+        f"Configured: {orch._config.provider} / {orch._config.model}\n"
+        f"Effective runtime: {effective_provider} / {effective_model}"
     )
 
     # Codex model cache status
@@ -226,6 +207,14 @@ async def cmd_diagnose(orch: Orchestrator, _chat_id: int, _text: str) -> Orchest
 
 async def _build_status(orch: Orchestrator, chat_id: int) -> str:
     """Build the /status response text."""
+    runtime_model, _runtime_provider = orch.resolve_runtime_target(orch._config.model)
+    configured_model = orch._config.model
+
+    def _model_line(model_name: str) -> str:
+        if model_name == configured_model:
+            return f"Model: {model_name}"
+        return f"Model: {model_name} (configured: {configured_model})"
+
     session = await orch._sessions.get_active(chat_id)
     if session:
         session_block = (
@@ -233,10 +222,10 @@ async def _build_status(orch: Orchestrator, chat_id: int) -> str:
             f"Messages: {session.message_count}\n"
             f"Tokens: {session.total_tokens:,}\n"
             f"Cost: ${session.total_cost_usd:.4f}\n"
-            f"Model: {orch._config.model}"
+            f"{_model_line(session.model)}"
         )
     else:
-        session_block = f"No active session.\nModel: {orch._config.model}"
+        session_block = f"No active session.\n{_model_line(runtime_model)}"
 
     auth = await asyncio.to_thread(check_all_auth)
     auth_lines: list[str] = []
