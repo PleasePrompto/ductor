@@ -46,10 +46,12 @@ MQ_PREFIX = "mq:"
 def is_quick_command(text: str) -> bool:
     """Return True if *text* is a command that can bypass the lock.
 
-    Matches both bare commands (``/status``) and commands with arguments
-    (``/model sonnet``).
+    Matches both bare commands (``/status``), bot-mentioned commands
+    (``/status@my_bot``), and commands with arguments (``/model sonnet``).
     """
     cmd = text.strip().lower().split(None, 1)[0] if text.strip() else ""
+    if "@" in cmd:
+        cmd = cmd.split("@", 1)[0]
     return cmd in QUICK_COMMANDS
 
 

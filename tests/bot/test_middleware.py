@@ -263,6 +263,8 @@ class TestIsQuickCommand:
             ("  /status  ", True),
             ("/model", True),
             ("/model sonnet", True),
+            ("/status@jhcoding_bot", True),
+            ("/model@jhcoding_bot gpt-5.3-codex", True),
             ("/new", False),
             ("/stop", False),
             ("/restart", False),

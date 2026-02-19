@@ -61,6 +61,7 @@ class AgentResponse:
     """Immutable result from a CLI call."""
 
     result: str
+    returncode: int | None = None
     session_id: str | None = None
     is_error: bool = False
     cost_usd: float = 0.0
