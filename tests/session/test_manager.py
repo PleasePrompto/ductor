@@ -259,7 +259,9 @@ async def test_legacy_session_without_model_is_migrated_on_resolve(tmp_path: Pat
     assert '"model": "gpt-5.2-codex"' in persisted
 
 
-async def test_sync_session_target_migrates_missing_model_without_value_change(tmp_path: Path) -> None:
+async def test_sync_session_target_migrates_missing_model_without_value_change(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "sessions.json"
     path.write_text(
         '{"1":{"session_id":"legacy-sid","chat_id":1,"provider":"claude"}}',
@@ -302,7 +304,9 @@ async def test_sync_session_target_does_not_overwrite_metrics_from_stale_snapsho
     assert after_sync.total_tokens == 20
 
 
-async def test_update_session_uses_latest_persisted_counters_from_stale_snapshot(tmp_path: Path) -> None:
+async def test_update_session_uses_latest_persisted_counters_from_stale_snapshot(
+    tmp_path: Path,
+) -> None:
     """update_session should not drop increments when called with stale snapshots."""
     mgr = _make_manager(tmp_path)
     base, _ = await mgr.resolve_session(chat_id=1)

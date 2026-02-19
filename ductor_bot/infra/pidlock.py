@@ -97,6 +97,7 @@ def acquire_lock(*, pid_file: Path, kill_existing: bool = False) -> None:
     # Write atomically: temp file + rename so that a partial write can never
     # leave a corrupt PID file, and the final rename is atomic on POSIX.
     import tempfile
+
     fd, tmp_str = tempfile.mkstemp(dir=str(pid_file.parent), suffix=".tmp")
     tmp = Path(tmp_str)
     try:

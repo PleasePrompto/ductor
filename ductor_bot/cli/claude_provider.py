@@ -200,7 +200,12 @@ class ClaudeCodeCLI(BaseCLI):
                 process.returncode,
                 stderr_text[:200] if stderr_text else "(no stderr)",
             )
-            yield ResultEvent(type="result", result=stderr_text[:500], is_error=True)
+            yield ResultEvent(
+                type="result",
+                result=stderr_text[:500],
+                is_error=True,
+                returncode=process.returncode,
+            )
 
 
 async def _cancel_drain(drain: asyncio.Task[bytes]) -> None:

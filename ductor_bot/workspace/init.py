@@ -28,6 +28,7 @@ def _write_atomic(path: Path, content: str) -> None:
         tmp.replace(path)
     except BaseException:
         import contextlib
+
         with contextlib.suppress(OSError):
             os.close(fd)
         tmp.unlink(missing_ok=True)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -113,6 +114,48 @@ async def _reset_on_error(
     )
 
 
+_SIGKILL_USER_MSG = "Execution was interrupted. Please send the same request again."
+
+
+def _is_sigkill(response: AgentResponse) -> bool:
+    """Return True when the response indicates SIGKILL termination."""
+    return response.is_error and response.returncode == -signal.SIGKILL
+
+
+async def _recover_after_sigkill(  # noqa: PLR0913
+    orch: Orchestrator,
+    chat_id: int,
+    text: str,
+    *,
+    model_override: str | None,
+    streaming: bool,
+    on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+    on_tool_activity: Callable[[str], Awaitable[None]] | None = None,
+    on_system_status: Callable[[str | None], Awaitable[None]] | None = None,
+) -> tuple[AgentRequest, SessionData, AgentResponse]:
+    """Reset the session and retry once after SIGKILL."""
+    logger.warning("recovery.sigkill chat=%s action=retry", chat_id)
+    model_name = model_override or orch._config.model
+    provider_name = orch._models.provider_for(model_name)
+    await orch._process_registry.kill_all(chat_id)
+    await orch._sessions.reset_session(chat_id, provider=provider_name, model=model_name)
+
+    if on_system_status is not None:
+        await on_system_status("recovering")
+
+    request, session = await _prepare_normal(orch, chat_id, text, model_override=model_override)
+    if streaming:
+        response = await orch._cli_service.execute_streaming(
+            request,
+            on_text_delta=on_text_delta,
+            on_tool_activity=on_tool_activity,
+            on_system_status=on_system_status,
+        )
+    else:
+        response = await orch._cli_service.execute(request)
+    return request, session, response
+
+
 def _request_target(orch: Orchestrator, request: AgentRequest) -> tuple[str, str]:
     """Return the effective model/provider target of a prepared request."""
     model_name = request.model_override or orch._config.model
@@ -144,7 +187,14 @@ async def normal(
         await orch._sessions.reset_session(chat_id, provider=provider_name, model=model_name)
         request, session = await _prepare_normal(orch, chat_id, text, model_override=model_override)
         response = await orch._cli_service.execute(request)
+    if _is_sigkill(response):
+        request, session, response = await _recover_after_sigkill(
+            orch, chat_id, text, model_override=model_override, streaming=False
+        )
     if response.is_error:
+        if _is_sigkill(response):
+            logger.warning("recovery.sigkill chat=%s action=user-retry", chat_id)
+            return OrchestratorResult(text=_SIGKILL_USER_MSG, stream_fallback=True)
         if orch._process_registry.was_aborted(chat_id):
             logger.info("Normal flow aborted by user (after retry)")
             return OrchestratorResult(text="")
@@ -197,7 +247,21 @@ async def normal_streaming(  # noqa: PLR0913
             on_tool_activity=on_tool_activity,
             on_system_status=on_system_status,
         )
+    if _is_sigkill(response):
+        request, session, response = await _recover_after_sigkill(
+            orch,
+            chat_id,
+            text,
+            model_override=model_override,
+            streaming=True,
+            on_text_delta=on_text_delta,
+            on_tool_activity=on_tool_activity,
+            on_system_status=on_system_status,
+        )
     if response.is_error:
+        if _is_sigkill(response):
+            logger.warning("recovery.sigkill chat=%s action=user-retry", chat_id)
+            return OrchestratorResult(text=_SIGKILL_USER_MSG, stream_fallback=True)
         if orch._process_registry.was_aborted(chat_id):
             logger.info("Streaming flow aborted by user (after retry)")
             return OrchestratorResult(text="")

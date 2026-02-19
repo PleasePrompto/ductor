@@ -263,6 +263,8 @@ class TestIsQuickCommand:
             ("  /status  ", True),
             ("/model", True),
             ("/model sonnet", True),
+            ("/status@my_bot", True),
+            ("/model@my_bot gpt-5.3-codex", True),
             ("/new", False),
             ("/stop", False),
             ("/restart", False),

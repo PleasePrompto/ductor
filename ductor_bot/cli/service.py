@@ -207,6 +207,7 @@ class CLIService:
             session_id=result_event.session_id,
             result=result_event.result or accumulated_text,
             is_error=result_event.is_error,
+            returncode=result_event.returncode,
             duration_ms=result_event.duration_ms,
             duration_api_ms=result_event.duration_api_ms,
             total_cost_usd=result_event.total_cost_usd,
@@ -249,6 +250,7 @@ class CLIService:
         resp = await self.execute(request)
         return AgentResponse(
             result=resp.result,
+            returncode=resp.returncode,
             session_id=resp.session_id,
             is_error=resp.is_error,
             cost_usd=resp.cost_usd,
@@ -313,6 +315,7 @@ def _cli_response_to_agent_response(
     """Convert internal CLIResponse to public AgentResponse."""
     return AgentResponse(
         result=resp.result,
+        returncode=resp.returncode,
         session_id=resp.session_id,
         is_error=resp.is_error,
         cost_usd=resp.total_cost_usd or 0.0,

@@ -101,7 +101,9 @@ def write_upgrade_sentinel(
 
     sentinel_dir.mkdir(parents=True, exist_ok=True)
     path = sentinel_dir / _UPGRADE_SENTINEL_NAME
-    content = json.dumps({"chat_id": chat_id, "old_version": old_version, "new_version": new_version})
+    content = json.dumps(
+        {"chat_id": chat_id, "old_version": old_version, "new_version": new_version}
+    )
     fd, tmp_str = _tmp.mkstemp(dir=str(sentinel_dir), suffix=".tmp")
     tmp = Path(tmp_str)
     try:

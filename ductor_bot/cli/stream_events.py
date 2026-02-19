@@ -36,6 +36,7 @@ class ResultEvent(StreamEvent):
     session_id: str | None = None
     result: str = ""
     is_error: bool = False
+    returncode: int | None = None
     duration_ms: float | None = None
     duration_api_ms: float | None = None
     total_cost_usd: float | None = None
@@ -97,6 +98,7 @@ def parse_stream_line(line: str) -> list[StreamEvent]:
                 total_cost_usd=data.get("total_cost_usd"),
                 usage=data.get("usage", {}),
                 model_usage=data.get("modelUsage", {}),
+                returncode=data.get("returncode"),
                 num_turns=data.get("num_turns"),
             ),
         ]

@@ -57,11 +57,7 @@ async def handle_cron_callback(
             await _reschedule_now(orch)
         verb = "enabled" if enabled else "disabled"
         already = "enabled" if enabled else "disabled"
-        note = (
-            f"All cron jobs {verb}."
-            if changed
-            else f"All cron jobs were already {already}."
-        )
+        note = f"All cron jobs {verb}." if changed else f"All cron jobs were already {already}."
         return await _build_page(orch, page=page, note=note)
 
     if action == "t" and len(parts) >= 4:

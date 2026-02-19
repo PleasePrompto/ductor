@@ -627,6 +627,9 @@ class TelegramBot:
             elif status == "compacting":
                 await coalescer.flush(force=True)
                 await editor.append_system("COMPACTING")
+            elif status == "recovering":
+                await coalescer.flush(force=True)
+                await editor.append_system("Please wait, recovering...")
 
         async with TypingContext(self._bot, chat_id):
             result = await self._orch.handle_message_streaming(

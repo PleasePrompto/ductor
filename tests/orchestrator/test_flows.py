@@ -144,6 +144,33 @@ async def test_normal_model_override(orch: Orchestrator) -> None:
     assert request.model_override == "sonnet"
 
 
+async def test_normal_sigkill_recovers_once_then_succeeds(orch: Orchestrator) -> None:
+    """SIGKILL triggers one recovery retry before returning success."""
+    sigkill_resp = _mock_response(is_error=True, result="killed", returncode=-9)
+    success_resp = _mock_response(result="Recovered")
+    mock_execute = AsyncMock(side_effect=[sigkill_resp, success_resp])
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+
+    result = await normal(orch, 1, "Hello")
+    assert result.text == "Recovered"
+    assert mock_execute.call_count == 2
+
+
+async def test_normal_sigkill_recovers_once_then_asks_user_retry(orch: Orchestrator) -> None:
+    """If recovery retry also SIGKILLs, return explicit user guidance."""
+    sigkill_resp = _mock_response(is_error=True, result="killed", returncode=-9)
+    mock_execute = AsyncMock(side_effect=[sigkill_resp, sigkill_resp])
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+
+    result = await normal(orch, 1, "Hello")
+    assert result.text == "Execution was interrupted. Please send the same request again."
+    assert mock_execute.call_count == 2
+
+
 async def test_normal_resolves_effective_model_for_available_provider(orch: Orchestrator) -> None:
     mock_execute = AsyncMock(return_value=_mock_response())
     object.__setattr__(orch._cli_service, "execute", mock_execute)
@@ -182,6 +209,20 @@ async def test_streaming_fallback_flag(orch: Orchestrator) -> None:
     )
     result = await normal_streaming(orch, 1, "Hello")
     assert result.stream_fallback is True
+
+
+async def test_streaming_sigkill_recovers_once_then_succeeds(orch: Orchestrator) -> None:
+    """Streaming path also retries once after SIGKILL."""
+    sigkill_resp = _mock_response(is_error=True, result="killed", returncode=-9)
+    success_resp = _mock_response(result="Recovered stream")
+    mock_streaming = AsyncMock(side_effect=[sigkill_resp, success_resp])
+    object.__setattr__(orch._cli_service, "execute_streaming", mock_streaming)
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+
+    result = await normal_streaming(orch, 1, "Hello")
+    assert result.text == "Recovered stream"
+    assert mock_streaming.call_count == 2
 
 
 async def test_streaming_error_resets_session(orch: Orchestrator) -> None:

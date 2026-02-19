@@ -300,13 +300,16 @@ async def _codex_final_result(
             process.returncode,
             error_detail[:300],
         )
-        return ResultEvent(type="result", result=error_detail[:500], is_error=True)
+        return ResultEvent(
+            type="result", result=error_detail[:500], is_error=True, returncode=process.returncode
+        )
 
     return ResultEvent(
         type="result",
         session_id=thread_id,
         result="\n".join(accumulated_text),
         is_error=False,
+        returncode=process.returncode,
     )
 
 
