@@ -178,6 +178,9 @@ class CLIService:
                 continue_session=request.continue_session,
                 timeout_seconds=request.timeout_seconds,
             ):
+                if self._process_registry.was_aborted(request.chat_id):
+                    logger.info("Streaming aborted mid-stream chat=%d", request.chat_id)
+                    break
                 text, result = await callbacks.dispatch(event)
                 accumulated_text += text
                 if result is not None:

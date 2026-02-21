@@ -175,8 +175,9 @@ def resolve_user_timezone(configured: str = "") -> ZoneInfo:
         except (ZoneInfoNotFoundError, KeyError):
             logger.warning("Invalid user_timezone '%s', falling back to host/UTC", trimmed)
 
-    # Try host system timezone via /etc/localtime symlink (Linux).
+    # Try host system timezone via environment or OS-specific detection.
     import os
+    import sys
 
     tz_env = os.environ.get("TZ", "").strip()
     if tz_env:
@@ -185,20 +186,39 @@ def resolve_user_timezone(configured: str = "") -> ZoneInfo:
         except (ZoneInfoNotFoundError, KeyError):
             pass
 
-    localtime = Path("/etc/localtime")
-    if localtime.is_symlink():
-        target = str(localtime.resolve())
-        # /usr/share/zoneinfo/Europe/Berlin -> Europe/Berlin
-        marker = "/zoneinfo/"
-        idx = target.find(marker)
-        if idx != -1:
-            candidate = target[idx + len(marker) :]
-            try:
-                return ZoneInfo(candidate)
-            except (ZoneInfoNotFoundError, KeyError):
-                pass
+    detected = _detect_host_timezone() if sys.platform == "win32" else _detect_posix_timezone()
+    return detected or ZoneInfo("UTC")
 
-    return ZoneInfo("UTC")
+
+def _detect_host_timezone() -> ZoneInfo | None:
+    """Detect timezone on Windows via datetime."""
+    import datetime
+
+    local_tz = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
+    if local_tz is None:
+        return None
+    tz_name = getattr(local_tz, "key", None) or str(local_tz)
+    try:
+        return ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, KeyError):
+        return None
+
+
+def _detect_posix_timezone() -> ZoneInfo | None:
+    """Detect timezone on POSIX via /etc/localtime symlink."""
+    localtime = Path("/etc/localtime")
+    if not localtime.is_symlink():
+        return None
+    target = str(localtime.resolve())
+    marker = "/zoneinfo/"
+    idx = target.find(marker)
+    if idx == -1:
+        return None
+    candidate = target[idx + len(marker) :]
+    try:
+        return ZoneInfo(candidate)
+    except (ZoneInfoNotFoundError, KeyError):
+        return None
 
 
 _CLAUDE_MODELS: frozenset[str] = frozenset({"haiku", "sonnet", "opus"})

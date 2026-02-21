@@ -106,7 +106,7 @@ ductor
 
 ### Windows (WSL)
 
-ductor runs on Windows through WSL. Native Windows won't work because the Claude Code and Codex CLIs need a Unix-like environment.
+ductor runs on Windows through WSL. This is an alternative to native Windows if you prefer a Linux environment.
 
 ```powershell
 # Install WSL (PowerShell as admin)
@@ -133,7 +133,29 @@ ductor
 
 ### Windows (native)
 
-Not supported. Use WSL.
+ductor now runs natively on Windows. The Claude Code and Codex CLIs install as `.cmd` wrappers on Windows, and ductor includes platform-specific handling to work around their limitations (stdin-based prompt passing, process tree termination, timezone detection).
+
+```powershell
+# Python 3.11+ (winget or python.org)
+winget install Python.Python.3.11
+
+# pipx
+pip install pipx
+pipx ensurepath
+
+# Node.js
+winget install OpenJS.NodeJS
+
+# Claude Code CLI
+npm install -g @anthropic-ai/claude-code
+claude auth
+
+# ductor
+pipx install ductor
+ductor
+```
+
+> **Note:** Docker sandboxing on native Windows requires Docker Desktop with Windows containers or WSL 2 backend enabled.
 
 ---
 

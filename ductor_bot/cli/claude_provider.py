@@ -10,7 +10,14 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from shutil import which
 
-from ductor_bot.cli.base import BaseCLI, CLIConfig, docker_wrap
+from ductor_bot.cli.base import (
+    _IS_WINDOWS,
+    BaseCLI,
+    CLIConfig,
+    _win_feed_stdin,
+    _win_stdin_pipe,
+    docker_wrap,
+)
 from ductor_bot.cli.stream_events import (
     ResultEvent,
     StreamEvent,
@@ -75,8 +82,11 @@ class ClaudeCodeCLI(BaseCLI):
         if cfg.cli_parameters:
             cmd.extend(cfg.cli_parameters)
 
-        cmd.append("--")
-        cmd.append(prompt)
+        # On Windows, .CMD wrappers mangle arguments with special characters.
+        # The prompt is passed via stdin instead (see send / send_streaming).
+        if not _IS_WINDOWS:
+            cmd.append("--")
+            cmd.append(prompt)
         return cmd
 
     async def send(
@@ -95,6 +105,7 @@ class ClaudeCodeCLI(BaseCLI):
         )
         process = await asyncio.create_subprocess_exec(
             *exec_cmd,
+            stdin=_win_stdin_pipe(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
@@ -106,8 +117,9 @@ class ClaudeCodeCLI(BaseCLI):
             reg.register(self._config.chat_id, process, self._config.process_label) if reg else None
         )
         try:
+            stdin_data = prompt.encode() if _IS_WINDOWS else None
             async with asyncio.timeout(timeout_seconds):
-                stdout, stderr = await process.communicate()
+                stdout, stderr = await process.communicate(input=stdin_data)
         except TimeoutError:
             process.kill()
             await process.wait()
@@ -152,6 +164,7 @@ class ClaudeCodeCLI(BaseCLI):
         )
         process = await asyncio.create_subprocess_exec(
             *exec_cmd,
+            stdin=_win_stdin_pipe(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
@@ -160,6 +173,7 @@ class ClaudeCodeCLI(BaseCLI):
         if process.stdout is None or process.stderr is None:
             msg = "Subprocess created without stdout/stderr pipes"
             raise RuntimeError(msg)
+        _win_feed_stdin(process, prompt)
         logger.info("CLI subprocess starting pid=%s", process.pid)
 
         reg = self._config.process_registry

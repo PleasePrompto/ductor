@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 
@@ -112,6 +115,17 @@ class ProcessRegistry:
         return killed
 
 
+def _kill_process_tree(pid: int) -> None:
+    """Kill the entire process tree on Windows (cmd.exe + child node.exe)."""
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+
+
 def _send_sigterm(entries: list[TrackedProcess]) -> int:
     """Terminate all live processes. Returns count signalled."""
     count = 0
@@ -119,7 +133,10 @@ def _send_sigterm(entries: list[TrackedProcess]) -> int:
         if tracked.process.returncode is not None:
             continue
         try:
-            tracked.process.terminate()
+            if sys.platform == "win32" and tracked.process.pid is not None:
+                _kill_process_tree(tracked.process.pid)
+            else:
+                tracked.process.terminate()
             logger.debug("Terminate sent: pid=%s label=%s", tracked.process.pid, tracked.label)
             count += 1
         except ProcessLookupError:
@@ -133,7 +150,10 @@ def _send_sigkill(entries: list[TrackedProcess]) -> None:
         if tracked.process.returncode is not None:
             continue
         try:
-            tracked.process.kill()
+            if sys.platform == "win32" and tracked.process.pid is not None:
+                _kill_process_tree(tracked.process.pid)
+            else:
+                tracked.process.kill()
             logger.debug("SIGKILL sent: pid=%s label=%s", tracked.process.pid, tracked.label)
         except ProcessLookupError:
             pass

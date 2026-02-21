@@ -5,7 +5,7 @@ Provider-agnostic CLI layer for Claude Code and Codex. Owns subprocess execution
 ## Files
 
 - `types.py`: `AgentRequest`, `AgentResponse`, `CLIResponse`.
-- `base.py`: `BaseCLI` interface, `CLIConfig`, `docker_wrap()`.
+- `base.py`: `BaseCLI` interface, `CLIConfig`, `docker_wrap()`, Windows stdin helpers (`_IS_WINDOWS`, `_win_stdin_pipe()`, `_win_feed_stdin()`).
 - `factory.py`: provider factory (`ClaudeCodeCLI` or `CodexCLI`).
 - `service.py`: `CLIService` gateway used by orchestrator.
 - `claude_provider.py`: async Claude CLI wrapper.
@@ -95,8 +95,9 @@ Codex emits no client-side compaction events (handled server-side). Codex stream
 `CLIService.execute_streaming()`:
 
 1. consume provider stream events via `_StreamCallbacks`,
-2. forward text deltas/tool events/system status to callbacks,
-3. capture final `ResultEvent`.
+2. check `ProcessRegistry.was_aborted()` on each event -- breaks out immediately on `/stop` (cross-platform),
+3. forward text deltas/tool events/system status to callbacks,
+4. capture final `ResultEvent`.
 
 Fallback handling:
 
@@ -106,6 +107,14 @@ Fallback handling:
   - otherwise retry non-streaming `execute()` and mark `stream_fallback=True`.
 
 ## Provider Command Behavior
+
+### Windows stdin mode
+
+On Windows, CLI executables are `.cmd` wrappers that mangle special characters in command-line arguments. Both providers pass the prompt via stdin instead of as a trailing argument. Shared helpers in `base.py`:
+
+- `_IS_WINDOWS`: platform check (`sys.platform == "win32"`).
+- `_win_stdin_pipe()`: returns `asyncio.subprocess.PIPE` on Windows, `None` on POSIX.
+- `_win_feed_stdin(process, data)`: writes prompt to stdin and closes it on Windows; no-op on POSIX.
 
 ### Claude (`ClaudeCodeCLI`)
 
@@ -121,6 +130,8 @@ claude -p --output-format json \
   [<cli_parameters...>] \
   -- <prompt>
 ```
+
+On Windows, the prompt is omitted from the command line and piped via stdin instead.
 
 Streaming mode:
 
@@ -158,6 +169,10 @@ Resume behavior:
 - `kill_stale(max_age_seconds)`: kills wall-clock-stale processes (`time.time()`), used by heartbeat after suspend/resume scenarios.
 
 Each `TrackedProcess` records `registered_at` (wall clock).
+
+### Windows process tree kill
+
+On Windows, CLI processes spawn as `cmd.exe` with a child `node.exe`. A plain `process.terminate()` only kills `cmd.exe`, leaving the child orphaned. `_kill_process_tree(pid)` uses `taskkill /F /T /PID <pid>` to kill the entire tree. This is called instead of the POSIX SIGTERM/SIGKILL sequence when running on Windows.
 
 ## Auth Detection (`auth.py`)
 

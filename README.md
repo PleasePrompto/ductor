@@ -73,6 +73,7 @@ I picked Python because it's easy to modify. The agents can write their own auto
 - `@opus explain this` temporarily switches model without changing your default
 - Send images, PDFs, voice messages, or videos -ductor routes them to the right tool
 - Agents can send `[button:Yes]` `[button:No]` inline keyboards back to you
+- Works in Telegram groups with forum topics -- replies land in the correct topic thread
 - Persistent memory across sessions, stored in one Markdown file
 
 ### Automation

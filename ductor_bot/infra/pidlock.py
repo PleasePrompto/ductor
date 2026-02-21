@@ -26,6 +26,9 @@ def _is_process_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    except OSError:
+        # Windows raises various OSError subclasses for invalid/stale PIDs.
+        return False
     return True
 
 

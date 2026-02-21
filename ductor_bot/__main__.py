@@ -159,7 +159,10 @@ def _start_bot(verbose: bool = False) -> None:
         config_level = getattr(logging, config.log_level.upper(), logging.INFO)
         if config_level != logging.INFO:
             setup_logging(level=config_level, log_dir=paths.logs_dir)
-    exit_code = asyncio.run(run_telegram(config))
+    try:
+        exit_code = asyncio.run(run_telegram(config))
+    except KeyboardInterrupt:
+        exit_code = 0
     if exit_code == EXIT_RESTART:
         if os.environ.get("DUCTOR_SUPERVISOR"):
             sys.exit(EXIT_RESTART)

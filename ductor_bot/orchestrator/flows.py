@@ -119,7 +119,7 @@ _SIGKILL_USER_MSG = "Execution was interrupted. Please send the same request aga
 
 def _is_sigkill(response: AgentResponse) -> bool:
     """Return True when the response indicates SIGKILL termination."""
-    return response.is_error and response.returncode == -signal.SIGKILL
+    return response.is_error and response.returncode == -getattr(signal, "SIGKILL", 9)
 
 
 async def _recover_after_sigkill(  # noqa: PLR0913

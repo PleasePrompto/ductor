@@ -26,6 +26,11 @@ Process/runtime infrastructure: PID locking, restart signaling, Docker sandbox h
 
 `release_lock(pid_file)` removes lock only when PID belongs to current process.
 
+### Windows compatibility
+
+- `_is_process_alive(pid)` catches `OSError` in addition to `ProcessLookupError` and `PermissionError`, because Windows raises various `OSError` subclasses from `os.kill(pid, 0)` for invalid or stale PIDs.
+- `_force_kill_process(pid)` falls back to `SIGTERM` on Windows since `signal.SIGKILL` does not exist there.
+
 ## Restart Protocol
 
 `restart.py` API:

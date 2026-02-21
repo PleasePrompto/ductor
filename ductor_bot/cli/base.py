@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -16,6 +18,20 @@ if TYPE_CHECKING:
     from ductor_bot.cli.process_registry import ProcessRegistry
 
 logger = logging.getLogger(__name__)
+
+_IS_WINDOWS = sys.platform == "win32"
+
+
+def _win_stdin_pipe() -> int | None:
+    """Return ``asyncio.subprocess.PIPE`` on Windows, else ``None``."""
+    return asyncio.subprocess.PIPE if _IS_WINDOWS else None
+
+
+def _win_feed_stdin(process: asyncio.subprocess.Process, data: str) -> None:
+    """Write prompt to stdin and close on Windows; no-op on POSIX."""
+    if _IS_WINDOWS and process.stdin is not None:
+        process.stdin.write(data.encode())
+        process.stdin.close()
 
 
 @dataclass(slots=True)

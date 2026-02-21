@@ -18,6 +18,7 @@ Telegram interface layer (aiogram 3.x). Handles incoming updates, middleware, we
 - `media.py`: Telegram media download, `_index.yaml` rebuild, media prompt composition.
 - `abort.py`: `/stop` and bare-word abort trigger detection.
 - `dedup.py`: short-lived dedupe cache by `chat_id:message_id`.
+- `topic.py`: `get_thread_id(message)` utility for forum topic `message_thread_id` extraction.
 - `typing.py`: typing-indicator context manager.
 
 ## Handler and Command Ownership
@@ -83,6 +84,17 @@ For media in groups, processing only happens when addressed to the bot (reply or
    - otherwise send only `<file:...>` tags via `send_files_from_text()`.
 
 Both `EditStreamEditor` and `StreamEditor` support `append_system(text)` for rendering system indicators as italic HTML.
+
+## Forum Topic Support
+
+All handler and sender functions propagate `message_thread_id` so the bot works in Telegram groups with forum topics enabled. The flow:
+
+1. `get_thread_id(message)` extracts `message_thread_id` when `message.is_topic_message is True`, otherwise returns `None`.
+2. Handlers (`app.py`, `handlers.py`) extract `thread_id` at entry points and pass it through to `TypingContext`, `send_rich`, `send_file`, `send_files_from_text`, and stream editors.
+3. `SequentialMiddleware._send_indicator()` passes `message_thread_id` to queue indicator messages.
+4. Background systems (cron, heartbeat, webhook, update notifications) always send to private chats, so `thread_id` is `None` -- no special handling needed.
+
+Sessions remain keyed by `chat_id` (no per-topic isolation).
 
 ## Buttons
 

@@ -10,7 +10,7 @@ Telegram Update
        - exact `/stop` (without suffix/args) or single-word abort keyword: kill active CLI process(es) + drain pending queue
        - quick command (/status /memory /cron /diagnose /model /showfiles): lock bypass
        - otherwise: dedupe + per-chat lock (with queue tracking when lock is held)
-  -> TelegramBot handler
+  -> TelegramBot handler (extracts thread_id for forum topic support)
        - /start -> welcome screen (+ quick-start buttons)
        - /help -> command reference
        - /info -> links/version panel (URL inline buttons)
@@ -53,6 +53,8 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 7. Validate required config (`telegram_token`, `allowed_user_ids`).
 8. Acquire PID lock (`bot.pid`, `kill_existing=True`).
 9. Start `TelegramBot`.
+
+`KeyboardInterrupt` from `asyncio.run()` is caught at the top level to prevent ugly tracebacks on Windows (where Ctrl+C delivers the interrupt differently).
 
 ### `TelegramBot` startup (`ductor_bot/bot/app.py`)
 
@@ -127,7 +129,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 
 ## Streaming Path
 
-1. Bot creates stream editor:
+1. Bot creates stream editor (with `thread_id` for forum topic support):
    - default: `EditStreamEditor` (single continuously edited message),
    - optional: `StreamEditor` append mode.
 2. `StreamCoalescer` buffers deltas until readable boundaries (`min_chars`, sentence/paragraph break, idle timeout, `max_chars`).
@@ -145,6 +147,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 
 `CLIService.execute_streaming()` fallback behavior:
 
+- the streaming loop checks `ProcessRegistry.was_aborted()` on each event, so `/stop` breaks out immediately without waiting for the subprocess to exit (cross-platform fix).
 - stream exception or missing `ResultEvent` -> fallback handling.
 - if user aborted (`ProcessRegistry.was_aborted`) -> return empty result.
 - if stream ended without error but with accumulated text -> use accumulated text.
@@ -176,7 +179,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 
 1. Jobs live in `~/.ductor/cron_jobs.json` (`CronManager`).
 2. `CronObserver.start()` schedules all enabled jobs and starts mtime watcher (5s poll).
-3. Scheduling uses `user_timezone` (per-job override > global config > host TZ > UTC) so cron hours match the user's wall clock.
+3. Scheduling uses `user_timezone` (per-job override > global config > host TZ > UTC) so cron hours match the user's wall clock. Host timezone detection uses `_detect_host_timezone()` (Windows, via `datetime`) or `_detect_posix_timezone()` (Linux/macOS, via `/etc/localtime` symlink).
 4. On file change: `reload()` + cancel/reschedule all jobs.
 5. Execution (`_execute_job`):
    - ensure task folder exists under `workspace/cron_tasks/`,

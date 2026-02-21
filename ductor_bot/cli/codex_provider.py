@@ -9,7 +9,14 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from shutil import which
 
-from ductor_bot.cli.base import BaseCLI, CLIConfig, docker_wrap
+from ductor_bot.cli.base import (
+    _IS_WINDOWS,
+    BaseCLI,
+    CLIConfig,
+    _win_feed_stdin,
+    _win_stdin_pipe,
+    docker_wrap,
+)
 from ductor_bot.cli.codex_events import (
     CodexThinkingFilter,
     parse_codex_jsonl,
@@ -82,6 +89,19 @@ class CodexCLI(BaseCLI):
             return ["--full-auto"]
         return ["--sandbox", cfg.sandbox_mode]
 
+    def _build_resume_command(
+        self, final_prompt: str, session_id: str, *, json_output: bool
+    ) -> list[str]:
+        """Build command to resume an existing Codex session."""
+        cmd = [self._cli, "exec", "resume"]
+        if json_output:
+            cmd.append("--json")
+        cmd += self._sandbox_flags()
+        cmd += ["--", session_id]
+        if not _IS_WINDOWS:
+            cmd.append(final_prompt)
+        return cmd
+
     def _build_command(
         self,
         prompt: str,
@@ -93,12 +113,7 @@ class CodexCLI(BaseCLI):
         final_prompt = self._compose_prompt(prompt)
 
         if resume_session:
-            resume_cmd = [self._cli, "exec", "resume"]
-            if json_output:
-                resume_cmd.append("--json")
-            resume_cmd += self._sandbox_flags()
-            resume_cmd += ["--", resume_session, final_prompt]
-            return resume_cmd
+            return self._build_resume_command(final_prompt, resume_session, json_output=json_output)
 
         cmd = [self._cli, "exec"]
         if json_output:
@@ -120,8 +135,11 @@ class CodexCLI(BaseCLI):
         if cfg.cli_parameters:
             cmd.extend(cfg.cli_parameters)
 
-        cmd.append("--")
-        cmd.append(final_prompt)
+        # On Windows, .CMD wrappers mangle arguments with special characters.
+        # The prompt is passed via stdin instead (see send / send_streaming).
+        if not _IS_WINDOWS:
+            cmd.append("--")
+            cmd.append(final_prompt)
         return cmd
 
     async def send(
@@ -142,6 +160,7 @@ class CodexCLI(BaseCLI):
         )
         process = await asyncio.create_subprocess_exec(
             *exec_cmd,
+            stdin=_win_stdin_pipe(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
@@ -153,8 +172,9 @@ class CodexCLI(BaseCLI):
             reg.register(self._config.chat_id, process, self._config.process_label) if reg else None
         )
         try:
+            stdin_data = prompt.encode() if _IS_WINDOWS else None
             async with asyncio.timeout(timeout_seconds):
-                stdout, stderr = await process.communicate()
+                stdout, stderr = await process.communicate(input=stdin_data)
         except TimeoutError:
             process.kill()
             await process.wait()
@@ -182,6 +202,7 @@ class CodexCLI(BaseCLI):
         )
         process = await asyncio.create_subprocess_exec(
             *exec_cmd,
+            stdin=_win_stdin_pipe(),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
@@ -190,6 +211,7 @@ class CodexCLI(BaseCLI):
         if process.stdout is None or process.stderr is None:
             msg = "Subprocess created without stdout/stderr pipes"
             raise RuntimeError(msg)
+        _win_feed_stdin(process, prompt)
         logger.info("Codex subprocess starting pid=%s", process.pid)
 
         reg = self._config.process_registry
