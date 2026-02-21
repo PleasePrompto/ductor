@@ -29,6 +29,32 @@ class TestIsProcessAlive:
         with patch("os.kill", side_effect=PermissionError):
             assert _is_process_alive(999) is True
 
+    def test_windows_winerror_87_is_dead(self) -> None:
+        """Test that WinError 87 (invalid parameter) is treated as process dead on Windows."""
+        from ductor_bot.infra.pidlock import _is_process_alive
+
+        # Mock an OSError with winerror=87
+        err = OSError()
+        err.winerror = 87
+
+        with (
+            patch("ductor_bot.infra.pidlock._IS_WINDOWS", True),
+            patch("os.kill", side_effect=err),
+        ):
+            assert _is_process_alive(999999) is False
+
+    def test_windows_self_check_bypass(self) -> None:
+        """Test that checking our own PID returns True without calling os.kill on Windows."""
+        from ductor_bot.infra.pidlock import _is_process_alive
+
+        with (
+            patch("ductor_bot.infra.pidlock._IS_WINDOWS", True),
+            patch("os.kill") as mock_kill,
+        ):
+            assert _is_process_alive(os.getpid()) is True
+            # Should NOT have called os.kill because of the bypass logic
+            mock_kill.assert_not_called()
+
 
 class TestAcquireLock:
     """Test PID lock acquisition."""

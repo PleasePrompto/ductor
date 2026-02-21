@@ -198,3 +198,54 @@ def test_codex_build_command_with_images(monkeypatch: pytest.MonkeyPatch) -> Non
     cmd = cli._build_command("hello")
     assert "--image" in cmd
     assert "img.png" in cmd
+
+
+# -- GeminiCLI command building --
+
+
+def test_gemini_build_command_basic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ductor_bot.cli.gemini_provider.GeminiCLI._find_cli_js", lambda _: "/app/index.js"
+    )
+    cfg = CLIConfig(provider="gemini", model="gemini-3-pro")
+    cli = GeminiCLI(cfg)
+    cmd = cli._build_command()
+    # New logic uses direct node entry and no prompt arg
+    assert cmd[0] == "node"
+    assert cmd[1] == "/app/index.js"
+    assert "--output-format" in cmd
+    assert "json" in cmd
+    assert "--model" in cmd
+    assert "gemini-3-pro" in cmd
+
+
+def test_gemini_build_command_streaming(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ductor_bot.cli.gemini_provider.GeminiCLI._find_cli_js", lambda _: "/app/index.js"
+    )
+    cfg = CLIConfig(provider="gemini", model="gemini-3-pro")
+    cli = GeminiCLI(cfg)
+    cmd = cli._build_command(streaming=True)
+    assert "stream-json" in cmd
+
+
+def test_gemini_build_command_with_resume(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ductor_bot.cli.gemini_provider.GeminiCLI._find_cli_js", lambda _: "/app/index.js"
+    )
+    cfg = CLIConfig(provider="gemini", model="gemini-3-pro")
+    cli = GeminiCLI(cfg)
+    cmd = cli._build_command(resume_session="sess-123")
+    assert "--resume" in cmd
+    assert "sess-123" in cmd
+
+
+def test_gemini_build_command_with_yolo(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ductor_bot.cli.gemini_provider.GeminiCLI._find_cli_js", lambda _: "/app/index.js"
+    )
+    cfg = CLIConfig(provider="gemini", permission_mode="bypassPermissions")
+    cli = GeminiCLI(cfg)
+    cmd = cli._build_command()
+    assert "--approval-mode" in cmd
+    assert "yolo" in cmd

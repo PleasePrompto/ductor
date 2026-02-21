@@ -9,6 +9,7 @@ Scripts for creating, editing, listing, and removing scheduled jobs.
 1. **Which CLI provider?**
    - `claude` - Standard Claude models
    - `codex` - OpenAI Codex models with extended thinking
+   - `gemini` - Google Gemini models
 
 2. **Which model?**
    - **If Claude:**
@@ -21,6 +22,11 @@ Scripts for creating, editing, listing, and removing scheduled jobs.
      - `gpt-5.1-codex-max` - Optimized for deep and fast reasoning
      - `gpt-5.2` - Latest frontier model
      - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+   - **If Gemini:**
+     - `flash` - Fast and capable (recommended)
+     - `pro` - Highest quality reasoning
+     - `flash-lite` - Optimized for speed
+     - `auto` - Automatically select best available
 
 3. **If Codex: Which thinking level?**
    - `low` - Fast, surface-level reasoning

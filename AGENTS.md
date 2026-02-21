@@ -46,7 +46,7 @@ Telegram Update → aiogram Router → AuthMiddleware → SequentialMiddleware (
 
 | Module | Purpose |
 |--------|---------|
-| `bot/` | Telegram frontend: aiogram handlers, streaming editors, rich sender, middleware, file browser, response formatting |
+| `bot/` | Telegram frontend: aiogram handlers, streaming editors, rich sender, middleware, file browser, response formatting, forum topic support |
 | `orchestrator/` | Central router: command registry, message flows, hooks, model selector, directives |
 | `cli/` | CLI subprocess management: Claude/Codex providers, stream event parsing, process registry |
 | `session/` | Per-chat session lifecycle, JSON persistence (`sessions.json`) |
@@ -61,14 +61,15 @@ Telegram Update → aiogram Router → AuthMiddleware → SequentialMiddleware (
 
 - **DuctorPaths** (`workspace/paths.py`): Frozen dataclass, single source of truth for all filesystem paths. All modules derive paths from it.
 - **Zone-based workspace sync** (`workspace/init.py`): Zone 2 files (CLAUDE.md, AGENTS.md) are always overwritten on update. Zone 3 files are seeded once and user-owned thereafter. Bundled skills are symlinked from the package (not copied) so they auto-update with the installed version.
-- **Stream fallback**: Streaming auto-falls-back to non-streaming on error. No data loss.
+- **Stream fallback**: Streaming auto-falls-back to non-streaming on error. No data loss. The streaming loop checks `was_aborted()` on each event so `/stop` breaks out immediately (cross-platform).
 - **ContextVar logging** (`log_context.py`): Async-safe log enrichment with `[op:chat_id:session_id]` prefix. Operations: `msg`, `cb`, `cron`, `hb`, `wh`.
-- **Process registry** (`cli/process_registry.py`): Tracks active subprocesses per chat_id for abort/kill.
+- **Process registry** (`cli/process_registry.py`): Tracks active subprocesses per chat_id for abort/kill. On Windows, uses `taskkill /F /T` for process tree termination (cmd.exe + child node.exe).
 - **Message queue tracking** (`bot/middleware.py`): Tracks pending messages per chat with `[Message in queue...]` indicators, individual cancel buttons (`mq:` callbacks), and bulk drain on `/stop`.
 - **Message hooks** (`orchestrator/hooks.py`): Condition-based prompt suffixes (e.g., memory reminder every 6th message) without modifying core flow.
-- **Provider abstraction** (`cli/claude_provider.py`, `cli/codex_provider.py`): Same CLIService interface for both Claude Code and Codex CLI.
+- **Provider abstraction** (`cli/claude_provider.py`, `cli/codex_provider.py`): Same CLIService interface for both Claude Code and Codex CLI. On Windows, prompts are passed via stdin instead of command-line arguments to avoid `.cmd` wrapper character mangling (shared helpers `_IS_WINDOWS`, `_win_stdin_pipe()`, `_win_feed_stdin()` in `base.py`).
 - **Shared response formatting** (`bot/response_format.py`): `SEP`, `fmt()`, shared text constants for `/new` and `/stop`. All command responses use consistent title/separator/body layout.
 - **File browser** (`bot/file_browser.py`): Interactive `~/.ductor/` navigator via inline keyboard. Callback encoding: `sf:<rel_path>` (directory nav), `sf!<rel_path>` (file request to agent). Edits messages in-place on button press.
+- **Forum topic support** (`bot/topic.py`): `get_thread_id(message)` extracts `message_thread_id` when `is_topic_message` is True. All outgoing `bot.send_message/send_photo/send_document/send_chat_action` calls propagate `message_thread_id` so the bot works in Telegram groups with forum topics enabled. Sessions remain keyed by `chat_id` (no per-topic isolation). Background systems (cron, heartbeat, webhook) target private chats and pass `thread_id=None`.
 - **Command ownership**: `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/restart`, `/new` are handled directly by `bot/app.py`. `/status`, `/memory`, `/model`, `/cron`, `/diagnose`, `/upgrade` route through the orchestrator command registry. `/showfiles` and other read-only commands bypass the per-chat lock via `QUICK_COMMANDS`.
 
 ### Background Systems

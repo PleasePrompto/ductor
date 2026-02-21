@@ -13,7 +13,7 @@ from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_cache_observer import CodexCacheObserver
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
-from ductor_bot.config import _CLAUDE_MODELS, AgentConfig, ModelRegistry
+from ductor_bot.config import _CLAUDE_MODELS, _GEMINI_MODELS, AgentConfig, ModelRegistry
 from ductor_bot.cron.manager import CronManager
 from ductor_bot.cron.observer import CronObserver
 from ductor_bot.errors import (
@@ -73,7 +73,7 @@ class Orchestrator:
         self._paths: DuctorPaths = paths
         self._docker: DockerManager | None = None
         self._models = ModelRegistry()
-        self._known_model_ids: frozenset[str] = _CLAUDE_MODELS
+        self._known_model_ids: frozenset[str] = _CLAUDE_MODELS | _GEMINI_MODELS
         self._sessions = SessionManager(paths.sessions_path, config)
         self._process_registry = ProcessRegistry()
         self._available_providers: frozenset[str] = frozenset()
@@ -89,6 +89,7 @@ class Orchestrator:
                 docker_container=docker_container,
                 claude_cli_parameters=tuple(config.cli_parameters.claude),
                 codex_cli_parameters=tuple(config.cli_parameters.codex),
+                gemini_cli_parameters=tuple(config.cli_parameters.gemini),
             ),
             models=self._models,
             available_providers=frozenset(),
@@ -378,7 +379,11 @@ class Orchestrator:
     def active_provider_name(self) -> str:
         """Human-readable name for the active CLI provider."""
         _model, provider = self.resolve_runtime_target(self._config.model)
-        return "Claude Code" if provider == "claude" else "Codex"
+        if provider == "claude":
+            return "Claude Code"
+        if provider == "gemini":
+            return "Gemini"
+        return "Codex"
 
     def is_chat_busy(self, chat_id: int) -> bool:
         """Check if a chat has active CLI processes."""

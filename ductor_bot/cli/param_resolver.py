@@ -77,6 +77,9 @@ def resolve_cli_config(
         if model not in _CLAUDE_MODELS:
             msg = f"Invalid Claude model: {model}. Must be one of {sorted(_CLAUDE_MODELS)}"
             raise DuctorError(msg)
+    elif provider == "gemini":
+        # Gemini models are currently validated by prefix or hardcoded in GeminiCLI
+        pass
     else:  # codex
         if codex_cache is None:
             msg = "Codex cache is required for Codex model validation"

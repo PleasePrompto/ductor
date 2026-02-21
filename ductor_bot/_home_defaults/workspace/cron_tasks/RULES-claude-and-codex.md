@@ -7,12 +7,13 @@ For cron tool commands (add/edit/remove/list), see `tools/cron_tools/CLAUDE.md`.
 
 **CRITICAL: When creating a new cron job, you MUST ALWAYS ask the user these questions:**
 
-1. **Which CLI provider?** (`--provider claude` or `--provider codex`)
+1. **Which CLI provider?** (`--provider claude`, `--provider codex`, or `--provider gemini`)
    - Default if user doesn't specify: Use global config provider
 
 2. **Which model?** (`--model <name>`)
    - Claude models: `haiku`, `sonnet`, `opus`
    - Codex models: `gpt-5.2-codex`, `gpt-5.3-codex`, `gpt-5.1-codex-max`, `gpt-5.2`, `gpt-5.1-codex-mini`
+   - Gemini models: `flash`, `pro`, `flash-lite`, `auto`
    - Default if user doesn't specify: Use global config model
 
 3. **If Codex provider: Which thinking level?** (`--reasoning-effort <level>`)
@@ -35,10 +36,12 @@ You: "I'll create a cron job to check weather every 3 minutes. Let me configure 
 1. **Provider**: Which CLI should execute this task?
    - `claude` (standard Claude models)
    - `codex` (OpenAI Codex models with extended thinking)
+   - `gemini` (Google Gemini models)
 
 2. **Model**: Which model?
    - If Claude: `haiku` (fast), `sonnet` (balanced), `opus` (most capable)
    - If Codex: `gpt-5.2-codex` (recommended), `gpt-5.3-codex`, `gpt-5.1-codex-max`, etc.
+   - If Gemini: `flash` (fast), `pro` (capable), `flash-lite`, `auto`
 
 3. **Thinking level** (Codex only): How deeply should it reason?
    - `low`, `medium` (default), `high`, `xhigh`
@@ -122,6 +125,18 @@ Codex task:
   "provider": "codex",
   "model": "gpt-5.2-codex",
   "reasoning_effort": "high"
+}
+```
+
+Gemini task:
+```json
+{
+  "id": "morning-digest",
+  "schedule": "0 8 * * *",
+  "task_folder": "digest",
+  "agent_instruction": "Check top stories",
+  "provider": "gemini",
+  "model": "flash"
 }
 ```
 

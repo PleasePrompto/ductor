@@ -9,15 +9,15 @@ from ductor_bot.cli.factory import create_cli
 
 
 def test_create_cli_returns_claude_by_default() -> None:
-    cli = create_cli(CLIConfig(provider="claude"))
+    cli = create_cli(CLIConfig(provider="claude", docker_container="test"))
     assert isinstance(cli, ClaudeCodeCLI)
 
 
 def test_create_cli_returns_codex() -> None:
-    cli = create_cli(CLIConfig(provider="codex"))
+    cli = create_cli(CLIConfig(provider="codex", docker_container="test"))
     assert isinstance(cli, CodexCLI)
 
 
 def test_create_cli_unknown_provider_returns_claude() -> None:
-    cli = create_cli(CLIConfig(provider="unknown"))
+    cli = create_cli(CLIConfig(provider="unknown", docker_container="test"))
     assert isinstance(cli, ClaudeCodeCLI)

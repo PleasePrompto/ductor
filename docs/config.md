@@ -28,7 +28,7 @@ Runtime edits from `/model` switches (model/provider/reasoning) and webhook toke
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `log_level` | `str` | `"INFO"` | Applied at startup unless CLI `--verbose` is used |
-| `provider` | `str` | `"claude"` | Default provider stored in session/config state |
+| `provider` | `str` | `"claude"` | Default provider stored in session/config state (`claude`, `codex`, or `gemini`) |
 | `model` | `str` | `"opus"` | Default model ID |
 | `ductor_home` | `str` | `"~/.ductor"` | Runtime home root |
 | `idle_timeout_minutes` | `int` | `1440` | Session freshness timeout (`0` = never expires, only `/new` resets) |
@@ -57,6 +57,7 @@ Runtime edits from `/model` switches (model/provider/reasoning) and webhook toke
 |---|---|---|---|
 | `claude` | `list[str]` | `[]` | Extra args appended to Claude CLI commands (before `--`) |
 | `codex` | `list[str]` | `[]` | Extra args appended to Codex CLI commands (before `--`) |
+| `gemini` | `list[str]` | `[]` | Extra args appended to Gemini CLI commands |
 
 Used by `CLIServiceConfig` for main-chat calls. Cron/webhook runs use task-level `cli_parameters` from `cron_jobs.json` / `webhooks.json`.
 
@@ -143,17 +144,20 @@ Behavior notes:
 `ModelRegistry` (`ductor_bot/config.py`):
 
 - Claude models are hardcoded: `haiku`, `sonnet`, `opus`.
-- All non-Claude model IDs are treated as Codex IDs.
+- Gemini models are hardcoded: `auto`, `pro`, `flash`, `flash-lite`, and specific versions like `gemini-2.5-pro`, `gemini-3-flash-preview`.
+- All other model IDs are treated as Codex IDs.
 - `resolve_for_provider(model_name, available_providers)`:
   - uses native provider when available,
   - otherwise tries `_MODEL_EQUIVALENCE`,
-  - otherwise falls back to any available provider (`opus` for Claude fallback, original model name for Codex fallback).
+  - otherwise falls back to any available provider (`opus` for Claude fallback, `auto` for Gemini fallback, original model name for Codex fallback).
 
-Current `_MODEL_EQUIVALENCE`:
+Current `_MODEL_EQUIVALENCE` examples:
 
 - `opus` -> `gpt-5.2-codex`
 - `sonnet` -> `gpt-5.1-codex-mini`
 - `haiku` -> `gpt-5.1-codex-mini`
+- `flash` -> `sonnet`
+- `pro` -> `opus`
 - `gpt-5.2-codex` -> `opus`
 - `gpt-5.1-codex-max` -> `opus`
 - `gpt-5.1-codex-mini` -> `sonnet`

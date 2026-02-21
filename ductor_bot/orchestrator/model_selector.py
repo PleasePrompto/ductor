@@ -71,6 +71,7 @@ async def model_selector_start(
             [
                 InlineKeyboardButton(text="CLAUDE", callback_data="ms:p:claude"),
                 InlineKeyboardButton(text="CODEX", callback_data="ms:p:codex"),
+                InlineKeyboardButton(text="GEMINI", callback_data="ms:p:gemini"),
             ]
         ]
     )
@@ -216,6 +217,38 @@ async def _build_model_step(
         )
         return f"{header}\n\nSelect Claude model:", keyboard
 
+    if provider == "gemini":
+        # Group 1: Core Aliases
+        core = ["auto", "pro", "flash", "flash-lite"]
+        # Group 2: Specific/Preview versions
+        versions = [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-3-flash-preview",
+            "gemini-3-pro-preview",
+        ]
+
+        rows = []
+        # Row 1: Core aliases
+        rows.append([InlineKeyboardButton(text=m.upper(), callback_data=f"ms:m:{m}") for m in core])
+
+        # Version models in rows of 2
+        current_row = []
+        for m in versions:
+            label = m.replace("gemini-", "")
+            current_row.append(InlineKeyboardButton(text=label, callback_data=f"ms:m:{m}"))
+            if len(current_row) >= 2:
+                rows.append(current_row)
+                current_row = []
+        if current_row:
+            rows.append(current_row)
+
+        rows.append([InlineKeyboardButton(text="<< Back", callback_data="ms:b:root")])
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+        return f"{header}\n\nSelect Gemini model:", keyboard
+
     # Use cache instead of live discovery
     codex_models = codex_cache.models if codex_cache else []
     if not codex_models:
@@ -246,6 +279,10 @@ async def _handle_model_selected(
     provider = orch._models.provider_for(model_id)
 
     if provider == "claude":
+        result = await switch_model(orch, chat_id, model_id)
+        return result, None
+
+    if provider == "gemini":
         result = await switch_model(orch, chat_id, model_id)
         return result, None
 

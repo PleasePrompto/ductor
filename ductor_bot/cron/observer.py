@@ -19,6 +19,7 @@ from ductor_bot.cron.execution import (
     enrich_instruction,
     parse_claude_result,
     parse_codex_result,
+    parse_gemini_result,
 )
 from ductor_bot.cron.manager import CronManager
 from ductor_bot.log_context import set_log_context
@@ -232,7 +233,7 @@ class CronObserver:
             task_overrides=task_overrides,
         )
 
-    async def _execute_job(  # noqa: PLR0915
+    async def _execute_job(  # noqa: C901, PLR0912, PLR0915
         self,
         job_id: str,
         instruction: str,
@@ -306,10 +307,17 @@ class CronObserver:
                 timeout,
             )
 
+            stdin_mode = (
+                asyncio.subprocess.PIPE
+                if exec_config.provider == "gemini"
+                else asyncio.subprocess.DEVNULL
+            )
+            stdin_input = enriched.encode() if exec_config.provider == "gemini" else None
+
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=str(folder),
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=stdin_mode,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -317,7 +325,10 @@ class CronObserver:
             timed_out = False
             try:
                 async with asyncio.timeout(timeout):
-                    stdout, stderr = await proc.communicate()
+                    if exec_config.provider == "gemini":
+                        stdout, stderr = await proc.communicate(input=stdin_input)
+                    else:
+                        stdout, stderr = await proc.communicate()
             except TimeoutError:
                 timed_out = True
                 logger.warning(
@@ -338,11 +349,12 @@ class CronObserver:
                 status = "error:timeout"
                 result_text = f"[Cron job timed out after {timeout:.0f}s]"
             else:
-                result_text = (
-                    parse_codex_result(stdout)
-                    if exec_config.provider == "codex"
-                    else parse_claude_result(stdout)
-                )
+                if exec_config.provider == "codex":
+                    result_text = parse_codex_result(stdout)
+                elif exec_config.provider == "gemini":
+                    result_text = parse_gemini_result(stdout)
+                else:
+                    result_text = parse_claude_result(stdout)
                 status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
 
             self._manager.update_run_status(job_id, status=status)

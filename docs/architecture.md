@@ -23,7 +23,7 @@ Telegram Update
        - slash command -> CommandRegistry
        - leading directives (@...)
        - normal flow -> CLIService
-  -> CLI provider subprocess (Claude or Codex)
+  -> CLI provider subprocess (Claude, Codex, or Gemini)
   -> Telegram output (streamed edits/appends, buttons, files)
 ```
 

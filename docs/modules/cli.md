@@ -10,7 +10,9 @@ Provider-agnostic CLI layer for Claude Code and Codex. Owns subprocess execution
 - `service.py`: `CLIService` gateway used by orchestrator.
 - `claude_provider.py`: async Claude CLI wrapper.
 - `codex_provider.py`: async Codex CLI wrapper.
+- `gemini_provider.py`: async Gemini CLI wrapper.
 - `stream_events.py`: normalized stream events + Claude stream-json parser.
+- `gemini_events.py`: Gemini NDJSON parsing + normalized stream event conversion.
 - `codex_events.py`: Codex JSONL parsing + normalized stream event conversion.
 - `coalescer.py`: stream text coalescing helper.
 - `process_registry.py`: active subprocess tracking and termination.
@@ -137,6 +139,29 @@ Streaming mode:
 
 - switches `--output-format` to `stream-json`,
 - adds `--verbose`.
+
+### Gemini (`GeminiCLI`)
+
+Base command:
+
+```bash
+gemini --output-format json \
+  --approval-mode <mode> \
+  --model <model> \
+  [--resume <session_id> | --resume latest] \
+  [--allowed-tools ...] \
+  [<cli_parameters...>]
+```
+
+Streaming mode:
+
+- switches `--output-format` to `stream-json`.
+
+**Windows Optimizations:**
+
+- **Direct Node Execution**: Bypasses shell wrappers (`.ps1`/`.cmd`) by executing `node index.js` directly to ensure correct environment variable inheritance (essential for `GEMINI_SYSTEM_MD`).
+- **Stdin Prompt Piping**: All prompts are sent via `stdin` to bypass the 32k character command-line limit (`WinError 206`) on Windows.
+- **Automatic Workspace Trust**: Automatically adds the ductor workspace to Gemini CLI's `trustedFolders.json` on initialization.
 
 ### Codex (`CodexCLI`)
 

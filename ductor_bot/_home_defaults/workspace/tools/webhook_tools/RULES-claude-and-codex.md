@@ -9,10 +9,12 @@ Scripts for managing incoming HTTP webhook endpoints.
 1. **Which CLI provider?**
    - `claude` - Standard Claude models
    - `codex` - OpenAI Codex models with extended thinking
+   - `gemini` - Google Gemini models
 
 2. **Which model?**
    - **If Claude:** `haiku`, `sonnet` (recommended), `opus`
    - **If Codex:** `gpt-5.2-codex` (recommended), `gpt-5.3-codex`, `gpt-5.1-codex-max`, `gpt-5.2`, `gpt-5.1-codex-mini`
+   - **If Gemini:** `flash` (fast), `pro` (capable), `flash-lite`, `auto`
 
 3. **If Codex: Which thinking level?**
    - `low`, `medium` (default), `high`, `xhigh`
@@ -130,6 +132,15 @@ python3 tools/webhook_tools/webhook_add.py \
   --provider codex \
   --model gpt-5.2-codex \
   --reasoning-effort high
+
+# cron_task mode - Gemini example
+python3 tools/webhook_tools/webhook_add.py \
+  --name "issue-triage" --title "Issue Triage" \
+  --description "Triage incoming GitHub issues" \
+  --mode "cron_task" --task-folder "issue-triage" \
+  --prompt-template "Triage issue: {{title}}" \
+  --provider gemini \
+  --model flash
 ```
 
 **Available parameters for cron_task mode:**
@@ -278,6 +289,18 @@ Codex webhook:
   "provider": "codex",
   "model": "gpt-5.2-codex",
   "reasoning_effort": "high"
+}
+```
+
+Gemini webhook:
+```json
+{
+  "id": "issue-triage",
+  "mode": "cron_task",
+  "task_folder": "issue-triage",
+  "prompt_template": "Triage issue: {{title}}",
+  "provider": "gemini",
+  "model": "flash"
 }
 ```
 

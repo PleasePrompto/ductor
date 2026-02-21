@@ -20,6 +20,8 @@ _IS_WINDOWS = sys.platform == "win32"
 
 def _is_process_alive(pid: int) -> bool:
     """Check if a process with the given PID is still running."""
+    if _IS_WINDOWS and pid == os.getpid():
+        return True
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -29,6 +31,7 @@ def _is_process_alive(pid: int) -> bool:
     except OSError:
         # Windows raises various OSError subclasses for invalid/stale PIDs.
         return False
+    return True
     return True
 
 

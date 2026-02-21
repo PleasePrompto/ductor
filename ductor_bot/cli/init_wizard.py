@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from ductor_bot.cli.auth import AuthStatus, check_claude_auth, check_codex_auth
+from ductor_bot.cli.auth import AuthStatus, check_claude_auth, check_codex_auth, check_gemini_auth
 from ductor_bot.config import AgentConfig, deep_merge_config
 from ductor_bot.workspace.init import init_workspace
 from ductor_bot.workspace.paths import resolve_paths
@@ -96,14 +96,16 @@ def _check_clis(console: Console) -> None:
     """Detect CLI availability and require at least one authenticated provider."""
     claude = check_claude_auth()
     codex = check_codex_auth()
+    gemini = check_gemini_auth()
 
     lines = [
         "[bold]Detected AI Backends:[/bold]\n",
         f"  Claude Code CLI   {_STATUS_ICON[claude.status]}",
         f"  OpenAI Codex CLI  {_STATUS_ICON[codex.status]}",
+        f"  Google Gemini CLI {_STATUS_ICON[gemini.status]}",
     ]
 
-    has_auth = claude.is_authenticated or codex.is_authenticated
+    has_auth = claude.is_authenticated or codex.is_authenticated or gemini.is_authenticated
 
     if has_auth:
         border = "green"
@@ -112,7 +114,8 @@ def _check_clis(console: Console) -> None:
         lines.append(
             "\n[bold red]At least one CLI must be installed and authenticated.[/bold red]\n\n"
             "  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]\n"
-            "  Codex:  [dim]https://github.com/openai/codex[/dim]"
+            "  Codex:  [dim]https://github.com/openai/codex[/dim]\n"
+            "  Gemini: [dim]npm install -g @google/gemini-cli[/dim]"
         )
 
     console.print(
@@ -133,8 +136,8 @@ def _show_disclaimer(console: Console) -> None:
     """Display the risk disclaimer and require confirmation."""
     disclaimer = (
         "[bold]Important -- please read before continuing.[/bold]\n\n"
-        "ductor connects to [bold]Anthropic Claude CLI[/bold] and "
-        "[bold]OpenAI Codex CLI[/bold] as AI agent backends.\n\n"
+        "ductor connects to [bold]Anthropic Claude CLI[/bold], "
+        "[bold]OpenAI Codex CLI[/bold], and [bold]Google Gemini CLI[/bold] as AI agent backends.\n\n"
         "The bot operates in [bold yellow]full permission bypass mode[/bold yellow]. "
         "The agent can read, write, and delete files, execute commands, "
         "and interact with your system without asking for confirmation.\n\n"
