@@ -38,6 +38,7 @@ async def send_files_from_text(
     text: str,
     *,
     allowed_roots: Sequence[Path] | None = None,
+    thread_id: int | None = None,
 ) -> None:
     """Extract ``<file:/path>`` tags from *text* and send each file.
 
@@ -45,7 +46,7 @@ async def send_files_from_text(
     separate handling.
     """
     for fp in extract_file_paths(text):
-        await send_file(bot, chat_id, Path(fp), allowed_roots=allowed_roots)
+        await send_file(bot, chat_id, Path(fp), allowed_roots=allowed_roots, thread_id=thread_id)
 
 
 async def _send_text_chunks(
@@ -54,6 +55,7 @@ async def _send_text_chunks(
     clean_text: str,
     *,
     reply_to: Message | None = None,
+    thread_id: int | None = None,
 ) -> Message | None:
     """Send *clean_text* as HTML chunks, falling back to plain text on error."""
     last_msg: Message | None = None
@@ -65,7 +67,10 @@ async def _send_text_chunks(
                 last_msg = await reply_to.answer(chunk, parse_mode=ParseMode.HTML)
             else:
                 last_msg = await bot.send_message(
-                    chat_id=chat_id, text=chunk, parse_mode=ParseMode.HTML
+                    chat_id=chat_id,
+                    text=chunk,
+                    parse_mode=ParseMode.HTML,
+                    message_thread_id=thread_id,
                 )
         except TelegramNetworkError:
             logger.debug("Network error sending message (likely shutdown), skipping")
@@ -80,7 +85,12 @@ async def _send_text_chunks(
             # (HTML tags inflate chunk size), so using the HTML chunk index on a
             # plain-text split would skip wrong content.
             for pc in split_html_message(clean_text):
-                last_msg = await bot.send_message(chat_id=chat_id, text=pc, parse_mode=None)
+                last_msg = await bot.send_message(
+                    chat_id=chat_id,
+                    text=pc,
+                    parse_mode=None,
+                    message_thread_id=thread_id,
+                )
             break
     return last_msg
 
@@ -93,6 +103,7 @@ async def send_rich(  # noqa: PLR0913
     reply_to: Message | None = None,
     allowed_roots: Sequence[Path] | None = None,
     reply_markup: InlineKeyboardMarkup | None = None,
+    thread_id: int | None = None,
 ) -> None:
     """Parse <file:/path> tags, send text first, then files.
 
@@ -107,7 +118,9 @@ async def send_rich(  # noqa: PLR0913
     last_msg: Message | None = None
 
     if clean_text:
-        last_msg = await _send_text_chunks(bot, chat_id, clean_text, reply_to=reply_to)
+        last_msg = await _send_text_chunks(
+            bot, chat_id, clean_text, reply_to=reply_to, thread_id=thread_id
+        )
 
     if button_markup is not None and last_msg is not None:
         try:
@@ -122,7 +135,7 @@ async def send_rich(  # noqa: PLR0913
             logger.warning("Failed to attach button keyboard in send_rich")
 
     for fp in file_paths:
-        await send_file(bot, chat_id, Path(fp), allowed_roots=allowed_roots)
+        await send_file(bot, chat_id, Path(fp), allowed_roots=allowed_roots, thread_id=thread_id)
 
 
 async def send_file(
@@ -131,6 +144,7 @@ async def send_file(
     path: Path,
     *,
     allowed_roots: Sequence[Path] | None = None,
+    thread_id: int | None = None,
 ) -> None:
     """Send a local file as photo (images) or document (everything else)."""
     if allowed_roots is not None and not is_path_safe(path, allowed_roots):
@@ -144,13 +158,17 @@ async def send_file(
                 f"<code>config.json</code>, then <b>/restart</b>."
             ),
             parse_mode="HTML",
+            message_thread_id=thread_id,
         )
         return
 
     if not path.exists():  # noqa: ASYNC240
         logger.warning("File not found, skipping: %s", path)
         await bot.send_message(
-            chat_id=chat_id, text=f"[File not found: {path.name}]", parse_mode=None
+            chat_id=chat_id,
+            text=f"[File not found: {path.name}]",
+            parse_mode=None,
+            message_thread_id=thread_id,
         )
         return
 
@@ -163,9 +181,11 @@ async def send_file(
             mime.startswith("image/") and ext not in {".svg", ".svgz"}
         )
         if is_raster_image:
-            await bot.send_photo(chat_id=chat_id, photo=input_file)
+            await bot.send_photo(chat_id=chat_id, photo=input_file, message_thread_id=thread_id)
         else:
-            await bot.send_document(chat_id=chat_id, document=input_file)
+            await bot.send_document(
+                chat_id=chat_id, document=input_file, message_thread_id=thread_id
+            )
 
         logger.info("Sent file: %s (%s)", path.name, mime or ext)
     except TelegramNetworkError:
@@ -173,5 +193,8 @@ async def send_file(
     except (TelegramBadRequest, OSError):
         logger.exception("Failed to send file: %s", path)
         await bot.send_message(
-            chat_id=chat_id, text=f"[Failed to send: {path.name}]", parse_mode=None
+            chat_id=chat_id,
+            text=f"[Failed to send: {path.name}]",
+            parse_mode=None,
+            message_thread_id=thread_id,
         )

@@ -18,9 +18,11 @@ def _make_editor(
     reply_to: Message | None = None,
     edit_interval: float = 0.0,
     max_failures: int = 3,
+    thread_id: int | None = None,
 ) -> tuple[MagicMock, EditStreamEditor]:
     """Create a bot mock and an EditStreamEditor with zero throttle by default."""
     from ductor_bot.bot.edit_streaming import EditStreamEditor
+    from ductor_bot.config import StreamingConfig
 
     bot = MagicMock()
     sent_msg = MagicMock(spec=Message)
@@ -30,12 +32,13 @@ def _make_editor(
     if reply_to is not None:
         object.__setattr__(reply_to, "answer", AsyncMock(return_value=sent_msg))
 
+    cfg = StreamingConfig(edit_interval_seconds=edit_interval, max_edit_failures=max_failures)
     editor = EditStreamEditor(
         bot,
         chat_id=1,
         reply_to=reply_to,
-        edit_interval_seconds=edit_interval,
-        max_edit_failures=max_failures,
+        cfg=cfg,
+        thread_id=thread_id,
     )
     return bot, editor
 
@@ -397,3 +400,35 @@ def _get_last_text(bot: MagicMock) -> str:
     if bot.send_message.call_count > 0:
         return str(bot.send_message.call_args.kwargs.get("text", ""))
     return ""
+
+
+class TestEditStreamEditorThreadId:
+    """Test thread_id propagation in edit-mode streaming."""
+
+    async def test_thread_id_on_create_message(self) -> None:
+        bot, editor = _make_editor(thread_id=55)
+        await editor.append_text("Hello")
+        await editor.finalize("")
+        assert bot.send_message.call_args.kwargs["message_thread_id"] == 55
+
+    async def test_thread_id_none_by_default(self) -> None:
+        bot, editor = _make_editor()
+        await editor.append_text("Hello")
+        await editor.finalize("")
+        assert bot.send_message.call_args.kwargs.get("message_thread_id") is None
+
+    async def test_thread_id_on_fallback_send_new(self) -> None:
+        bot, editor = _make_editor(max_failures=1, thread_id=55)
+        await editor.append_text("Initial")
+        await editor.finalize("")
+        bot.edit_message_text = AsyncMock(
+            side_effect=TelegramBadRequest(MagicMock(), "bad request"),
+        )
+        await editor.append_text("Fail")
+        await editor.finalize("")
+        # Now in fallback mode, send_message is used
+        bot.send_message.reset_mock()
+        await editor.append_text("Appended")
+        await editor.finalize("")
+        for call in bot.send_message.call_args_list:
+            assert call.kwargs["message_thread_id"] == 55

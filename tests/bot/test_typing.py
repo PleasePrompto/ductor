@@ -51,3 +51,27 @@ class TestTypingContext:
             pass
         # Manually calling __aexit__ again should not raise
         await ctx.__aexit__()
+
+    async def test_thread_id_passed_to_send_chat_action(self) -> None:
+        from ductor_bot.bot.typing import TypingContext
+
+        bot = MagicMock()
+        bot.send_chat_action = AsyncMock()
+        ctx = TypingContext(bot, chat_id=42, thread_id=99)
+
+        async with ctx:
+            await asyncio.sleep(0.05)
+
+        assert bot.send_chat_action.call_args.kwargs["message_thread_id"] == 99
+
+    async def test_thread_id_none_by_default(self) -> None:
+        from ductor_bot.bot.typing import TypingContext
+
+        bot = MagicMock()
+        bot.send_chat_action = AsyncMock()
+        ctx = TypingContext(bot, chat_id=42)
+
+        async with ctx:
+            await asyncio.sleep(0.05)
+
+        assert bot.send_chat_action.call_args.kwargs.get("message_thread_id") is None

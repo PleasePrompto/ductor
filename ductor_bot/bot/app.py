@@ -33,6 +33,7 @@ from ductor_bot.bot.middleware import MQ_PREFIX, AuthMiddleware, SequentialMiddl
 from ductor_bot.bot.response_format import SEP, fmt
 from ductor_bot.bot.sender import send_files_from_text, send_rich
 from ductor_bot.bot.streaming import create_stream_editor
+from ductor_bot.bot.topic import get_thread_id
 from ductor_bot.bot.typing import TypingContext
 from ductor_bot.bot.welcome import (
     build_welcome_keyboard,
@@ -223,15 +224,25 @@ class TelegramBot:
         from ductor_bot.cli.auth import check_all_auth
 
         chat_id = message.chat.id
+        thread_id = get_thread_id(message)
         user_name = message.from_user.first_name if message.from_user else ""
 
         auth_results = await asyncio.to_thread(check_all_auth)
         text = build_welcome_text(user_name, auth_results, self._config)
         keyboard = build_welcome_keyboard()
 
-        sent_with_image = await self._send_welcome_image(chat_id, text, keyboard, message)
+        sent_with_image = await self._send_welcome_image(
+            chat_id, text, keyboard, message, thread_id=thread_id
+        )
         if not sent_with_image:
-            await send_rich(self._bot, chat_id, text, reply_to=message, reply_markup=keyboard)
+            await send_rich(
+                self._bot,
+                chat_id,
+                text,
+                reply_to=message,
+                reply_markup=keyboard,
+                thread_id=thread_id,
+            )
 
     async def _send_welcome_image(
         self,
@@ -239,6 +250,8 @@ class TelegramBot:
         text: str,
         keyboard: InlineKeyboardMarkup,
         reply_to: Message,
+        *,
+        thread_id: int | None = None,
     ) -> bool:
         """Try to send welcome.png with caption. Returns True if caption was attached."""
         if not _WELCOME_IMAGE.is_file():
@@ -256,6 +269,7 @@ class TelegramBot:
                 parse_mode=ParseMode.HTML if html_caption else None,
                 reply_markup=keyboard if html_caption else None,
                 reply_parameters=ReplyParameters(message_id=reply_to.message_id),
+                message_thread_id=thread_id,
             )
         except TelegramBadRequest:
             logger.warning("Welcome image caption failed, retrying without")
@@ -264,6 +278,7 @@ class TelegramBot:
                     chat_id=chat_id,
                     photo=FSInputFile(_WELCOME_IMAGE),
                     reply_parameters=ReplyParameters(message_id=reply_to.message_id),
+                    message_thread_id=thread_id,
                 )
             except Exception:
                 logger.exception("Failed to send welcome image")
@@ -280,7 +295,13 @@ class TelegramBot:
 
     async def _on_help(self, message: Message) -> None:
         """Handle /help: show command reference."""
-        await send_rich(self._bot, message.chat.id, _HELP_TEXT, reply_to=message)
+        await send_rich(
+            self._bot,
+            message.chat.id,
+            _HELP_TEXT,
+            reply_to=message,
+            thread_id=get_thread_id(message),
+        )
 
     async def _on_info(self, message: Message) -> None:
         """Handle /info: show project links and version."""
@@ -306,12 +327,26 @@ class TelegramBot:
                 [InlineKeyboardButton(text="PyPI", url="https://pypi.org/project/ductor/")],
             ],
         )
-        await send_rich(self._bot, message.chat.id, text, reply_to=message, reply_markup=keyboard)
+        await send_rich(
+            self._bot,
+            message.chat.id,
+            text,
+            reply_to=message,
+            reply_markup=keyboard,
+            thread_id=get_thread_id(message),
+        )
 
     async def _on_showfiles(self, message: Message) -> None:
         """Handle /showfiles: interactive file browser for ~/.ductor."""
         text, keyboard = await file_browser_start(self._orch.paths)
-        await send_rich(self._bot, message.chat.id, text, reply_to=message, reply_markup=keyboard)
+        await send_rich(
+            self._bot,
+            message.chat.id,
+            text,
+            reply_to=message,
+            reply_markup=keyboard,
+            thread_id=get_thread_id(message),
+        )
 
     # -- Abort, commands, sessions ---------------------------------------------
 
@@ -347,6 +382,7 @@ class TelegramBot:
                     chat_id,
                     "**Agent is working.** Use /stop to terminate first, then switch models.",
                     reply_to=message,
+                    thread_id=get_thread_id(message),
                 )
                 return True
             async with self._sequential.get_lock(chat_id):
@@ -380,7 +416,13 @@ class TelegramBot:
             write_restart_sentinel, chat_id, "Restart completed.", sentinel_path=sentinel
         )
         text = fmt("**Restarting**", SEP, "Bot is shutting down and will be back shortly.")
-        await send_rich(self._bot, message.chat.id, text, reply_to=message)
+        await send_rich(
+            self._bot,
+            message.chat.id,
+            text,
+            reply_to=message,
+            thread_id=get_thread_id(message),
+        )
         self._exit_code = EXIT_RESTART
         asyncio.create_task(self._dp.stop_polling())  # noqa: RUF006
 
@@ -404,6 +446,7 @@ class TelegramBot:
             return
 
         chat_id = msg.chat.id
+        thread_id = get_thread_id(msg)
         set_log_context(operation="cb", chat_id=chat_id)
         logger.info("Callback data=%s", data[:40])
 
@@ -416,28 +459,36 @@ class TelegramBot:
                 return
             data = resolved
 
-        if await self._route_special_callback(chat_id, msg.message_id, data):
+        if await self._route_special_callback(chat_id, msg.message_id, data, thread_id=thread_id):
             return
 
         await self._mark_button_choice(chat_id, msg, display_label)
 
         async with self._sequential.get_lock(chat_id):
             if self._config.streaming.enabled:
-                await self._handle_streaming(msg, chat_id, data)
+                await self._handle_streaming(msg, chat_id, data, thread_id=thread_id)
             else:
-                async with TypingContext(self._bot, chat_id):
+                async with TypingContext(self._bot, chat_id, thread_id=thread_id):
                     result = await self._orch.handle_message(chat_id, data)
                 roots = self._file_roots(self._orch.paths)
-                await send_rich(self._bot, chat_id, result.text, allowed_roots=roots)
+                await send_rich(
+                    self._bot,
+                    chat_id,
+                    result.text,
+                    allowed_roots=roots,
+                    thread_id=thread_id,
+                )
 
-    async def _route_special_callback(self, chat_id: int, message_id: int, data: str) -> bool:
+    async def _route_special_callback(
+        self, chat_id: int, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> bool:
         """Handle known callback namespaces. Returns True when handled."""
         if data.startswith(MQ_PREFIX):
             await self._handle_queue_cancel(chat_id, data)
             return True
 
         if data.startswith("upg:"):
-            await self._handle_upgrade_callback(chat_id, message_id, data)
+            await self._handle_upgrade_callback(chat_id, message_id, data, thread_id=thread_id)
             return True
 
         from ductor_bot.orchestrator.model_selector import is_model_selector_callback
@@ -453,7 +504,7 @@ class TelegramBot:
             return True
 
         if is_file_browser_callback(data):
-            await self._handle_file_browser(chat_id, message_id, data)
+            await self._handle_file_browser(chat_id, message_id, data, thread_id=thread_id)
             return True
 
         return False
@@ -492,7 +543,9 @@ class TelegramBot:
                 parse_mode=ParseMode.HTML,
             )
 
-    async def _handle_file_browser(self, chat_id: int, message_id: int, data: str) -> None:
+    async def _handle_file_browser(
+        self, chat_id: int, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
         """Handle file browser navigation or file request."""
         text, keyboard, prompt = await handle_file_browser_callback(self._orch.paths, data)
 
@@ -504,13 +557,24 @@ class TelegramBot:
                 )
             async with self._sequential.get_lock(chat_id):
                 if self._config.streaming.enabled:
-                    fake_msg = await self._bot.send_message(chat_id, prompt, parse_mode=None)
-                    await self._handle_streaming(fake_msg, chat_id, prompt)
+                    fake_msg = await self._bot.send_message(
+                        chat_id,
+                        prompt,
+                        parse_mode=None,
+                        message_thread_id=thread_id,
+                    )
+                    await self._handle_streaming(fake_msg, chat_id, prompt, thread_id=thread_id)
                 else:
-                    async with TypingContext(self._bot, chat_id):
+                    async with TypingContext(self._bot, chat_id, thread_id=thread_id):
                         result = await self._orch.handle_message(chat_id, prompt)
                     roots = self._file_roots(self._orch.paths)
-                    await send_rich(self._bot, chat_id, result.text, allowed_roots=roots)
+                    await send_rich(
+                        self._bot,
+                        chat_id,
+                        result.text,
+                        allowed_roots=roots,
+                        thread_id=thread_id,
+                    )
             return
 
         # Directory navigation: edit message in-place
@@ -569,15 +633,23 @@ class TelegramBot:
             return
 
         chat_id = message.chat.id
+        thread_id = get_thread_id(message)
         logger.debug("Message text=%s", text[:80])
 
         if self._config.streaming.enabled:
-            await self._handle_streaming(message, chat_id, text)
+            await self._handle_streaming(message, chat_id, text, thread_id=thread_id)
         else:
-            async with TypingContext(self._bot, chat_id):
+            async with TypingContext(self._bot, chat_id, thread_id=thread_id):
                 result = await self._orch.handle_message(chat_id, text)
             roots = self._file_roots(self._orch.paths)
-            await send_rich(self._bot, chat_id, result.text, reply_to=message, allowed_roots=roots)
+            await send_rich(
+                self._bot,
+                chat_id,
+                result.text,
+                reply_to=message,
+                allowed_roots=roots,
+                thread_id=thread_id,
+            )
 
     async def _resolve_text(self, message: Message) -> str | None:
         """Extract processable text from *message* (plain text or media prompt)."""
@@ -593,7 +665,9 @@ class TelegramBot:
             return None
         return strip_mention(message.text, self._bot_username)
 
-    async def _handle_streaming(self, message: Message, chat_id: int, text: str) -> None:
+    async def _handle_streaming(
+        self, message: Message, chat_id: int, text: str, *, thread_id: int | None = None
+    ) -> None:
         """Streaming flow: coalescer -> stream editor -> Telegram."""
         logger.info("Streaming flow started")
         cfg = self._config.streaming
@@ -602,6 +676,7 @@ class TelegramBot:
             chat_id,
             reply_to=message,
             cfg=cfg,
+            thread_id=thread_id,
         )
         coalescer = StreamCoalescer(
             config=CoalesceConfig(
@@ -631,7 +706,7 @@ class TelegramBot:
                 await coalescer.flush(force=True)
                 await editor.append_system("Please wait, recovering...")
 
-        async with TypingContext(self._bot, chat_id):
+        async with TypingContext(self._bot, chat_id, thread_id=thread_id):
             result = await self._orch.handle_message_streaming(
                 chat_id,
                 text,
@@ -651,10 +726,23 @@ class TelegramBot:
 
         roots = self._file_roots(self._orch.paths)
         if result.stream_fallback or not editor.has_content:
-            await send_rich(self._bot, chat_id, result.text, reply_to=message, allowed_roots=roots)
+            await send_rich(
+                self._bot,
+                chat_id,
+                result.text,
+                reply_to=message,
+                allowed_roots=roots,
+                thread_id=thread_id,
+            )
         else:
             # Streaming sent text already; extract and deliver any <file:...> tags.
-            await send_files_from_text(self._bot, chat_id, result.text, allowed_roots=roots)
+            await send_files_from_text(
+                self._bot,
+                chat_id,
+                result.text,
+                allowed_roots=roots,
+                thread_id=thread_id,
+            )
 
     # -- Background handlers ---------------------------------------------------
 
@@ -736,10 +824,12 @@ class TelegramBot:
         for uid in self._config.allowed_user_ids:
             await send_rich(self._bot, uid, text, reply_markup=keyboard)
 
-    async def _handle_upgrade_callback(self, chat_id: int, message_id: int, data: str) -> None:
+    async def _handle_upgrade_callback(
+        self, chat_id: int, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
         """Handle ``upg:yes:<version>``, ``upg:no``, and ``upg:cl:<version>`` callbacks."""
         if data.startswith("upg:cl:"):
-            await self._handle_changelog_callback(chat_id, message_id, data)
+            await self._handle_changelog_callback(chat_id, message_id, data, thread_id=thread_id)
             return
 
         with contextlib.suppress(TelegramBadRequest):
@@ -764,6 +854,7 @@ class TelegramBot:
             chat_id,
             f"Upgrading to {target_version}...",
             parse_mode=None,
+            message_thread_id=thread_id,
         )
 
         success, output = await perform_upgrade()
@@ -773,6 +864,7 @@ class TelegramBot:
                 chat_id,
                 f"Upgrade failed:\n{output[-300:]}",
                 parse_mode=None,
+                message_thread_id=thread_id,
             )
             return
 
@@ -785,11 +877,18 @@ class TelegramBot:
             new_version=target_version,
         )
 
-        await self._bot.send_message(chat_id, "Bot is restarting...", parse_mode=None)
+        await self._bot.send_message(
+            chat_id,
+            "Bot is restarting...",
+            parse_mode=None,
+            message_thread_id=thread_id,
+        )
         self._exit_code = EXIT_RESTART
         asyncio.create_task(self._dp.stop_polling())  # noqa: RUF006
 
-    async def _handle_changelog_callback(self, chat_id: int, message_id: int, data: str) -> None:
+    async def _handle_changelog_callback(
+        self, chat_id: int, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
         """Fetch and display changelog for ``upg:cl:<version>``."""
         from ductor_bot.infra.version import fetch_changelog
 
@@ -809,12 +908,17 @@ class TelegramBot:
                 chat_id,
                 f"No changelog found for v{version}.",
                 parse_mode=None,
+                message_thread_id=thread_id,
             )
             return
 
         roots = self._file_roots(self._orch.paths)
         await send_rich(
-            self._bot, chat_id, f"**Changelog v{version}**\n\n{body}", allowed_roots=roots
+            self._bot,
+            chat_id,
+            f"**Changelog v{version}**\n\n{body}",
+            allowed_roots=roots,
+            thread_id=thread_id,
         )
 
     async def _sync_commands(self) -> None:

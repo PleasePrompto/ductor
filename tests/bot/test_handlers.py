@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiogram.types import Message
 
 
-def _make_message(chat_id: int = 1, user_id: int = 100, text: str = "hello") -> MagicMock:
+def _make_message(
+    chat_id: int = 1,
+    user_id: int = 100,
+    text: str = "hello",
+    *,
+    topic_thread_id: int | None = None,
+) -> MagicMock:
     """Create a mock aiogram Message."""
     msg = MagicMock(spec=Message)
     msg.chat = MagicMock()
@@ -25,6 +31,8 @@ def _make_message(chat_id: int = 1, user_id: int = 100, text: str = "hello") -> 
     msg.audio = None
     msg.sticker = None
     msg.video_note = None
+    msg.is_topic_message = topic_thread_id is not None
+    msg.message_thread_id = topic_thread_id
     return msg
 
 
@@ -102,3 +110,58 @@ class TestStripMention:
         from ductor_bot.bot.handlers import strip_mention
 
         assert strip_mention("@bot hi", None) == "@bot hi"
+
+
+class TestForumTopicPropagation:
+    """Test that handlers extract and propagate thread_id."""
+
+    @patch("ductor_bot.bot.handlers.send_rich", new_callable=AsyncMock)
+    async def test_handle_abort_passes_thread_id(self, mock_send: AsyncMock) -> None:
+        from ductor_bot.bot.handlers import handle_abort
+
+        orchestrator = MagicMock()
+        orchestrator.abort = AsyncMock(return_value=1)
+        orchestrator.active_provider_name = "claude"
+        bot = MagicMock()
+        msg = _make_message(chat_id=42, topic_thread_id=99)
+
+        await handle_abort(orchestrator, bot, chat_id=42, message=msg)
+        assert mock_send.call_args.kwargs["thread_id"] == 99
+
+    @patch("ductor_bot.bot.handlers.send_rich", new_callable=AsyncMock)
+    async def test_handle_command_passes_thread_id(self, mock_send: AsyncMock) -> None:
+        from ductor_bot.bot.handlers import handle_command
+        from ductor_bot.orchestrator.registry import OrchestratorResult
+
+        orchestrator = MagicMock()
+        orchestrator.handle_message = AsyncMock(return_value=OrchestratorResult(text="OK"))
+        bot = MagicMock()
+        msg = _make_message(text="/status", topic_thread_id=77)
+
+        await handle_command(orchestrator, bot, msg)
+        assert mock_send.call_args.kwargs["thread_id"] == 77
+
+    @patch("ductor_bot.bot.handlers.send_rich", new_callable=AsyncMock)
+    async def test_handle_new_session_passes_thread_id(self, mock_send: AsyncMock) -> None:
+        from ductor_bot.bot.handlers import handle_new_session
+
+        orchestrator = MagicMock()
+        orchestrator.reset_session = AsyncMock()
+        bot = MagicMock()
+        msg = _make_message(text="/new", topic_thread_id=55)
+
+        await handle_new_session(orchestrator, bot, msg)
+        assert mock_send.call_args.kwargs["thread_id"] == 55
+
+    @patch("ductor_bot.bot.handlers.send_rich", new_callable=AsyncMock)
+    async def test_handle_abort_none_thread_id_for_normal_msg(self, mock_send: AsyncMock) -> None:
+        from ductor_bot.bot.handlers import handle_abort
+
+        orchestrator = MagicMock()
+        orchestrator.abort = AsyncMock(return_value=0)
+        orchestrator.active_provider_name = "claude"
+        bot = MagicMock()
+        msg = _make_message(chat_id=1)
+
+        await handle_abort(orchestrator, bot, chat_id=1, message=msg)
+        assert mock_send.call_args.kwargs.get("thread_id") is None

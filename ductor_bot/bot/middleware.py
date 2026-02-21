@@ -22,6 +22,7 @@ from aiogram.types import (
 
 from ductor_bot.bot.abort import is_abort_message
 from ductor_bot.bot.dedup import DedupeCache, build_dedup_key
+from ductor_bot.bot.topic import get_thread_id
 from ductor_bot.log_context import set_log_context
 
 if TYPE_CHECKING:
@@ -275,6 +276,7 @@ class SequentialMiddleware(BaseMiddleware):
                     allow_sending_without_reply=True,
                 ),
                 reply_markup=keyboard,
+                message_thread_id=get_thread_id(event),
             )
             entry.indicator_msg_id = sent.message_id
         except Exception:

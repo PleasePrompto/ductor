@@ -9,7 +9,13 @@ import pytest
 from aiogram.types import Message
 
 
-def _make_message(chat_id: int = 1, user_id: int = 100, text: str = "hello") -> MagicMock:
+def _make_message(
+    chat_id: int = 1,
+    user_id: int = 100,
+    text: str = "hello",
+    *,
+    topic_thread_id: int | None = None,
+) -> MagicMock:
     """Create a mock aiogram Message."""
     msg = MagicMock(spec=Message)
     msg.chat = MagicMock()
@@ -18,6 +24,8 @@ def _make_message(chat_id: int = 1, user_id: int = 100, text: str = "hello") -> 
     msg.from_user.id = user_id
     msg.text = text
     msg.message_id = 1
+    msg.is_topic_message = topic_thread_id is not None
+    msg.message_thread_id = topic_thread_id
     return msg
 
 
@@ -444,3 +452,78 @@ class TestQueueManagement:
 
         assert handler_calls == ["slow"]
         abort_handler.assert_called_once()
+
+
+class TestForumTopicIndicator:
+    """Tests for queue indicator message_thread_id propagation."""
+
+    async def test_indicator_includes_thread_id_for_topic_message(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware
+
+        mw = SequentialMiddleware()
+        bot = AsyncMock()
+        sent_msg = MagicMock(message_id=999)
+        bot.send_message = AsyncMock(return_value=sent_msg)
+        bot.delete_message = AsyncMock()
+        mw.set_bot(bot)
+
+        acquired = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_handler(_event: object, _data: dict[str, object]) -> None:
+            acquired.set()
+            await release.wait()
+
+        msg1 = _make_message(chat_id=1, text="first")
+        msg1.message_id = 1
+        task1 = asyncio.create_task(mw(slow_handler, msg1, {}))
+        await acquired.wait()
+
+        msg2 = _make_message(chat_id=1, text="second", topic_thread_id=42)
+        msg2.message_id = 2
+        task2 = asyncio.create_task(mw(AsyncMock(), msg2, {}))
+        await asyncio.sleep(0.01)
+
+        # Verify send_message was called with message_thread_id=42
+        bot.send_message.assert_called_once()
+        call_kwargs = bot.send_message.call_args.kwargs
+        assert call_kwargs.get("message_thread_id") == 42
+
+        release.set()
+        await task1
+        await task2
+
+    async def test_indicator_none_thread_id_for_normal_message(self) -> None:
+        from ductor_bot.bot.middleware import SequentialMiddleware
+
+        mw = SequentialMiddleware()
+        bot = AsyncMock()
+        sent_msg = MagicMock(message_id=999)
+        bot.send_message = AsyncMock(return_value=sent_msg)
+        bot.delete_message = AsyncMock()
+        mw.set_bot(bot)
+
+        acquired = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_handler(_event: object, _data: dict[str, object]) -> None:
+            acquired.set()
+            await release.wait()
+
+        msg1 = _make_message(chat_id=1, text="first")
+        msg1.message_id = 1
+        task1 = asyncio.create_task(mw(slow_handler, msg1, {}))
+        await acquired.wait()
+
+        msg2 = _make_message(chat_id=1, text="second")
+        msg2.message_id = 2
+        task2 = asyncio.create_task(mw(AsyncMock(), msg2, {}))
+        await asyncio.sleep(0.01)
+
+        bot.send_message.assert_called_once()
+        call_kwargs = bot.send_message.call_args.kwargs
+        assert call_kwargs.get("message_thread_id") is None
+
+        release.set()
+        await task1
+        await task2

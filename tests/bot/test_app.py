@@ -88,6 +88,8 @@ def _make_message(
     text: str | None = "Hello",
     chat_type: str = "private",
     user_id: int = 100,
+    *,
+    topic_thread_id: int | None = None,
 ) -> MagicMock:
     msg = MagicMock(spec=Message)
     msg.chat = MagicMock(spec=Chat)
@@ -111,6 +113,10 @@ def _make_message(
     msg.sticker = None
     msg.video_note = None
 
+    # Forum topic support
+    msg.is_topic_message = topic_thread_id is not None
+    msg.message_thread_id = topic_thread_id
+
     return msg
 
 
@@ -121,6 +127,8 @@ def _make_callback_query(
     user_id: int = 100,
     msg_text: str | None = "Bot response",
     msg_html_text: str | None = "Bot response",
+    *,
+    topic_thread_id: int | None = None,
 ) -> MagicMock:
     cb = MagicMock(spec=CallbackQuery)
     cb.data = data
@@ -134,6 +142,8 @@ def _make_callback_query(
     msg.text = msg_text
     msg.html_text = msg_html_text
     msg.answer = AsyncMock(return_value=msg)
+    msg.is_topic_message = topic_thread_id is not None
+    msg.message_thread_id = topic_thread_id
     cb.message = msg
 
     user = MagicMock(spec=User)
@@ -420,7 +430,7 @@ class TestOnMessage:
         with patch.object(tg_bot, "_handle_streaming", new_callable=AsyncMock) as mock_stream:
             await tg_bot._on_message(msg)
 
-        mock_stream.assert_called_once_with(msg, 1, "Hello streaming")
+        mock_stream.assert_called_once_with(msg, 1, "Hello streaming", thread_id=None)
 
     async def test_returns_early_for_none_text(self) -> None:
         tg_bot, _ = _make_tg_bot()
@@ -445,7 +455,7 @@ class TestOnMessage:
         with patch.object(tg_bot, "_handle_streaming", new_callable=AsyncMock) as mock_stream:
             await tg_bot._on_message(msg)
 
-        mock_stream.assert_called_once_with(msg, 1, "clean text")
+        mock_stream.assert_called_once_with(msg, 1, "clean text", thread_id=None)
 
 
 # ---------------------------------------------------------------------------
@@ -1224,3 +1234,107 @@ class TestFileRoots:
     def test_default_config_is_all(self) -> None:
         config = AgentConfig()
         assert config.file_access == "all"
+
+
+# ---------------------------------------------------------------------------
+# Forum topic propagation
+# ---------------------------------------------------------------------------
+
+
+class TestForumTopicPropagation:
+    """Verify thread_id flows through _handle_streaming and _on_callback_query."""
+
+    @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
+    @patch("ductor_bot.bot.app.send_files_from_text", new_callable=AsyncMock)
+    async def test_handle_streaming_passes_thread_id(
+        self, mock_files: AsyncMock, mock_send: AsyncMock
+    ) -> None:
+        tg_bot, _ = _make_tg_bot()
+        orch = _make_orchestrator(handle_streaming_text="Fallback", stream_fallback=True)
+        tg_bot._orchestrator = orch
+
+        msg = _make_message(topic_thread_id=88)
+
+        with patch("ductor_bot.bot.app.TypingContext") as mock_typing:
+            mock_typing.return_value.__aenter__ = AsyncMock()
+            mock_typing.return_value.__aexit__ = AsyncMock()
+            with (
+                patch("ductor_bot.bot.app.create_stream_editor") as mock_editor_fn,
+                patch("ductor_bot.bot.app.StreamCoalescer") as mock_coalescer_cls,
+            ):
+                editor = MagicMock()
+                editor.append_text = AsyncMock()
+                editor.append_tool = AsyncMock()
+                editor.finalize = AsyncMock()
+                editor.has_content = False
+                mock_editor_fn.return_value = editor
+
+                coalescer = MagicMock()
+                coalescer.feed = AsyncMock()
+                coalescer.flush = AsyncMock()
+                coalescer.stop = MagicMock()
+                mock_coalescer_cls.return_value = coalescer
+
+                await tg_bot._handle_streaming(msg, 1, "test", thread_id=88)
+
+        # create_stream_editor received thread_id
+        assert mock_editor_fn.call_args.kwargs["thread_id"] == 88
+        # TypingContext received thread_id
+        assert mock_typing.call_args.kwargs["thread_id"] == 88
+        # Fallback send_rich received thread_id
+        assert mock_send.call_args.kwargs["thread_id"] == 88
+
+    @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
+    async def test_callback_query_passes_thread_id(self, mock_send: AsyncMock) -> None:
+        config = _make_config(streaming_enabled=False)
+        tg_bot, _ = _make_tg_bot(config)
+        orch = _make_orchestrator(handle_message_text="Reply")
+        tg_bot._orchestrator = orch
+
+        cb = _make_callback_query(data="Approve", topic_thread_id=77)
+
+        with patch("ductor_bot.bot.app.TypingContext") as mock_typing:
+            mock_typing.return_value.__aenter__ = AsyncMock()
+            mock_typing.return_value.__aexit__ = AsyncMock()
+            await tg_bot._on_callback_query(cb)
+
+        assert mock_typing.call_args.kwargs["thread_id"] == 77
+        assert mock_send.call_args.kwargs["thread_id"] == 77
+
+    @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
+    async def test_on_message_non_streaming_passes_thread_id(self, mock_send: AsyncMock) -> None:
+        config = _make_config(streaming_enabled=False)
+        tg_bot, _ = _make_tg_bot(config)
+        orch = _make_orchestrator(handle_message_text="Reply")
+        tg_bot._orchestrator = orch
+
+        msg = _make_message(text="Hello", topic_thread_id=55)
+
+        with patch("ductor_bot.bot.app.TypingContext") as mock_typing:
+            mock_typing.return_value.__aenter__ = AsyncMock()
+            mock_typing.return_value.__aexit__ = AsyncMock()
+            await tg_bot._on_message(msg)
+
+        assert mock_typing.call_args.kwargs["thread_id"] == 55
+        assert mock_send.call_args.kwargs["thread_id"] == 55
+
+    @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
+    async def test_on_help_passes_thread_id(self, mock_send: AsyncMock) -> None:
+        tg_bot, _ = _make_tg_bot()
+        msg = _make_message(topic_thread_id=33)
+
+        await tg_bot._on_help(msg)
+
+        assert mock_send.call_args.kwargs["thread_id"] == 33
+
+    @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
+    async def test_on_restart_passes_thread_id(self, mock_send: AsyncMock) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._orchestrator = _make_orchestrator()
+        tg_bot._dp.stop_polling = AsyncMock()
+        msg = _make_message(topic_thread_id=44)
+
+        with patch("ductor_bot.infra.restart.write_restart_sentinel"):
+            await tg_bot._on_restart(msg)
+
+        assert mock_send.call_args.kwargs["thread_id"] == 44

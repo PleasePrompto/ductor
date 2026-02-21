@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ductor_bot.bot.response_format import NEW_SESSION_TEXT, stop_text
 from ductor_bot.bot.sender import send_rich
+from ductor_bot.bot.topic import get_thread_id
 from ductor_bot.bot.typing import TypingContext
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ async def handle_abort(
     killed = await orchestrator.abort(chat_id)
     logger.info("Abort requested killed=%d", killed)
     text = stop_text(bool(killed), orchestrator.active_provider_name)
-    await send_rich(bot, chat_id, text, reply_to=message)
+    await send_rich(bot, chat_id, text, reply_to=message, thread_id=get_thread_id(message))
     return True
 
 
@@ -44,19 +45,28 @@ async def handle_command(orchestrator: Orchestrator, bot: Bot, message: Message)
     if not message.text:
         return
     chat_id = message.chat.id
+    thread_id = get_thread_id(message)
     logger.info("Command dispatched cmd=%s", message.text.strip()[:40])
-    async with TypingContext(bot, chat_id):
+    async with TypingContext(bot, chat_id, thread_id=thread_id):
         result = await orchestrator.handle_message(chat_id, message.text.strip())
-    await send_rich(bot, chat_id, result.text, reply_to=message, reply_markup=result.reply_markup)
+    await send_rich(
+        bot,
+        chat_id,
+        result.text,
+        reply_to=message,
+        reply_markup=result.reply_markup,
+        thread_id=thread_id,
+    )
 
 
 async def handle_new_session(orchestrator: Orchestrator, bot: Bot, message: Message) -> None:
     """Handle /new: reset session."""
     logger.info("Session reset requested")
     chat_id = message.chat.id
-    async with TypingContext(bot, chat_id):
+    thread_id = get_thread_id(message)
+    async with TypingContext(bot, chat_id, thread_id=thread_id):
         await orchestrator.reset_session(chat_id)
-    await send_rich(bot, chat_id, NEW_SESSION_TEXT, reply_to=message)
+    await send_rich(bot, chat_id, NEW_SESSION_TEXT, reply_to=message, thread_id=thread_id)
 
 
 def strip_mention(text: str, bot_username: str | None) -> str:

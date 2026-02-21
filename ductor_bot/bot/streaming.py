@@ -61,10 +61,12 @@ class StreamEditor:
         chat_id: int,
         *,
         reply_to: Message | None = None,
+        thread_id: int | None = None,
     ) -> None:
         self._bot = bot
         self._chat_id = chat_id
         self._reply_to = reply_to
+        self._thread_id = thread_id
         self._messages_sent = 0
         self._last_msg: Message | None = None
 
@@ -125,7 +127,10 @@ class StreamEditor:
                 msg = await self._reply_to.answer(display, parse_mode=parse_mode)
             else:
                 msg = await self._bot.send_message(
-                    chat_id=self._chat_id, text=display, parse_mode=parse_mode
+                    chat_id=self._chat_id,
+                    text=display,
+                    parse_mode=parse_mode,
+                    message_thread_id=self._thread_id,
                 )
             self._last_msg = msg
             self._messages_sent += 1
@@ -144,19 +149,20 @@ def create_stream_editor(
     *,
     reply_to: Message | None = None,
     cfg: StreamingConfig | None = None,
+    thread_id: int | None = None,
 ) -> StreamEditorProtocol:
     """Create the appropriate stream editor based on config."""
     from ductor_bot.config import StreamingConfig
 
     c = cfg or StreamingConfig()
     if c.append_mode:
-        return StreamEditor(bot, chat_id, reply_to=reply_to)
+        return StreamEditor(bot, chat_id, reply_to=reply_to, thread_id=thread_id)
     from ductor_bot.bot.edit_streaming import EditStreamEditor
 
     return EditStreamEditor(
         bot,
         chat_id,
         reply_to=reply_to,
-        edit_interval_seconds=c.edit_interval_seconds,
-        max_edit_failures=c.max_edit_failures,
+        cfg=c,
+        thread_id=thread_id,
     )

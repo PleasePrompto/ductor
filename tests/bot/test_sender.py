@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+from aiogram.exceptions import TelegramBadRequest
+
 
 class TestSendRich:
     """Test rich text sending with HTML conversion and file extraction."""
@@ -242,3 +244,98 @@ class TestSendFilesFromText:
         bot.send_photo = AsyncMock()
 
         await send_files_from_text(bot, chat_id=1, text=f"<file:{img}>")
+
+
+class TestForumTopicSupport:
+    """Test message_thread_id propagation through sender functions."""
+
+    async def test_send_rich_passes_thread_id(self) -> None:
+        from ductor_bot.bot.sender import send_rich
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        await send_rich(bot, chat_id=1, text="Hello", thread_id=77)
+        assert bot.send_message.call_args.kwargs["message_thread_id"] == 77
+
+    async def test_send_rich_thread_id_none_by_default(self) -> None:
+        from ductor_bot.bot.sender import send_rich
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        await send_rich(bot, chat_id=1, text="Hello")
+        assert bot.send_message.call_args.kwargs.get("message_thread_id") is None
+
+    async def test_send_rich_passes_thread_id_to_files(self, tmp_path: Path) -> None:
+        from ductor_bot.bot.sender import send_rich
+
+        doc = tmp_path / "data.csv"
+        doc.write_text("a,b")
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        bot.send_document = AsyncMock()
+        await send_rich(bot, chat_id=1, text=f"Here <file:{doc}>", thread_id=55)
+        assert bot.send_document.call_args.kwargs["message_thread_id"] == 55
+
+    async def test_send_file_passes_thread_id_to_document(self, tmp_path: Path) -> None:
+        from ductor_bot.bot.sender import send_file
+
+        doc = tmp_path / "test.pdf"
+        doc.write_bytes(b"%PDF")
+
+        bot = MagicMock()
+        bot.send_document = AsyncMock()
+        await send_file(bot, chat_id=1, path=doc, thread_id=55)
+        assert bot.send_document.call_args.kwargs["message_thread_id"] == 55
+
+    async def test_send_file_passes_thread_id_to_photo(self, tmp_path: Path) -> None:
+        from ductor_bot.bot.sender import send_file
+
+        img = tmp_path / "photo.jpg"
+        img.write_bytes(b"\xff\xd8\xff\xe0")
+
+        bot = MagicMock()
+        bot.send_photo = AsyncMock()
+        await send_file(bot, chat_id=1, path=img, thread_id=55)
+        assert bot.send_photo.call_args.kwargs["message_thread_id"] == 55
+
+    async def test_send_file_error_message_passes_thread_id(self) -> None:
+        from ductor_bot.bot.sender import send_file
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        await send_file(bot, chat_id=1, path=Path("/nonexistent.txt"), thread_id=33)
+        assert bot.send_message.call_args.kwargs["message_thread_id"] == 33
+
+    async def test_send_file_blocked_path_passes_thread_id(self, tmp_path: Path) -> None:
+        from ductor_bot.bot.sender import send_file
+
+        f = tmp_path / "secret.txt"
+        f.write_text("secret")
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        await send_file(bot, chat_id=1, path=f, allowed_roots=[Path("/nowhere")], thread_id=33)
+        assert bot.send_message.call_args.kwargs["message_thread_id"] == 33
+
+    async def test_send_files_from_text_passes_thread_id(self, tmp_path: Path) -> None:
+        from ductor_bot.bot.sender import send_files_from_text
+
+        f = tmp_path / "data.csv"
+        f.write_text("a,b")
+
+        bot = MagicMock()
+        bot.send_document = AsyncMock()
+        await send_files_from_text(bot, chat_id=1, text=f"<file:{f}>", thread_id=44)
+        assert bot.send_document.call_args.kwargs["message_thread_id"] == 44
+
+    async def test_html_fallback_preserves_thread_id(self) -> None:
+        from ductor_bot.bot.sender import send_rich
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock(
+            side_effect=[TelegramBadRequest(MagicMock(), "bad HTML"), None],
+        )
+        await send_rich(bot, chat_id=1, text="test", thread_id=88)
+        for call in bot.send_message.call_args_list:
+            assert call.kwargs["message_thread_id"] == 88

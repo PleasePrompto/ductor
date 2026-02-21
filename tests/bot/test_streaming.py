@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 from aiogram.enums import ParseMode
 from aiogram.types import Message
 
+from ductor_bot.bot.streaming import StreamEditor
+
 
 class TestStreamEditor:
     """Test append-mode streaming: chunks sent as new messages, no edits."""
@@ -249,3 +251,40 @@ class TestStreamEditorButtons:
         await editor.finalize("Content\n[button:Go]")
         bot.edit_message_reply_markup.assert_called_once()
         assert bot.edit_message_reply_markup.call_args.kwargs["message_id"] == 55
+
+
+class TestStreamEditorThreadId:
+    """Test thread_id propagation in append-mode streaming."""
+
+    async def test_thread_id_passed_to_send_message(self) -> None:
+        bot = MagicMock()
+        sent_msg = MagicMock(spec=Message)
+        bot.send_message = AsyncMock(return_value=sent_msg)
+
+        editor = StreamEditor(bot, chat_id=1, thread_id=77)
+        await editor.append_text("Hello")
+        assert bot.send_message.call_args.kwargs["message_thread_id"] == 77
+
+    async def test_thread_id_none_by_default(self) -> None:
+        bot = MagicMock()
+        sent_msg = MagicMock(spec=Message)
+        bot.send_message = AsyncMock(return_value=sent_msg)
+
+        editor = StreamEditor(bot, chat_id=1)
+        await editor.append_text("Hello")
+        assert bot.send_message.call_args.kwargs.get("message_thread_id") is None
+
+    async def test_second_message_uses_thread_id(self) -> None:
+        """When reply_to is used, answer() auto-propagates.
+        The second message via send_message must use thread_id.
+        """
+        bot = MagicMock()
+        reply_msg = MagicMock(spec=Message)
+        sent_msg = MagicMock(spec=Message)
+        reply_msg.answer = AsyncMock(return_value=sent_msg)
+        bot.send_message = AsyncMock(return_value=sent_msg)
+
+        editor = StreamEditor(bot, chat_id=1, reply_to=reply_msg, thread_id=77)
+        await editor.append_text("First")
+        await editor.append_text("Second")
+        assert bot.send_message.call_args.kwargs["message_thread_id"] == 77

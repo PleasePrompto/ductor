@@ -26,3 +26,22 @@ class TestCreateStreamEditor:
         cfg = StreamingConfig(append_mode=False)
         editor = create_stream_editor(bot, chat_id=1, cfg=cfg)
         assert isinstance(editor, EditStreamEditor)
+
+    def test_thread_id_passed_to_stream_editor(self) -> None:
+        from ductor_bot.bot.streaming import StreamEditor, create_stream_editor
+
+        bot = MagicMock()
+        cfg = StreamingConfig(append_mode=True)
+        editor = create_stream_editor(bot, chat_id=1, cfg=cfg, thread_id=42)
+        assert isinstance(editor, StreamEditor)
+        assert editor._thread_id == 42
+
+    def test_thread_id_passed_to_edit_stream_editor(self) -> None:
+        from ductor_bot.bot.edit_streaming import EditStreamEditor
+        from ductor_bot.bot.streaming import create_stream_editor
+
+        bot = MagicMock()
+        cfg = StreamingConfig(append_mode=False)
+        editor = create_stream_editor(bot, chat_id=1, cfg=cfg, thread_id=42)
+        assert isinstance(editor, EditStreamEditor)
+        assert editor._thread_id == 42

@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from aiogram import Bot
     from aiogram.types import Message
 
+    from ductor_bot.config import StreamingConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -106,14 +108,15 @@ class EditStreamEditor:
         chat_id: int,
         *,
         reply_to: Message | None = None,
-        edit_interval_seconds: float = 2.0,
-        max_edit_failures: int = 3,
+        cfg: StreamingConfig | None = None,
+        thread_id: int | None = None,
     ) -> None:
         self._bot = bot
         self._chat_id = chat_id
         self._reply_to = reply_to
-        self._interval = edit_interval_seconds
-        self._max_failures = max_edit_failures
+        self._interval = cfg.edit_interval_seconds if cfg else 2.0
+        self._max_failures = cfg.max_edit_failures if cfg else 3
+        self._thread_id = thread_id
         self._s = _EditorState()
 
     @property
@@ -297,6 +300,7 @@ class EditStreamEditor:
                     chat_id=self._chat_id,
                     text=display,
                     parse_mode=ParseMode.HTML,
+                    message_thread_id=self._thread_id,
                 )
             self._s.active_msg = msg
             self._s.messages_sent += 1
@@ -312,6 +316,7 @@ class EditStreamEditor:
                 chat_id=self._chat_id,
                 text=text[:TELEGRAM_MSG_LIMIT],
                 parse_mode=None,
+                message_thread_id=self._thread_id,
             )
             self._s.active_msg = msg
             self._s.messages_sent += 1
@@ -392,12 +397,14 @@ class EditStreamEditor:
                     chat_id=self._chat_id,
                     text=display,
                     parse_mode=ParseMode.HTML,
+                    message_thread_id=self._thread_id,
                 )
             except TelegramBadRequest:
                 await self._bot.send_message(
                     chat_id=self._chat_id,
                     text=display,
                     parse_mode=None,
+                    message_thread_id=self._thread_id,
                 )
             self._s.messages_sent += 1
 
