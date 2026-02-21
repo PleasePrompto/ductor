@@ -1,4 +1,4 @@
-# Webhook Tools
+# Webhook Tools (Codex & Gemini)
 
 Scripts for managing incoming HTTP webhook endpoints.
 
@@ -6,14 +6,15 @@ Scripts for managing incoming HTTP webhook endpoints.
 
 **When creating a webhook in `cron_task` mode, you MUST ask:**
 
-1. **Which model?**
-   - `gpt-5.2-codex` - Frontier agentic coding model (recommended)
-   - `gpt-5.3-codex` - Latest frontier agentic coding model
-   - `gpt-5.1-codex-max` - Optimized for deep and fast reasoning
-   - `gpt-5.2` - Latest frontier model
-   - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+1. **Which CLI provider?**
+   - `codex` - OpenAI Codex models with extended thinking
+   - `gemini` - Google Gemini models
 
-2. **Which thinking level?**
+2. **Which model?**
+   - **If Codex:** `gpt-5.2-codex` (recommended), `gpt-5.3-codex`, `gpt-5.1-codex-max`, `gpt-5.2`, `gpt-5.1-codex-mini`
+   - **If Gemini:** `flash` (fast), `pro` (capable), `flash-lite`, `auto`
+
+3. **If Codex: Which thinking level?**
    - `low` - Fast, surface-level reasoning
    - `medium` - Balanced (default)
    - `high` - Extended thinking

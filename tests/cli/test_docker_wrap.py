@@ -11,7 +11,7 @@ def test_docker_wrap_without_container() -> None:
     cmd = ["claude", "-p", "hello"]
     result_cmd, cwd = docker_wrap(cmd, "", 123, Path("/workspace"))
     assert result_cmd == cmd
-    assert cwd == "/workspace"
+    assert cwd == str(Path("/workspace"))
 
 
 def test_docker_wrap_with_container() -> None:

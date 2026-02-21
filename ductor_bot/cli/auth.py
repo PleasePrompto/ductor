@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum, unique
 from pathlib import Path
+from shutil import which
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -107,9 +108,26 @@ def check_codex_auth() -> AuthResult:
     return result
 
 
+def check_gemini_auth() -> AuthResult:
+    """Check Gemini CLI auth via command availability."""
+    has_cli = which("gemini") is not None or which("npx") is not None
+    has_key = "GEMINI_API_KEY" in os.environ
+
+    if has_key:
+        return AuthResult("gemini", AuthStatus.AUTHENTICATED)
+
+    if has_cli:
+        # If we have the CLI, we assume authenticated because it uses internal
+        # persistence (browser login). We'll know for sure during first call.
+        return AuthResult("gemini", AuthStatus.AUTHENTICATED)
+
+    return AuthResult("gemini", AuthStatus.NOT_FOUND)
+
+
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
+    "gemini": check_gemini_auth,
 }
 
 

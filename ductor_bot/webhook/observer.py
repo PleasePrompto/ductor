@@ -15,6 +15,7 @@ from ductor_bot.cron.execution import (
     indent,
     parse_claude_result,
     parse_codex_result,
+    parse_gemini_result,
 )
 from ductor_bot.utils.quiet_hours import check_quiet_hour
 from ductor_bot.webhook.models import WebhookResult, render_template
@@ -258,7 +259,7 @@ class WebhookObserver:
             task_overrides=task_overrides,
         )
 
-    async def _dispatch_cron_task(
+    async def _dispatch_cron_task(  # noqa: C901
         self,
         hook_id: str,
         title: str,
@@ -345,10 +346,17 @@ class WebhookObserver:
                 indent(enriched, "    "),
             )
 
+            stdin_mode = (
+                asyncio.subprocess.PIPE
+                if exec_config.provider == "gemini"
+                else asyncio.subprocess.DEVNULL
+            )
+            stdin_input = enriched.encode() if exec_config.provider == "gemini" else None
+
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=str(folder),
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=stdin_mode,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -356,7 +364,10 @@ class WebhookObserver:
             timed_out = False
             try:
                 async with asyncio.timeout(timeout):
-                    stdout, stderr = await proc.communicate()
+                    if exec_config.provider == "gemini":
+                        stdout, stderr = await proc.communicate(input=stdin_input)
+                    else:
+                        stdout, stderr = await proc.communicate()
             except TimeoutError:
                 timed_out = True
                 logger.warning("Webhook cron_task %s timed out after %.0fs", hook_id, timeout)
@@ -376,11 +387,12 @@ class WebhookObserver:
                 status = "error:timeout"
                 result_text = f"[Webhook cron_task timed out after {timeout:.0f}s]"
             else:
-                result_text = (
-                    parse_codex_result(stdout)
-                    if exec_config.provider == "codex"
-                    else parse_claude_result(stdout)
-                )
+                if exec_config.provider == "codex":
+                    result_text = parse_codex_result(stdout)
+                elif exec_config.provider == "gemini":
+                    result_text = parse_gemini_result(stdout)
+                else:
+                    result_text = parse_claude_result(stdout)
                 status = "success" if proc.returncode == 0 else f"error:exit_{proc.returncode}"
 
             logger.info(

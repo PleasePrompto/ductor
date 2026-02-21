@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Claude Code and Codex CLI as your personal Telegram assistant.</strong><br>
+  <strong>Claude Code, Codex, and Google Gemini CLI as your personal Telegram assistant.</strong><br>
   Persistent memory. Scheduled tasks. Live streaming. Docker sandboxing.<br>
   Uses only the official CLIs. Nothing spoofed, nothing proxied.
 </p>
@@ -68,9 +68,9 @@ I picked Python because it's easy to modify. The agents can write their own auto
 ### Core
 
 - Responses stream in real-time -ductor edits the Telegram message live as text arrives
-- Switch between Claude Code and Codex mid-conversation with `/model`
+- Switch between Claude Code, Codex, and Gemini mid-conversation with `/model`
 - Sessions survive bot restarts
-- `@opus explain this` temporarily switches model without changing your default
+- `@opus` or `@flash` temporarily switches model without changing your default
 - Send images, PDFs, voice messages, or videos -ductor routes them to the right tool
 - Agents can send `[button:Yes]` `[button:No]` inline keyboards back to you
 - Works in Telegram groups with forum topics -- replies land in the correct topic thread
@@ -133,8 +133,8 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 |---|---|
 | Python 3.11+ | `python3 --version` |
 | pipx | `pip install pipx` (recommended) or pip |
-| One CLI installed | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex CLI](https://github.com/openai/codex) |
-| CLI authenticated | `claude auth` or `codex auth` |
+| One CLI installed | [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex CLI](https://github.com/openai/codex), or [Gemini CLI](https://github.com/google-gemini/gemini-cli) |
+| CLI authenticated | `claude auth`, `codex auth`, or `gemini` (browser-based) |
 | Telegram Bot Token | From [@BotFather](https://t.me/BotFather) |
 | Your Telegram User ID | From [@userinfobot](https://t.me/userinfobot) |
 | Docker *(optional)* | Recommended for sandboxed execution |
@@ -156,7 +156,7 @@ ductor (aiogram)
 Orchestrator
     |
     ├── Command Router (/new, /model, /stop, ...)
-    ├── Message Flow -> CLIService -> claude / codex subprocess
+    ├── Message Flow -> CLIService -> claude / codex / gemini subprocess
     ├── CronObserver -> Scheduled task execution
     ├── HeartbeatObserver -> Periodic background checks
     ├── WebhookObserver -> HTTP endpoint server
@@ -181,6 +181,7 @@ Everything lives in `~/.ductor/`.
     webhooks.json                # Webhook endpoint definitions
     CLAUDE.md                    # Agent rules (auto-synced)
     AGENTS.md                    # Same rules for Codex (auto-synced)
+    GEMINI.md                    # Same rules for Gemini (auto-synced)
     logs/agent.log               # Rotating log file
     workspace/
         memory_system/
@@ -217,7 +218,8 @@ Configure provider-specific CLI parameters in `config.json`:
 {
   "cli_parameters": {
     "claude": [],
-    "codex": ["--chrome"]
+    "codex": ["--chrome"],
+    "gemini": []
   }
 }
 ```
@@ -273,15 +275,16 @@ All fields are optional and fall back to global config values if not specified.
 
 ## Disclaimer
 
-ductor runs the official CLI binaries from Anthropic and OpenAI. It does not modify API calls, spoof headers, forge tokens, or impersonate clients. Every request comes from the real CLI process.
+ductor runs the official CLI binaries from Anthropic, OpenAI, and Google. It does not modify API calls, spoof headers, forge tokens, or impersonate clients. Every request comes from the real CLI process.
 
 Terms of Service can change. Automating CLI interactions may be a gray area depending on how providers interpret their rules. We built ductor to follow intended usage patterns, but can't guarantee it won't lead to account restrictions.
 
 Use at your own risk. Check the current ToS before deploying:
 - [Anthropic Terms of Service](https://www.anthropic.com/policies/terms)
 - [OpenAI Terms of Use](https://openai.com/policies/terms-of-use)
+- [Google Generative AI Terms of Service](https://ai.google.dev/terms)
 
-Not affiliated with Anthropic or OpenAI.
+Not affiliated with Anthropic, OpenAI, or Google.
 
 ## Contributing
 

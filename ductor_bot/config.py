@@ -74,6 +74,7 @@ class CLIParametersConfig(BaseModel):
 
     claude: list[str] = Field(default_factory=list)
     codex: list[str] = Field(default_factory=list)
+    gemini: list[str] = Field(default_factory=list)
 
 
 class WebhookConfig(BaseModel):
@@ -222,6 +223,19 @@ def _detect_posix_timezone() -> ZoneInfo | None:
 
 
 _CLAUDE_MODELS: frozenset[str] = frozenset({"haiku", "sonnet", "opus"})
+_GEMINI_MODELS: frozenset[str] = frozenset(
+    {
+        "auto",
+        "pro",
+        "flash",
+        "flash-lite",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview",
+    }
+)
 
 _MODEL_EQUIVALENCE: dict[str, str] = {
     "opus": "gpt-5.2-codex",
@@ -239,6 +253,7 @@ class ModelRegistry:
     """Provider resolution for models.
 
     Claude models (haiku, sonnet, opus) are hardcoded.
+    Gemini models are hardcoded.
     Codex models are discovered dynamically at runtime.
     """
 
@@ -247,6 +262,8 @@ class ModelRegistry:
         """Return the provider for a model ID."""
         if model_id in _CLAUDE_MODELS:
             return "claude"
+        if model_id in _GEMINI_MODELS or model_id.startswith("gemini"):
+            return "gemini"
         return "codex"
 
     def resolve_for_provider(
@@ -276,6 +293,8 @@ class ModelRegistry:
         fallback_provider = next(iter(available_providers), None)
         if fallback_provider:
             fallback_model = "opus" if fallback_provider == "claude" else model_name
+            if fallback_provider == "gemini":
+                fallback_model = "auto"
             logger.warning(
                 "No equivalent for '%s', falling back to %s (%s)",
                 model_name,

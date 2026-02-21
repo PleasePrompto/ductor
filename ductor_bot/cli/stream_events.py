@@ -49,6 +49,16 @@ class ToolUseEvent(StreamEvent):
     """Tool invocation detected during streaming."""
 
     tool_name: str = ""
+    tool_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolResultEvent(StreamEvent):
+    """Tool execution result detected during streaming."""
+
+    tool_id: str | None = None
+    status: str = ""
+    output: str = ""
 
 
 class ThinkingEvent(StreamEvent):

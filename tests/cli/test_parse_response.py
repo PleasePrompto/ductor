@@ -5,19 +5,20 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ductor_bot.cli.claude_provider import _parse_response
+from ductor_bot.cli.claude_provider import _parse_response as parse_claude
 from ductor_bot.cli.codex_events import parse_codex_jsonl
+from ductor_bot.cli.gemini_provider import _parse_response as parse_gemini
 
 # -- Claude _parse_response --
 
 
-def test_parse_empty_stdout() -> None:
-    resp = _parse_response(b"", b"", 0)
+def test_parse_claude_empty_stdout() -> None:
+    resp = parse_claude(b"", b"", 0)
     assert resp.is_error is True
     assert resp.result == ""
 
 
-def test_parse_valid_json_response() -> None:
+def test_parse_claude_valid_json_response() -> None:
     data = {
         "session_id": "sess-abc",
         "result": "Hello world!",
@@ -29,7 +30,7 @@ def test_parse_valid_json_response() -> None:
         "usage": {"input_tokens": 500, "output_tokens": 200},
         "modelUsage": {"claude-opus-4-20250514": {"input_tokens": 500}},
     }
-    resp = _parse_response(json.dumps(data).encode(), b"", 0)
+    resp = parse_claude(json.dumps(data).encode(), b"", 0)
     assert resp.is_error is False
     assert resp.result == "Hello world!"
     assert resp.session_id == "sess-abc"
@@ -42,29 +43,71 @@ def test_parse_valid_json_response() -> None:
     assert resp.model_usage["claude-opus-4-20250514"]["input_tokens"] == 500
 
 
-def test_parse_error_response() -> None:
+def test_parse_claude_error_response() -> None:
     data = {"result": "Rate limit exceeded", "is_error": True}
-    resp = _parse_response(json.dumps(data).encode(), b"", 1)
+    resp = parse_claude(json.dumps(data).encode(), b"", 1)
     assert resp.is_error is True
     assert resp.result == "Rate limit exceeded"
 
 
+# -- Gemini _parse_response --
+
+
+def test_parse_gemini_valid_response() -> None:
+    data = {
+        "session_id": "sess-gemini",
+        "response": "Hello from Gemini!",
+        "stats": {"input_tokens": 100, "output_tokens": 50},
+    }
+    resp = parse_gemini(json.dumps(data).encode(), b"", 0)
+    assert resp.result == "Hello from Gemini!"
+    assert resp.session_id == "sess-gemini"
+    assert resp.is_error is False
+    assert resp.usage["input_tokens"] == 100
+    assert resp.usage["output_tokens"] == 50
+
+
+def test_parse_gemini_content_key() -> None:
+    data = {"content": "Content output"}
+    resp = parse_gemini(json.dumps(data).encode(), b"", 0)
+    assert resp.result == "Content output"
+
+
+def test_parse_gemini_output_key() -> None:
+    data = {"output": "Output text"}
+    resp = parse_gemini(json.dumps(data).encode(), b"", 0)
+    assert resp.result == "Output text"
+
+
+def test_parse_gemini_plain_text_fallback() -> None:
+    resp = parse_gemini(b"Just plain text", b"", 0)
+    assert resp.result == "Just plain text"
+    assert resp.is_error is False
+
+
+def test_parse_gemini_error_code() -> None:
+    resp = parse_gemini(b"Error occurred", b"stderr details", 1)
+    assert resp.result == "Error occurred"
+    assert resp.is_error is True
+    assert "stderr details" in resp.stderr
+
+
 def test_parse_invalid_json_stdout() -> None:
-    resp = _parse_response(b"This is not JSON at all", b"", 1)
+    resp = parse_claude(b"This is not JSON at all", b"", 1)
     assert resp.is_error is True
     assert "This is not JSON" in resp.result
 
 
 def test_parse_stderr_captured() -> None:
     data = {"result": "OK", "is_error": False}
-    resp = _parse_response(json.dumps(data).encode(), b"some warning text", 0)
+    resp = parse_claude(json.dumps(data).encode(), b"some warning text", 0)
     assert resp.is_error is False
     assert resp.result == "OK"
 
 
 def test_parse_missing_fields_use_defaults() -> None:
     data: dict[str, Any] = {}
-    resp = _parse_response(json.dumps(data).encode(), b"", 0)
+    resp = parse_claude(json.dumps(data).encode(), b"", 0)
     assert resp.result == ""
     assert resp.is_error is False
     assert resp.session_id is None
@@ -73,7 +116,7 @@ def test_parse_missing_fields_use_defaults() -> None:
 
 def test_parse_returncode_captured() -> None:
     data = {"result": "done", "is_error": False}
-    resp = _parse_response(json.dumps(data).encode(), b"", 42)
+    resp = parse_claude(json.dumps(data).encode(), b"", 42)
     assert resp.returncode == 42
 
 

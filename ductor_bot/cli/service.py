@@ -85,14 +85,15 @@ class CLIServiceConfig:
     docker_container: str = ""
     claude_cli_parameters: tuple[str, ...] = ()
     codex_cli_parameters: tuple[str, ...] = ()
+    gemini_cli_parameters: tuple[str, ...] = ()
 
     def cli_parameters_for_provider(self, provider: str) -> list[str]:
         """Return CLI parameters for the given provider."""
-        return (
-            list(self.codex_cli_parameters)
-            if provider == "codex"
-            else list(self.claude_cli_parameters)
-        )
+        if provider == "codex":
+            return list(self.codex_cli_parameters)
+        if provider == "gemini":
+            return list(self.gemini_cli_parameters)
+        return list(self.claude_cli_parameters)
 
 
 class CLIService:
