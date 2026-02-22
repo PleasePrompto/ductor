@@ -258,6 +258,19 @@ class TestOnHelp:
         assert "/help" in text
 
     @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
+    async def test_help_lists_all_registered_commands(self, mock_send: AsyncMock) -> None:
+        from ductor_bot.commands import BOT_COMMANDS
+
+        tg_bot, _bot_instance = _make_tg_bot()
+        msg = _make_message(chat_id=42)
+
+        await tg_bot._on_help(msg)
+
+        text = mock_send.call_args[0][2]
+        for command, _desc in BOT_COMMANDS:
+            assert f"/{command}" in text
+
+    @patch("ductor_bot.bot.app.send_rich", new_callable=AsyncMock)
     async def test_help_passes_reply_to(self, mock_send: AsyncMock) -> None:
         tg_bot, _ = _make_tg_bot()
         msg = _make_message()

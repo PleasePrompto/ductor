@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -14,6 +15,7 @@ from ductor_bot.config import update_config_file_async
 if TYPE_CHECKING:
     from ductor_bot.cli.codex_cache import CodexModelCache
     from ductor_bot.orchestrator.core import Orchestrator
+    from ductor_bot.session import SessionData
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,66 @@ _EFFORT_LABELS: dict[str, str] = {
     "high": "High",
     "xhigh": "XHigh",
 }
+
+
+@dataclass(frozen=True)
+class _SwitchSummaryContext:
+    old_model: str
+    new_model: str
+    old_provider: str
+    new_provider: str
+    provider_changed: bool
+    reasoning_effort: str | None
+    effort_only: bool
+    resume_session_id: str
+    resume_message_count: int
+
+
+def _resume_state_for_provider(session: SessionData | None, provider: str) -> tuple[str, int]:
+    """Return (session_id, message_count) for provider if resumable history exists."""
+    if session is None:
+        return "", 0
+    provider_data = session.provider_sessions.get(provider)
+    if provider_data is None or provider_data.message_count <= 0:
+        return "", 0
+    return provider_data.session_id, provider_data.message_count
+
+
+def _format_resume_hint(session_id: str, message_count: int, model_id: str) -> str:
+    """Build post-switch resume hint text."""
+    message_label = "message" if message_count == 1 else "messages"
+    sid_display = session_id or "pending"
+    return (
+        "\n"
+        f"Resuming session `{sid_display}`.\n"
+        f"You have already sent {message_count} {message_label} in this provider session.\n"
+        f"Current model: `{model_id}`.\n"
+        "Use /new to start a fresh session."
+    )
+
+
+def _build_switch_summary(ctx: _SwitchSummaryContext) -> str:
+    """Build user-facing model switch summary text."""
+    parts: list[str] = ["**Model switched.**"]
+    if ctx.old_model == ctx.new_model:
+        parts.append(f"Model: {ctx.new_model}")
+    else:
+        parts.append(f"Model: {ctx.old_model} -> {ctx.new_model}")
+    if ctx.provider_changed:
+        parts.append(f"Provider: {ctx.old_provider} -> {ctx.new_provider}")
+    if ctx.reasoning_effort:
+        parts.append(f"Reasoning: {ctx.reasoning_effort}")
+    if ctx.old_model != ctx.new_model and ctx.resume_message_count > 0:
+        parts.append(
+            _format_resume_hint(
+                ctx.resume_session_id,
+                ctx.resume_message_count,
+                ctx.new_model,
+            )
+        )
+    if ctx.effort_only:
+        parts.append("\nReasoning effort updated.")
+    return "\n".join(parts)
 
 
 def is_model_selector_callback(data: str) -> bool:
@@ -119,7 +181,7 @@ async def switch_model(
     *,
     reasoning_effort: str | None = None,
 ) -> str:
-    """Execute model switch: kill processes, reset session, persist config.
+    """Execute model switch: kill processes, preserve sessions, persist config.
 
     Shared by ``/model <name>`` text command and the wizard callbacks.
     """
@@ -134,9 +196,20 @@ async def switch_model(
     new_provider = orch._models.provider_for(model_id)
     provider_changed = old_provider != new_provider
 
+    active_session = await orch._sessions.get_active(chat_id)
+    resume_session_id, resume_message_count = _resume_state_for_provider(
+        active_session,
+        new_provider,
+    )
+
     if not same_model:
         await orch._process_registry.kill_all(chat_id)
-        await orch._sessions.reset_session(chat_id, provider=new_provider, model=model_id)
+        if active_session is not None:
+            await orch._sessions.sync_session_target(
+                active_session,
+                provider=new_provider,
+                model=model_id,
+            )
 
     orch._config.model = model_id
     orch._cli_service.update_default_model(model_id)
@@ -154,20 +227,19 @@ async def switch_model(
 
     logger.info("Model switch model=%s provider=%s", model_id, orch._config.provider)
 
-    parts: list[str] = ["**Model switched.**"]
-    if same_model:
-        parts.append(f"Model: {model_id}")
-    else:
-        parts.append(f"Model: {old} -> {model_id}")
-    if provider_changed:
-        parts.append(f"Provider: {old_provider} -> {new_provider}")
-    if reasoning_effort:
-        parts.append(f"Reasoning: {reasoning_effort}")
-    if not same_model:
-        parts.append("\nSession reset. Send a message to continue.")
-    elif effort_only:
-        parts.append("\nReasoning effort updated.")
-    return "\n".join(parts)
+    return _build_switch_summary(
+        _SwitchSummaryContext(
+            old_model=old,
+            new_model=model_id,
+            old_provider=old_provider,
+            new_provider=new_provider,
+            provider_changed=provider_changed,
+            reasoning_effort=reasoning_effort,
+            effort_only=effort_only,
+            resume_session_id=resume_session_id,
+            resume_message_count=resume_message_count,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------

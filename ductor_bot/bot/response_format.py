@@ -12,11 +12,25 @@ def fmt(*blocks: str) -> str:
 
 # -- Shared response texts (eliminate duplication between handlers.py / commands.py) --
 
-NEW_SESSION_TEXT = fmt(
-    "**Session Reset**",
+SESSION_ERROR_TEXT = fmt(
+    "**Session Error**",
     SEP,
-    "Everything cleared -- ready to go.\nSend a message to start your new session.",
+    "[{model}] An error occurred.\n"
+    "Your session has been preserved -- send another message to retry.\n"
+    "Use /new to start a fresh session if the problem persists.",
 )
+
+
+def new_session_text(provider: str) -> str:
+    """Build /new response for provider-local reset."""
+    provider_label = {"claude": "Claude", "codex": "Codex"}.get(provider.lower(), provider)
+    return fmt(
+        "**Session Reset**",
+        SEP,
+        f"Session reset for {provider_label} in this chat only.\n"
+        "Other provider sessions were preserved.\n"
+        "Send a message to continue.",
+    )
 
 
 def stop_text(killed: bool, provider: str) -> str:

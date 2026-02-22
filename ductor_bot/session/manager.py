@@ -7,7 +7,8 @@ import json
 import logging
 import os
 import tempfile
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -17,25 +18,167 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SessionData:
-    """Active session state."""
+class ProviderSessionData:
+    """Provider-local session state."""
 
-    session_id: str
-    chat_id: int
-    provider: str = "claude"
-    model: str = "opus"
-    created_at: str = ""
-    last_active: str = ""
+    session_id: str = ""
     message_count: int = 0
     total_cost_usd: float = 0.0
     total_tokens: int = 0
 
-    def __post_init__(self) -> None:
+
+@dataclass(init=False)
+class SessionData:
+    """Active session state with provider-isolated IDs and metrics."""
+
+    chat_id: int
+    provider: str
+    model: str
+    created_at: str
+    last_active: str
+    provider_sessions: dict[str, ProviderSessionData] = field(default_factory=dict)
+
+    def __init__(  # noqa: PLR0913
+        self,
+        chat_id: int,
+        provider: str = "claude",
+        model: str = "opus",
+        created_at: str = "",
+        last_active: str = "",
+        provider_sessions: Mapping[str, object] | None = None,
+        *,
+        # Backward compatibility for old JSON/tests.
+        session_id: str | None = None,
+        message_count: int | None = None,
+        total_cost_usd: float | None = None,
+        total_tokens: int | None = None,
+    ) -> None:
+        self.chat_id = chat_id
+        self.provider = provider
+        self.model = model
+
         now = datetime.now(UTC).isoformat()
-        if not self.created_at:
-            self.created_at = now
-        if not self.last_active:
-            self.last_active = now
+        self.created_at = created_at or now
+        self.last_active = last_active or now
+
+        migrated = self._coerce_provider_sessions(provider_sessions)
+        has_legacy_fields = any(
+            value is not None for value in (session_id, message_count, total_cost_usd, total_tokens)
+        )
+        if provider_sessions is None and has_legacy_fields:
+            migrated[self.provider] = ProviderSessionData(
+                session_id=session_id or "",
+                message_count=message_count or 0,
+                total_cost_usd=total_cost_usd or 0.0,
+                total_tokens=total_tokens or 0,
+            )
+        self.provider_sessions = migrated
+
+    @property
+    def session_id(self) -> str:
+        """Session ID for the currently active provider."""
+        current = self.provider_sessions.get(self.provider)
+        return current.session_id if current is not None else ""
+
+    @session_id.setter
+    def session_id(self, value: str) -> None:
+        self._current_provider_data().session_id = value
+
+    @property
+    def message_count(self) -> int:
+        """Message count for the currently active provider."""
+        current = self.provider_sessions.get(self.provider)
+        return current.message_count if current is not None else 0
+
+    @message_count.setter
+    def message_count(self, value: int) -> None:
+        self._current_provider_data().message_count = value
+
+    @property
+    def total_cost_usd(self) -> float:
+        """Total cost for the currently active provider."""
+        current = self.provider_sessions.get(self.provider)
+        return current.total_cost_usd if current is not None else 0.0
+
+    @total_cost_usd.setter
+    def total_cost_usd(self, value: float) -> None:
+        self._current_provider_data().total_cost_usd = value
+
+    @property
+    def total_tokens(self) -> int:
+        """Total token usage for the currently active provider."""
+        current = self.provider_sessions.get(self.provider)
+        return current.total_tokens if current is not None else 0
+
+    @total_tokens.setter
+    def total_tokens(self, value: int) -> None:
+        self._current_provider_data().total_tokens = value
+
+    def _current_provider_data(self) -> ProviderSessionData:
+        """Get/create provider-local state for the active provider."""
+        current = self.provider_sessions.get(self.provider)
+        if current is None:
+            current = ProviderSessionData()
+            self.provider_sessions[self.provider] = current
+        return current
+
+    def clear_all_sessions(self) -> None:
+        """Drop all provider-local sessions and metrics."""
+        self.provider_sessions.clear()
+
+    def clear_provider_session(self, provider: str) -> None:
+        """Drop one provider-local session and metrics."""
+        self.provider_sessions.pop(provider, None)
+
+    @staticmethod
+    def _coerce_provider_sessions(
+        raw: Mapping[str, object] | None,
+    ) -> dict[str, ProviderSessionData]:
+        """Normalize serialized provider state to dataclass instances."""
+        if not raw:
+            return {}
+        out: dict[str, ProviderSessionData] = {}
+        for provider, value in raw.items():
+            if isinstance(value, ProviderSessionData):
+                out[provider] = value
+                continue
+            if not isinstance(value, dict):
+                continue
+            out[provider] = ProviderSessionData(
+                session_id=str(value.get("session_id", "") or ""),
+                message_count=SessionData._safe_int(value.get("message_count", 0)),
+                total_cost_usd=SessionData._safe_float(value.get("total_cost_usd", 0.0)),
+                total_tokens=SessionData._safe_int(value.get("total_tokens", 0)),
+            )
+        return out
+
+    @staticmethod
+    def _safe_int(value: object) -> int:
+        """Best-effort integer conversion for legacy/corrupt payloads."""
+        if isinstance(value, bool):
+            return int(value)
+        candidate: str | int | float = value if isinstance(value, (int, float, str)) else str(value)
+        try:
+            return int(candidate)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _safe_float(value: object) -> float:
+        """Best-effort float conversion for legacy/corrupt payloads."""
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return 0.0
+        try:
+            return float(str(value))
+        except (TypeError, ValueError):
+            return 0.0
 
 
 class SessionManager:
@@ -62,26 +205,23 @@ class SessionManager:
         model_name = model or self._config.model
 
         if existing and self._is_fresh(existing):
-            if provider and existing.provider != prov:
-                logger.info("Provider switch %s -> %s, resetting session", existing.provider, prov)
-                existing.session_id = ""
+            changed = False
+            if existing.provider != prov:
+                logger.info("Provider switch %s -> %s", existing.provider, prov)
                 existing.provider = prov
-                existing.model = model_name
-                existing.message_count = 0
-                await self._save(sessions)
-                return existing, True
+                changed = True
             if existing.model != model_name:
                 existing.model = model_name
+                changed = True
+            if changed:
                 await self._save(sessions)
-            if not existing.session_id:
-                return existing, True
-            return existing, False
+            return existing, not bool(existing.session_id)
 
         new = SessionData(
-            session_id="",
             chat_id=chat_id,
             provider=prov,
             model=model_name,
+            provider_sessions={},
         )
         sessions[key] = new
         await self._save(sessions)
@@ -105,15 +245,42 @@ class SessionManager:
         prov = provider or self._config.provider
         model_name = model or self._config.model
         new = SessionData(
-            session_id="",
             chat_id=chat_id,
             provider=prov,
             model=model_name,
+            provider_sessions={},
         )
         sessions[str(chat_id)] = new
         await self._save(sessions)
         logger.info("Session reset")
         return new
+
+    async def reset_provider_session(
+        self,
+        chat_id: int,
+        provider: str,
+        model: str,
+    ) -> SessionData:
+        """Reset only one provider-local session and keep all others intact."""
+        sessions = await self._load()
+        key = str(chat_id)
+        current = sessions.get(key)
+        if current is None:
+            current = SessionData(
+                chat_id=chat_id,
+                provider=provider,
+                model=model,
+                provider_sessions={},
+            )
+        else:
+            current.clear_provider_session(provider)
+            current.provider = provider
+            current.model = model
+            current.last_active = datetime.now(UTC).isoformat()
+        sessions[key] = current
+        await self._save(sessions)
+        logger.info("Provider session reset provider=%s model=%s", provider, model)
+        return current
 
     async def update_session(
         self,
@@ -135,7 +302,7 @@ class SessionManager:
             else:
                 # Apply mutable identity fields from caller, but keep counters
                 # from the latest persisted record to avoid stale overwrites.
-                current.session_id = session.session_id
+                self._merge_provider_sessions(current, session)
                 current.provider = session.provider
                 current.model = session.model
 
@@ -147,10 +314,47 @@ class SessionManager:
             await self._save(sessions)
 
             # Keep caller reference in sync with persisted aggregate values.
+            session.provider = current.provider
+            session.model = current.model
             session.last_active = current.last_active
+            session.provider_sessions = self._clone_provider_sessions(current.provider_sessions)
             session.message_count = current.message_count
             session.total_cost_usd = current.total_cost_usd
             session.total_tokens = current.total_tokens
+
+    @staticmethod
+    def _clone_provider_sessions(
+        provider_sessions: dict[str, ProviderSessionData],
+    ) -> dict[str, ProviderSessionData]:
+        """Deep-clone provider-local state to avoid shared mutable references."""
+        return {
+            provider: ProviderSessionData(
+                session_id=data.session_id,
+                message_count=data.message_count,
+                total_cost_usd=data.total_cost_usd,
+                total_tokens=data.total_tokens,
+            )
+            for provider, data in provider_sessions.items()
+        }
+
+    @staticmethod
+    def _merge_provider_sessions(current: SessionData, incoming: SessionData) -> None:
+        """Merge provider state while preventing stale snapshots from regressing counters."""
+        for provider, data in incoming.provider_sessions.items():
+            existing = current.provider_sessions.get(provider)
+            if existing is None:
+                current.provider_sessions[provider] = ProviderSessionData(
+                    session_id=data.session_id,
+                    message_count=data.message_count,
+                    total_cost_usd=data.total_cost_usd,
+                    total_tokens=data.total_tokens,
+                )
+                continue
+            if data.session_id:
+                existing.session_id = data.session_id
+            existing.message_count = max(existing.message_count, data.message_count)
+            existing.total_cost_usd = max(existing.total_cost_usd, data.total_cost_usd)
+            existing.total_tokens = max(existing.total_tokens, data.total_tokens)
 
     async def sync_session_target(
         self,

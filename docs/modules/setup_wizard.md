@@ -8,7 +8,10 @@ Interactive onboarding, CLI lifecycle commands, and the in-bot auto-update syste
 - `ductor_bot/cli/init_wizard.py`: onboarding wizard (banner, disclaimer, prompts, config write), smart reset.
 - `ductor_bot/infra/version.py`: PyPI version check, `VersionInfo` model.
 - `ductor_bot/infra/updater.py`: `UpdateObserver` background task, `perform_upgrade()`, upgrade sentinel.
-- `ductor_bot/infra/service.py`: systemd user-service installation and management commands.
+- `ductor_bot/infra/service.py`: platform-dispatching service wrapper (Linux systemd / macOS launchd / Windows Task Scheduler).
+- `ductor_bot/infra/service_linux.py`: Linux systemd backend.
+- `ductor_bot/infra/service_macos.py`: macOS launchd backend.
+- `ductor_bot/infra/service_windows.py`: Windows Task Scheduler backend.
 - `ductor_bot/orchestrator/commands.py`: `/upgrade` Telegram command.
 
 ## CLI Commands
@@ -23,11 +26,24 @@ Interactive onboarding, CLI lifecycle commands, and the in-bot auto-update syste
 | `ductor upgrade` | Stop bot, upgrade package (`pipx` or `pip`), re-exec. On dev/source installs: show `git pull` guidance instead of self-upgrade. |
 | `ductor uninstall` | Full removal: stop bot, remove Docker, delete `~/.ductor/`, uninstall package. |
 | `ductor status` | Show running state, provider/model, Docker, error count, all paths. |
-| `ductor service ...` | Manage Linux systemd user service (`install`, `status`, `start`, `stop`, `logs`, `uninstall`). |
+| `ductor service ...` | Manage background service (`install`, `status`, `start`, `stop`, `logs`, `uninstall`) using systemd on Linux, launchd on macOS, or Task Scheduler on Windows. |
 | `ductor help` | Command reference + status panel (if configured). |
 | `-v`, `--verbose` | Verbose logging (combinable with any command). |
 
-Dispatch uses `_COMMANDS` dict mapping strings to action names. `--help` / `-h` map to `help`. Unknown commands fall through to default (auto-onboard + start).
+`ductor help` uses a platform-specific service hint:
+
+- Windows: `Task Scheduler`
+- macOS: `launchd`
+- Linux: `systemd`
+
+Dispatch behavior:
+
+- `_COMMANDS` maps CLI tokens to action names.
+- `main()` keeps command arguments as an ordered list (not a set) and resolves the first matching command from left to right.
+- `--help` / `-h` append `help`.
+- unknown commands fall through to default (auto-onboard + start).
+
+Ordering matters for mixed commands like `ductor service uninstall`: it must resolve to `service` and not trigger the global bot uninstaller.
 
 ## Onboarding Wizard (`run_onboarding`)
 
@@ -41,7 +57,13 @@ Interactive flow using Rich panels and Questionary prompts:
 6. **Docker Detection** -- if `docker` binary found, offer to enable sandboxing (default: yes). If not found, show info panel and skip.
 7. **Timezone Selection** -- grouped list of common IANA zones + manual entry option. Validated via `zoneinfo.ZoneInfo`.
 8. **Write Config** -- merges wizard values into `AgentConfig` defaults, writes `config.json`, runs `init_workspace()`.
-9. **Success Panel** -- shows all file paths (Home, Config, Workspace, Logs), then either installs service (Linux/systemd path) or returns control to caller.
+9. **Success Panel** -- shows all file paths (Home, Config, Workspace, Logs), then either installs service (systemd on Linux, launchd on macOS, Task Scheduler on Windows) or returns control to caller.
+
+Service prompt wording is platform-specific:
+
+- Linux: "systemd service" + start on "boot"
+- macOS: "launch agent" + start on "login"
+- Windows: "scheduled task" + start on "login"
 
 Return value semantics:
 

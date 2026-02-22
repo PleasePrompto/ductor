@@ -259,7 +259,9 @@ def _print_usage() -> None:
     table.add_row("ductor reset", "Full reset and re-setup")
     table.add_row("ductor upgrade", "Stop, upgrade to latest, restart")
     table.add_row("ductor uninstall", "Remove everything and uninstall")
-    table.add_row("ductor service install", "Run as background service (systemd)")
+    is_macos = sys.platform == "darwin"
+    svc_hint = "Task Scheduler" if _IS_WINDOWS else ("launchd" if is_macos else "systemd")
+    table.add_row("ductor service install", f"Run as background service ({svc_hint})")
     table.add_row("ductor service", "Service management (status/stop/logs/...)")
     table.add_row("ductor status", "Show bot status, paths, and stats")
     table.add_row("ductor help", "Show this message")
@@ -595,7 +597,9 @@ def _cmd_setup(verbose: bool) -> None:
     paths = resolve_paths()
     if _is_configured():
         run_smart_reset(paths.ductor_home)
-    run_onboarding()
+    service_installed = run_onboarding()
+    if service_installed:
+        return
     _start_bot(verbose)
 
 
@@ -689,11 +693,11 @@ def _default_action(verbose: bool) -> None:
 def main() -> None:
     """CLI entry point."""
     args = sys.argv[1:]
-    commands = {a for a in args if not a.startswith("-")}
+    commands = [a for a in args if not a.startswith("-")]
     verbose = "--verbose" in args or "-v" in args
 
     if "--help" in args or "-h" in args:
-        commands.add("help")
+        commands.append("help")
 
     # Resolve first matching command
     action = next((_COMMANDS[c] for c in commands if c in _COMMANDS), None)

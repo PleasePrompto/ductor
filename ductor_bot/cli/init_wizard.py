@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -22,6 +23,7 @@ from ductor_bot.workspace.init import init_workspace
 from ductor_bot.workspace.paths import resolve_paths
 
 _BANNER_PATH = Path(__file__).resolve().parent.parent / "_banner.txt"
+logger = logging.getLogger(__name__)
 
 
 def _load_banner() -> str:
@@ -294,16 +296,30 @@ def _ask_timezone(console: Console) -> str:
 
 def _offer_service_install(console: Console) -> bool:
     """Ask whether to install ductor as a background service."""
-    if shutil.which("systemctl") is None:
+    from ductor_bot.infra.service import is_service_available
+
+    if not is_service_available():
         return False
+
+    is_windows = sys.platform == "win32"
+    is_macos = sys.platform == "darwin"
+    if is_windows:
+        mechanism = "scheduled task"
+        trigger = "login"
+    elif is_macos:
+        mechanism = "launch agent"
+        trigger = "login"
+    else:
+        mechanism = "systemd service"
+        trigger = "boot"
 
     console.print(
         Panel(
-            "[bold]Run ductor as a background service?[/bold]\n\n"
-            "This creates a systemd service that:\n\n"
-            "  - Starts ductor on boot\n"
+            f"[bold]Run ductor as a background service?[/bold]\n\n"
+            f"This creates a {mechanism} that:\n\n"
+            f"  - Starts ductor on {trigger}\n"
             "  - Restarts automatically on crash\n"
-            "  - Keeps running after you log out\n\n"
+            "  - Keeps running in the background\n\n"
             "[dim]Recommended for VPS or always-on setups.[/dim]",
             title="[bold]Background Service[/bold]",
             border_style="blue",
@@ -334,7 +350,11 @@ def _write_config(
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     if config_path.exists():
-        existing: dict[str, object] = json.loads(config_path.read_text(encoding="utf-8"))
+        try:
+            existing: dict[str, object] = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Ignoring invalid config file during onboarding: %s", config_path)
+            existing = {}
     else:
         existing = {}
 
@@ -360,7 +380,7 @@ def _write_config(
 
 
 def run_onboarding() -> bool:
-    """Run the interactive onboarding wizard. Returns True on completion."""
+    """Run onboarding and return True only when service install succeeded."""
     console = Console()
     console.print()
     _show_banner(console)
@@ -411,12 +431,13 @@ def run_onboarding() -> bool:
     )
     console.print()
 
+    service_installed = False
     if run_as_service:
         from ductor_bot.infra.service import install_service
 
-        install_service(console)
+        service_installed = install_service(console)
 
-    return run_as_service
+    return service_installed
 
 
 def run_smart_reset(ductor_home: Path) -> None:

@@ -193,7 +193,7 @@ ductor builds the image on first use. The container sticks around between calls 
 
 ductor runs in the foreground by default. For always-on setups, you need something to keep it running after you close the terminal.
 
-### Linux (systemd) -- recommended
+### Built-in service manager (recommended on Linux, macOS, and native Windows)
 
 The setup wizard offers this automatically. You can also do it manually:
 
@@ -201,7 +201,13 @@ The setup wizard offers this automatically. You can also do it manually:
 ductor service install
 ```
 
-This creates a systemd user service that starts on boot, restarts on crash, and keeps running after you log out. No manual config files needed.
+This creates:
+
+- a **systemd user service** on Linux
+- a **launchd user Launch Agent** on macOS
+- a **Task Scheduler task** on native Windows
+
+Both start automatically (boot/login), restart on failure, and can be controlled with the same `ductor service ...` commands.
 
 Management commands:
 
@@ -209,48 +215,22 @@ Management commands:
 ductor service status      # Is it running?
 ductor service stop        # Stop the service
 ductor service start       # Start it again
-ductor service logs        # Live log output (Ctrl+C to stop)
+ductor service logs        # View service logs (Linux streams live; macOS/Windows show recent lines)
 ductor service uninstall   # Remove the service completely
 ```
 
-Under the hood this creates `~/.config/systemd/user/ductor.service` and enables linger so the service survives SSH logout. Linger requires sudo once (`sudo loginctl enable-linger $USER`), which the installer handles.
+Linux details: creates `~/.config/systemd/user/ductor.service` and enables linger so the service survives logout (`sudo loginctl enable-linger $USER`, handled by installer when possible).
 
-### macOS (launchd)
+macOS details: creates `~/Library/LaunchAgents/dev.ductor.plist` (`launchd`), sets crash-only restart policy (`KeepAlive.SuccessfulExit=false`), and writes service logs to `~/.ductor/logs/service.log` and `~/.ductor/logs/service.err`.
 
-macOS doesn't have systemd. Use a launch agent:
+Current CLI behavior note: `ductor service logs` on macOS/Windows prints recent lines from the newest `~/.ductor/logs/ductor*.log` file.
 
-```bash
-mkdir -p ~/Library/LaunchAgents
+Windows details: creates a Task Scheduler task named `ductor` via `schtasks.exe`, starts it 10 seconds after login, and prefers `pythonw.exe -m ductor_bot` to avoid opening a console window (falls back to `ductor.exe` if `pythonw.exe` is unavailable).
 
-cat > ~/Library/LaunchAgents/dev.ductor.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>dev.ductor</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/ductor</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/ductor.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/ductor.err</string>
-</dict>
-</plist>
-EOF
-```
+If `ductor service install` on native Windows returns access denied, run your terminal as Administrator and retry:
 
-Adjust the path to `ductor` if pipx installed it somewhere else (`which ductor`). Then:
-
-```bash
-launchctl load ~/Library/LaunchAgents/dev.ductor.plist     # Start
-launchctl unload ~/Library/LaunchAgents/dev.ductor.plist   # Stop
+```powershell
+ductor service install
 ```
 
 ### Windows (WSL)
@@ -327,7 +307,7 @@ claude auth
 ductor
 ```
 
-The wizard asks whether to install the systemd service. If you skip it, run `ductor service install` later.
+The wizard asks whether to install the background service. If you skip it, run `ductor service install` later.
 
 ### Security basics
 

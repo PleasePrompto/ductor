@@ -396,17 +396,17 @@ class TestHookApplication:
 
 
 # ---------------------------------------------------------------------------
-# Test 6: Error recovery (retry + reset)
+# Test 6: Error recovery (no auto-retry, no auto-reset)
 # ---------------------------------------------------------------------------
 
 
 class TestErrorRecovery:
-    async def test_single_retry_on_cli_error(
+    async def test_user_retry_after_cli_error(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
     ) -> None:
         orch, mock_execute = orch_with_mock_cli
 
-        # Establish a session first so resume_session is set (retry only works on resume)
+        # Establish a resumable session, then fail once and retry via next message.
         first_resp = _make_agent_response(result="Setup", session_id="sess-retry")
         error_resp = _make_agent_response(result="CLI failed", is_error=True)
         success_resp = _make_agent_response(result="Recovered!")
@@ -414,27 +414,31 @@ class TestErrorRecovery:
         mock_execute.side_effect = [first_resp, error_resp, success_resp]
 
         await orch.handle_message(CHAT_ID, "Setup message")
-        result = await orch.handle_message(CHAT_ID, "Flaky request")
+        first_result = await orch.handle_message(CHAT_ID, "Flaky request")
+        second_result = await orch.handle_message(CHAT_ID, "Retry request")
 
-        assert result.text == "Recovered!"
-        assert mock_execute.await_count == 3  # 1 setup + 1 fail + 1 retry
+        assert "Session Error" in first_result.text
+        assert second_result.text == "Recovered!"
+        assert mock_execute.await_count == 3
 
-    async def test_double_failure_resets_session(
+    async def test_error_preserves_existing_session(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
     ) -> None:
         orch, mock_execute = orch_with_mock_cli
 
+        setup_resp = _make_agent_response(result="Setup", session_id="sess-keep")
         error_resp = _make_agent_response(result="", is_error=True)
-        mock_execute.return_value = error_resp
+        mock_execute.side_effect = [setup_resp, error_resp]
 
+        await orch.handle_message(CHAT_ID, "Setup message")
         result = await orch.handle_message(CHAT_ID, "Broken request")
 
-        assert "Session error" in result.text
+        assert "Session Error" in result.text
 
         session = await orch._sessions.get_active(CHAT_ID)
         assert session is not None
-        assert session.session_id == ""
-        assert session.message_count == 0
+        assert session.session_id == "sess-keep"
+        assert session.message_count == 1
 
     async def test_cli_exception_returns_error_message(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
@@ -484,7 +488,7 @@ class TestStreamingFlow:
         assert call_kwargs["on_text_delta"] is not None
         assert result.text == "Streamed result"
 
-    async def test_streaming_error_triggers_reset(
+    async def test_streaming_error_preserves_session(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
     ) -> None:
         orch, _ = orch_with_mock_cli
@@ -494,7 +498,7 @@ class TestStreamingFlow:
 
         result = await orch.handle_message_streaming(CHAT_ID, "Broken stream")
 
-        assert "Session error" in result.text
+        assert "Session Error" in result.text
 
     async def test_streaming_passes_tool_activity_callback(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]

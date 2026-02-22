@@ -9,6 +9,8 @@ import logging
 from dataclasses import dataclass
 from shutil import which
 
+from ductor_bot.cli.base import _CREATION_FLAGS
+
 logger = logging.getLogger(__name__)
 
 _INIT_MSG = json.dumps(
@@ -66,6 +68,7 @@ async def discover_codex_models(*, deadline: float = DISCOVERY_TIMEOUT) -> list[
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            creationflags=_CREATION_FLAGS,
         )
         if process.stdin is None or process.stdout is None:
             logger.warning("Codex app-server spawned without pipes")

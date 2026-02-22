@@ -35,12 +35,15 @@ Operation codes currently used:
 - rotating file logs in `~/.ductor/logs/agent.log` (`5MB`, `3` backups)
 
 File logging uses `QueueHandler` + `QueueListener` so file I/O does not block the event loop.
+`QueueListener` is stopped on reconfiguration and via `atexit` shutdown hook.
 
 ## Runtime Control
 
 - default level is `INFO`
 - `--verbose` forces `DEBUG`
 - `config.log_level` is applied at startup when `--verbose` is not set
+- `setup_logging(..., log_dir=None)` skips file logging (console only)
+- noisy libraries are pinned to `WARNING` (`httpx`, `httpcore`, `telegram`, `telegram.ext`)
 
 ## Conventions in Codebase
 

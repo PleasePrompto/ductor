@@ -8,11 +8,30 @@ Process/runtime infrastructure: PID locking, restart signaling, Docker sandbox h
 - `restart.py`: restart sentinel/marker helpers + `EXIT_RESTART = 42`.
 - `docker.py`: `DockerManager` for optional persistent sidecar container.
 - `install.py`: installation mode detection (`pipx` / `pip` / `dev`).
-- `service.py`: Linux systemd user-service install/status/start/stop/logs/uninstall.
+- `service.py`: platform dispatcher for service management backends.
+- `service_linux.py`: Linux systemd user-service install/status/start/stop/logs/uninstall.
+- `service_macos.py`: macOS launchd Launch Agent install/status/start/stop/logs/uninstall.
+- `service_windows.py`: Windows Task Scheduler install/status/start/stop/logs/uninstall.
 - `version.py`: PyPI version check, GitHub changelog fetch, `VersionInfo` model, installed version detection.
 - `updater.py`: `UpdateObserver` background task, `perform_upgrade()`, upgrade sentinel read/write.
 - `ductor_bot/run.py`: supervisor (hot reload + crash recovery).
 - `run.py` (repo root): thin wrapper calling `ductor_bot.run.main()`.
+
+## Service Backends
+
+`service.py` dispatches by platform:
+
+- `win32` -> `service_windows`
+- `darwin` -> `service_macos`
+- otherwise -> `service_linux`
+
+Backend highlights:
+
+- Linux (`service_linux.py`): systemd user service with linger support (`loginctl enable-linger`).
+- macOS (`service_macos.py`): launchd user Launch Agent (`~/Library/LaunchAgents/dev.ductor.plist`) with crash-only restart (`KeepAlive.SuccessfulExit=false`), restart throttle (`ThrottleInterval=10`), and launchd stdout/stderr at `~/.ductor/logs/service.log` + `service.err`.
+- Windows (`service_windows.py`): Task Scheduler task with 10s logon delay (`PT10S`), prefers `pythonw.exe -m ductor_bot` to avoid console windows (fallback `ductor` binary), and shows explicit Admin guidance when `schtasks` returns access-denied errors.
+- `print_service_logs()` on Linux: `journalctl --user -u ductor -f`
+- `print_service_logs()` on macOS/Windows: prints recent lines from newest `~/.ductor/logs/ductor*.log`
 
 ## PID Lock
 

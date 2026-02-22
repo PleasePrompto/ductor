@@ -83,8 +83,8 @@ async def test_normal_resume_session_no_append(orch: Orchestrator) -> None:
     assert request.resume_session is not None
 
 
-async def test_normal_error_retries_then_resets(orch: Orchestrator) -> None:
-    """On persistent error with existing session: retry once, then reset."""
+async def test_normal_error_preserves_session(orch: Orchestrator) -> None:
+    """On persistent error with existing session: keep session, no auto-retry."""
     # Establish a session first so resume_session is set on subsequent calls
     await _establish_session(orch)
 
@@ -92,21 +92,19 @@ async def test_normal_error_retries_then_resets(orch: Orchestrator) -> None:
         return_value=_mock_response(is_error=True, result="Rate limited"),
     )
     mock_kill = AsyncMock(return_value=0)
-    mock_reset = AsyncMock()
     object.__setattr__(orch._cli_service, "execute", mock_execute)
     object.__setattr__(orch._process_registry, "kill_all", mock_kill)
-    object.__setattr__(orch._sessions, "reset_session", mock_reset)
 
     result = await normal(orch, 1, "Hello")
-    assert "Session error" in result.text
+    assert "Session Error" in result.text
     assert "[opus]" in result.text
-    # First execute fails (resume), reset_session, second _prepare_normal, second execute fails
-    assert mock_execute.call_count == 2
+    assert "/new" in result.text
+    assert mock_execute.call_count == 1
     mock_kill.assert_called_once_with(1)
 
 
-async def test_normal_timeout_retries_then_resets(orch: Orchestrator) -> None:
-    """On persistent timeout with existing session: retry once, then reset."""
+async def test_normal_timeout_preserves_session(orch: Orchestrator) -> None:
+    """On persistent timeout with existing session: keep session, no auto-retry."""
     await _establish_session(orch)
 
     mock_execute = AsyncMock(
@@ -114,24 +112,26 @@ async def test_normal_timeout_retries_then_resets(orch: Orchestrator) -> None:
     )
     object.__setattr__(orch._cli_service, "execute", mock_execute)
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
 
     result = await normal(orch, 1, "Hello")
-    assert "Session error" in result.text
-    assert mock_execute.call_count == 2
+    assert "Session Error" in result.text
+    assert mock_execute.call_count == 1
 
 
-async def test_normal_retry_succeeds_on_second_attempt(orch: Orchestrator) -> None:
-    """First call errors (resume), second succeeds -- no reset."""
+async def test_normal_next_message_can_succeed_after_error(orch: Orchestrator) -> None:
+    """No auto-retry, but a follow-up user message can succeed with same session."""
     await _establish_session(orch)
 
     error_resp = _mock_response(is_error=True, result="Temporary error")
     success_resp = _mock_response(result="All good")
     mock_execute = AsyncMock(side_effect=[error_resp, success_resp])
     object.__setattr__(orch._cli_service, "execute", mock_execute)
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
 
-    result = await normal(orch, 1, "Hello")
-    assert result.text == "All good"
+    first = await normal(orch, 1, "Hello")
+    second = await normal(orch, 1, "Hello again")
+    assert "Session Error" in first.text
+    assert second.text == "All good"
     assert mock_execute.call_count == 2
 
 
@@ -149,26 +149,30 @@ async def test_normal_sigkill_recovers_once_then_succeeds(orch: Orchestrator) ->
     sigkill_resp = _mock_response(is_error=True, result="killed", returncode=-9)
     success_resp = _mock_response(result="Recovered")
     mock_execute = AsyncMock(side_effect=[sigkill_resp, success_resp])
+    mock_reset_provider = AsyncMock()
     object.__setattr__(orch._cli_service, "execute", mock_execute)
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+    object.__setattr__(orch._sessions, "reset_provider_session", mock_reset_provider)
 
     result = await normal(orch, 1, "Hello")
     assert result.text == "Recovered"
     assert mock_execute.call_count == 2
+    mock_reset_provider.assert_called_once_with(1, provider="claude", model="opus")
 
 
 async def test_normal_sigkill_recovers_once_then_asks_user_retry(orch: Orchestrator) -> None:
     """If recovery retry also SIGKILLs, return explicit user guidance."""
     sigkill_resp = _mock_response(is_error=True, result="killed", returncode=-9)
     mock_execute = AsyncMock(side_effect=[sigkill_resp, sigkill_resp])
+    mock_reset_provider = AsyncMock()
     object.__setattr__(orch._cli_service, "execute", mock_execute)
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+    object.__setattr__(orch._sessions, "reset_provider_session", mock_reset_provider)
 
     result = await normal(orch, 1, "Hello")
     assert result.text == "Execution was interrupted. Please send the same request again."
     assert mock_execute.call_count == 2
+    mock_reset_provider.assert_called_once_with(1, provider="claude", model="opus")
 
 
 async def test_normal_resolves_effective_model_for_available_provider(orch: Orchestrator) -> None:
@@ -216,32 +220,31 @@ async def test_streaming_sigkill_recovers_once_then_succeeds(orch: Orchestrator)
     sigkill_resp = _mock_response(is_error=True, result="killed", returncode=-9)
     success_resp = _mock_response(result="Recovered stream")
     mock_streaming = AsyncMock(side_effect=[sigkill_resp, success_resp])
+    mock_reset_provider = AsyncMock()
     object.__setattr__(orch._cli_service, "execute_streaming", mock_streaming)
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+    object.__setattr__(orch._sessions, "reset_provider_session", mock_reset_provider)
 
     result = await normal_streaming(orch, 1, "Hello")
     assert result.text == "Recovered stream"
     assert mock_streaming.call_count == 2
+    mock_reset_provider.assert_called_once_with(1, provider="claude", model="opus")
 
 
-async def test_streaming_error_resets_session(orch: Orchestrator) -> None:
-    """Streaming error triggers session reset."""
+async def test_streaming_error_preserves_session(orch: Orchestrator) -> None:
+    """Streaming error keeps the session and advises /new."""
     object.__setattr__(
         orch._cli_service,
         "execute_streaming",
         AsyncMock(return_value=_mock_response(is_error=True, result="Stream failed")),
     )
     mock_kill = AsyncMock(return_value=0)
-    mock_reset = AsyncMock()
     object.__setattr__(orch._process_registry, "kill_all", mock_kill)
-    object.__setattr__(orch._sessions, "reset_session", mock_reset)
 
     result = await normal_streaming(orch, 1, "Hello")
-    assert "Session error" in result.text
+    assert "Session Error" in result.text
     assert "[opus]" in result.text
     mock_kill.assert_called_once_with(1)
-    mock_reset.assert_called_once_with(1, provider="claude", model="opus")
 
 
 async def test_streaming_error_with_model_override(orch: Orchestrator) -> None:
@@ -386,12 +389,12 @@ def test_finish_normal_returns_orchestrator_result() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Gap 3: Retry symmetry -- both normal and streaming retry on resume failure
+# Gap 3: No auto-retry on resume failure (user-controlled retry)
 # ---------------------------------------------------------------------------
 
 
-async def test_normal_retries_once_on_resume_failure(orch: Orchestrator) -> None:
-    """normal() retries once when resume fails, then resets on second failure."""
+async def test_normal_no_auto_retry_on_resume_failure(orch: Orchestrator) -> None:
+    """normal() no longer auto-retries on resume failure."""
     # Establish session so resume_session is set
     await _establish_session(orch)
 
@@ -401,15 +404,13 @@ async def test_normal_retries_once_on_resume_failure(orch: Orchestrator) -> None
     mock_kill = AsyncMock(return_value=0)
     object.__setattr__(orch._cli_service, "execute", mock_execute)
     object.__setattr__(orch._process_registry, "kill_all", mock_kill)
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
 
     await normal(orch, 1, "Hello")
-    # First execute (resume) fails -> reset_session -> _prepare_normal -> second execute fails
-    assert mock_execute.call_count == 2
+    assert mock_execute.call_count == 1
 
 
-async def test_streaming_retries_once_on_resume_failure(orch: Orchestrator) -> None:
-    """normal_streaming() also retries once when resume fails, matching normal()."""
+async def test_streaming_no_auto_retry_on_resume_failure(orch: Orchestrator) -> None:
+    """normal_streaming() no longer auto-retries on resume failure."""
     # Establish session so resume_session is set
     mock_exec = AsyncMock(return_value=_mock_response())
     object.__setattr__(orch._cli_service, "execute_streaming", mock_exec)
@@ -421,11 +422,9 @@ async def test_streaming_retries_once_on_resume_failure(orch: Orchestrator) -> N
     mock_kill = AsyncMock(return_value=0)
     object.__setattr__(orch._cli_service, "execute_streaming", mock_streaming)
     object.__setattr__(orch._process_registry, "kill_all", mock_kill)
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
 
     await normal_streaming(orch, 1, "Hello")
-    # Streaming has the same retry-on-resume pattern as normal
-    assert mock_streaming.call_count == 2
+    assert mock_streaming.call_count == 1
 
 
 async def test_normal_no_retry_on_new_session_error(orch: Orchestrator) -> None:

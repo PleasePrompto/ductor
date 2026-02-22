@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ductor_bot.bot.response_format import NEW_SESSION_TEXT, stop_text
+from ductor_bot.bot.response_format import new_session_text, stop_text
 from ductor_bot.bot.sender import send_rich
 from ductor_bot.bot.topic import get_thread_id
 from ductor_bot.bot.typing import TypingContext
@@ -65,8 +65,14 @@ async def handle_new_session(orchestrator: Orchestrator, bot: Bot, message: Mess
     chat_id = message.chat.id
     thread_id = get_thread_id(message)
     async with TypingContext(bot, chat_id, thread_id=thread_id):
-        await orchestrator.reset_session(chat_id)
-    await send_rich(bot, chat_id, NEW_SESSION_TEXT, reply_to=message, thread_id=thread_id)
+        provider = await orchestrator.reset_active_provider_session(chat_id)
+    await send_rich(
+        bot,
+        chat_id,
+        new_session_text(provider),
+        reply_to=message,
+        thread_id=thread_id,
+    )
 
 
 def strip_mention(text: str, bot_username: str | None) -> str:

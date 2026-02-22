@@ -165,7 +165,6 @@ async def test_callback_provider_codex_fallback(orch: Orchestrator) -> None:
 
 async def test_callback_model_claude_switches(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     text, keyboard = await handle_model_callback(orch, 1, "ms:m:sonnet")
     assert "sonnet" in text
     assert keyboard is None
@@ -199,7 +198,6 @@ async def test_callback_model_codex_mini_limited_efforts(orch: Orchestrator) -> 
 
 async def test_callback_reasoning_switches(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     text, keyboard = await handle_model_callback(orch, 1, "ms:r:high:gpt-5.2-codex")
     assert "gpt-5.2-codex" in text
     assert "high" in text.lower()
@@ -227,13 +225,17 @@ async def test_callback_back_provider(orch: Orchestrator) -> None:
 
 async def test_switch_model_basic(orch: Orchestrator) -> None:
     mock_kill = AsyncMock(return_value=0)
+    mock_reset = AsyncMock()
     object.__setattr__(orch._process_registry, "kill_all", mock_kill)
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+    object.__setattr__(orch._sessions, "reset_provider_session", mock_reset)
     result = await switch_model(orch, 1, "sonnet")
     assert "opus" in result
     assert "sonnet" in result
+    assert "Session reset" not in result
+    assert "Resuming session" not in result
     assert orch._config.model == "sonnet"
     mock_kill.assert_called_once_with(1)
+    mock_reset.assert_not_called()
 
 
 async def test_switch_model_already_set(orch: Orchestrator) -> None:
@@ -243,7 +245,6 @@ async def test_switch_model_already_set(orch: Orchestrator) -> None:
 
 async def test_switch_model_with_reasoning_effort(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     result = await switch_model(orch, 1, "sonnet", reasoning_effort="high")
     assert "high" in result.lower()
     assert orch._config.reasoning_effort == "high"
@@ -253,18 +254,47 @@ async def test_switch_model_with_reasoning_effort(orch: Orchestrator) -> None:
 
 async def test_switch_model_persists_to_config(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     await switch_model(orch, 1, "sonnet")
     saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
     assert saved["model"] == "sonnet"
 
 
 async def test_switch_model_provider_change(orch: Orchestrator) -> None:
+    mock_reset = AsyncMock()
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
+    object.__setattr__(orch._sessions, "reset_provider_session", mock_reset)
     result = await switch_model(orch, 1, "o3")
     assert "Provider:" in result
     assert orch._config.provider == "codex"
+    mock_reset.assert_not_called()
+
+
+async def test_switch_model_shows_resume_hint_same_provider(orch: Orchestrator) -> None:
+    session, _ = await orch._sessions.resolve_session(1, provider="claude", model="opus")
+    session.session_id = "claude-abc123"
+    await orch._sessions.update_session(session)
+
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    result = await switch_model(orch, 1, "sonnet")
+
+    assert "Resuming session `claude-abc123`." in result
+    assert "You have already sent 1 message in this provider session." in result
+    assert "Current model: `sonnet`." in result
+    assert "Use /new to start a fresh session." in result
+
+
+async def test_switch_model_shows_resume_hint_provider_change(orch: Orchestrator) -> None:
+    session, _ = await orch._sessions.resolve_session(1, provider="codex", model="gpt-5.2-codex")
+    session.session_id = "codex-xyz789"
+    await orch._sessions.update_session(session)
+
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    result = await switch_model(orch, 1, "o3")
+
+    assert "Resuming session `codex-xyz789`." in result
+    assert "You have already sent 1 message in this provider session." in result
+    assert "Current model: `o3`." in result
+    assert "Use /new to start a fresh session." in result
 
 
 async def test_switch_reasoning_only(orch: Orchestrator) -> None:
@@ -272,7 +302,7 @@ async def test_switch_reasoning_only(orch: Orchestrator) -> None:
     mock_kill = AsyncMock(return_value=0)
     mock_reset = AsyncMock()
     object.__setattr__(orch._process_registry, "kill_all", mock_kill)
-    object.__setattr__(orch._sessions, "reset_session", mock_reset)
+    object.__setattr__(orch._sessions, "reset_provider_session", mock_reset)
     result = await switch_model(orch, 1, "opus", reasoning_effort="high")
     assert "Reasoning effort updated" in result
     mock_kill.assert_not_called()

@@ -613,12 +613,26 @@ class TestMainDispatch:
         with (
             patch("sys.argv", ["ductor"]),
             patch("ductor_bot.__main__._is_configured", return_value=False),
-            patch("ductor_bot.cli.init_wizard.run_onboarding") as mock_onboard,
-            patch("ductor_bot.__main__._start_bot"),
+            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=False) as mock_onboard,
+            patch("ductor_bot.__main__._start_bot") as mock_start,
         ):
             main()
 
         mock_onboard.assert_called_once()
+        mock_start.assert_called_once_with(False)
+
+    def test_default_does_not_start_bot_when_service_installed(self) -> None:
+        from ductor_bot.__main__ import main
+
+        with (
+            patch("sys.argv", ["ductor"]),
+            patch("ductor_bot.__main__._is_configured", return_value=False),
+            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=True),
+            patch("ductor_bot.__main__._start_bot") as mock_start,
+        ):
+            main()
+
+        mock_start.assert_not_called()
 
     def test_verbose_flag_passed(self) -> None:
         from ductor_bot.__main__ import main
@@ -675,3 +689,33 @@ class TestMainDispatch:
             main()
 
         mock_setup.assert_called_once()
+
+
+class TestSetupCommand:
+    def test_setup_starts_bot_when_service_not_installed(self) -> None:
+        from ductor_bot.__main__ import _cmd_setup
+
+        with (
+            patch("ductor_bot.__main__._stop_bot"),
+            patch("ductor_bot.__main__.resolve_paths"),
+            patch("ductor_bot.__main__._is_configured", return_value=False),
+            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=False),
+            patch("ductor_bot.__main__._start_bot") as mock_start,
+        ):
+            _cmd_setup(False)
+
+        mock_start.assert_called_once_with(False)
+
+    def test_setup_skips_start_when_service_installed(self) -> None:
+        from ductor_bot.__main__ import _cmd_setup
+
+        with (
+            patch("ductor_bot.__main__._stop_bot"),
+            patch("ductor_bot.__main__.resolve_paths"),
+            patch("ductor_bot.__main__._is_configured", return_value=False),
+            patch("ductor_bot.cli.init_wizard.run_onboarding", return_value=True),
+            patch("ductor_bot.__main__._start_bot") as mock_start,
+        ):
+            _cmd_setup(False)
+
+        mock_start.assert_not_called()

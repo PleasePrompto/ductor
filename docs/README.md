@@ -19,15 +19,19 @@ ductor is a Telegram bot that forwards chat input to Claude Code CLI or OpenAI C
 - `ductor_bot/bot/`: Telegram handlers, auth/sequencing middleware, streaming editors, rich sender, file browser, response formatting.
 - `ductor_bot/orchestrator/`: command dispatch, directives/hooks, normal and heartbeat flows, model selector.
 - `ductor_bot/cli/`: Claude/Codex wrappers, provider-specific CLI parameter routing, Codex model cache, process registry, normalized stream events.
-- `ductor_bot/session/`: per-chat session lifecycle in `sessions.json`.
+- `ductor_bot/session/`: per-chat session lifecycle in `sessions.json` with provider-isolated IDs/metrics (Claude and Codex keep separate session buckets).
 - `ductor_bot/cron/`: in-process scheduler for `cron_jobs.json` with per-job execution overrides, quiet-hour gates, and dependency queue locking.
 - `ductor_bot/heartbeat/`: periodic checks in active sessions.
 - `ductor_bot/webhook/`: HTTP ingress (`/hooks/{hook_id}`) with per-hook auth (`bearer` or `hmac`), `wake`/`cron_task` modes, per-hook execution overrides, quiet-hour gates, and dependency queue locking.
 - `ductor_bot/cleanup/`: daily retention cleanup for `telegram_files/` and `output_to_user/`.
 - `ductor_bot/workspace/`: path resolution, home seeding from `ductor_bot/_home_defaults/`, auth-based RULES template deployment to `CLAUDE.md`/`AGENTS.md`, rule sync, cross-platform skill directory sync.
-- `ductor_bot/infra/`: PID lock, restart sentinel, Docker helper, auto-update observer (upgradeable installs), version check.
+- `ductor_bot/infra/`: PID lock, restart sentinel, Docker helper, cross-platform service manager (systemd/launchd/Task Scheduler), auto-update observer (upgradeable installs), version check.
 - `ductor_bot/cli/init_wizard.py`: interactive onboarding wizard, smart reset.
 - `ductor_bot/log_context.py` + `ductor_bot/logging_config.py`: context-aware logging and log sinks.
+
+Runtime behavior note:
+
+- CLI errors do not auto-reset sessions. The session is preserved; users can retry with the same context or run `/new` explicitly.
 
 ## Documentation Index
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
@@ -20,6 +21,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _IS_WINDOWS = sys.platform == "win32"
+
+# 0x08000000 on Windows prevents a console window from appearing.
+# On non-Windows, 0 is the default and has no effect.
+_CREATION_FLAGS: int = getattr(subprocess, "CREATE_NO_WINDOW", 0) if _IS_WINDOWS else 0
 
 
 def _win_stdin_pipe() -> int | None:

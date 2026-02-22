@@ -20,7 +20,7 @@
   <a href="#features">Features</a> &middot;
   <a href="#prerequisites">Prerequisites</a> &middot;
   <a href="#how-it-works">How it works</a> &middot;
-  <a href="#commands">Commands</a> &middot;
+  <a href="#telegram-bot-commands">Commands</a> &middot;
   <a href="https://github.com/PleasePrompto/ductor/tree/main/docs">Docs</a> &middot;
   <a href="#contributing">Contributing</a>
 </p>
@@ -68,20 +68,20 @@ I picked Python because it's easy to modify. The agents can write their own auto
 ### Core
 
 - Responses stream in real-time -ductor edits the Telegram message live as text arrives
-- Switch between Claude Code and Codex mid-conversation with `/model`
+- Switch between Claude Code and Codex mid-conversation with `/model` while preserving provider session history
 - Sessions survive bot restarts
 - `@opus explain this` temporarily switches model without changing your default
-- Send images, PDFs, voice messages, or videos -ductor routes them to the right tool
+- Send images, PDFs, voice messages, or videos; ductor routes them to the right tool
 - Agents can send `[button:Yes]` `[button:No]` inline keyboards back to you
 - Works in Telegram groups with forum topics -- replies land in the correct topic thread
 - Persistent memory across sessions, stored in one Markdown file
 
 ### Automation
 
-- **Cron jobs** -recurring tasks with cron expressions and timezone support. Each job runs as its own subagent with a dedicated workspace and memory file (plus optional per-job quiet hours and dependency locks)
-- **Webhooks** -HTTP endpoints with Bearer or HMAC auth. Two modes: *wake* injects a prompt into your active chat, *cron_task* runs a separate task session. Works with GitHub, Stripe, or anything that sends POST
-- **Heartbeat** -the agent checks in periodically during active sessions. Quiet hours respected
-- **Cleanup** -daily retention cleanup for `telegram_files/` and `output_to_user/`
+- **Cron jobs**: recurring tasks with cron expressions and timezone support. Each job runs as its own subagent with a dedicated workspace and memory file (plus optional per-job quiet hours and dependency locks)
+- **Webhooks**: HTTP endpoints with Bearer or HMAC auth. Two modes: *wake* injects a prompt into your active chat, *cron_task* runs a separate task session. Works with GitHub, Stripe, or anything that sends POST
+- **Heartbeat**: the agent checks in periodically during active sessions. Quiet hours respected
+- **Cleanup**: daily retention cleanup for `telegram_files/` and `output_to_user/`
 
 #### Example: a cron job
 
@@ -111,8 +111,8 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 
 ### Infrastructure
 
-- `ductor service install` -Linux systemd user service (start on boot, restart on crash)
-- Docker sandbox image (built via `Dockerfile.sandbox`) -both CLIs have full filesystem access by default, so a container keeps your host safe
+- `ductor service install`: background service manager (systemd on Linux, launchd on macOS, Task Scheduler on native Windows)
+- Docker sandbox image (built via `Dockerfile.sandbox`): both CLIs have full filesystem access by default, so a container keeps your host safe
 - `/upgrade` checks PyPI, offers in-chat upgrade, then restarts automatically on success
 - Supervisor with PID lock. Exit code 42 triggers restart
 - Prompt injection detection, path traversal checks, per-user allowlist
@@ -122,7 +122,7 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 - First-run wizard detects your CLIs, walks through config, seeds the workspace
 - New config fields merge automatically on upgrade
 - `/diagnose` shows system diagnostics (version/provider/model, Codex cache status, recent logs), `/status` shows session stats
-- `/stop` terminates the active run and drains queued messages, `/new` starts a fresh session
+- `/stop` terminates the active run and drains queued messages, `/new` resets only the active provider session in the current chat
 - `/showfiles` lets you browse `~/.ductor/` as a clickable file tree inside Telegram
 - Messages sent while the agent is working show `[Message in queue...]` with a cancel button
 - Bundled skills (e.g. `skill-creator`) are symlinked into the workspace and stay current with the installed version
@@ -141,6 +141,94 @@ POST /hooks/ci-failure -> "CI failed on branch main: test_auth.py::test_login ti
 
 > Detailed platform guides: [Installation (Linux, macOS, WSL, Windows, VPS)](https://github.com/PleasePrompto/ductor/blob/main/docs/installation.md)
 
+## Run in Background as Service
+
+Use ductor's built-in service manager:
+
+```bash
+ductor service install
+ductor service status
+ductor service start
+ductor service stop
+ductor service logs
+ductor service uninstall
+```
+
+### Linux (systemd user service)
+
+- Backend: `systemd --user`
+- Service file: `~/.config/systemd/user/ductor.service`
+- Auto-start: enabled at install
+- Keeps running after logout when linger is enabled (`loginctl enable-linger`)
+
+Install and enable:
+
+```bash
+ductor service install
+```
+
+Service control:
+
+```bash
+ductor service status
+ductor service start
+ductor service stop
+ductor service logs      # live journalctl stream
+ductor service uninstall
+```
+
+### macOS (launchd user agent)
+
+- Backend: `launchd` user Launch Agent
+- Plist: `~/Library/LaunchAgents/dev.ductor.plist`
+- Auto-start: at login (`RunAtLoad`)
+- Restart policy: crash-only (`KeepAlive.SuccessfulExit=false`), 10s throttle (`ThrottleInterval=10`)
+- launchd stdout/stderr paths: `~/.ductor/logs/service.log`, `~/.ductor/logs/service.err`
+
+Install and enable:
+
+```bash
+ductor service install
+```
+
+Service control:
+
+```bash
+ductor service status
+ductor service start
+ductor service stop
+ductor service logs      # recent lines from ~/.ductor/logs/agent.log (fallback: newest *.log)
+ductor service uninstall
+```
+
+### Windows (native, Task Scheduler)
+
+- Backend: Windows Task Scheduler task `ductor`
+- Auto-start: 10 seconds after login (`PT10S`)
+- Execution: prefers `pythonw.exe -m ductor_bot` (no console window), falls back to `ductor` binary
+
+Install and enable:
+
+```powershell
+ductor service install
+```
+
+If install/uninstall returns access denied, open terminal as Administrator and retry:
+
+1. Right-click PowerShell or CMD
+2. Select "Run as administrator"
+3. Run `ductor service install` or `ductor service uninstall`
+
+Service control:
+
+```powershell
+ductor service status
+ductor service start
+ductor service stop
+ductor service logs      # recent lines from ~/.ductor/logs/agent.log (fallback: newest *.log)
+ductor service uninstall
+```
+
 ## How it works
 
 ```
@@ -155,7 +243,8 @@ ductor (aiogram)
     v
 Orchestrator
     |
-    ├── Command Router (/new, /model, /stop, ...)
+    ├── Command Router (/status, /memory, /model, /cron, /diagnose, /upgrade)
+    ├── Abort path (/stop) in middleware/bot layer
     ├── Message Flow -> CLIService -> claude / codex subprocess
     ├── CronObserver -> Scheduled task execution
     ├── HeartbeatObserver -> Periodic background checks
@@ -167,7 +256,16 @@ Orchestrator
 Streamed response -> Live-edited Telegram message
 ```
 
-ductor spawns the CLI as a child process and parses its streaming output. The Telegram message gets edited live as text arrives. Sessions are stored as JSON. Background systems run as asyncio tasks in the same process.
+ductor spawns the CLI as a child process and parses its streaming output. The Telegram message gets edited live as text arrives. Sessions are stored as JSON with provider-isolated IDs/metrics (Claude and Codex keep separate buckets), and normal CLI errors preserve session context unless you explicitly run `/new`. Background systems run as asyncio tasks in the same process.
+
+Session behavior (short version):
+
+- sessions are isolated per chat and per provider (`claude`/`codex` buckets),
+- `/model` switches model/provider without wiping stored buckets,
+- `/new` resets only the currently active provider bucket in the current chat,
+- other provider buckets in that chat stay intact.
+
+Two runtime watchers keep workspace instructions in sync: rule-file sync mirrors `CLAUDE.md`/`AGENTS.md`, and skill sync mirrors skills across `~/.ductor/workspace/skills`, `~/.claude/skills`, and `~/.codex/skills`. A Codex model cache observer also refreshes available Codex models hourly for `/model`, cron, and webhook validation.
 
 ## Workspace
 
@@ -207,7 +305,33 @@ Config lives in `~/.ductor/config/config.json`. The wizard creates it on first r
 ductor  # wizard creates config interactively
 ```
 
-Key fields: `telegram_token`, `allowed_user_ids`, `provider` (claude or codex), `model`, `docker.enabled`, `user_timezone`, `cleanup`. Full schema in [docs/config.md](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md).
+Core entries:
+
+| Key | Type | Purpose |
+|---|---|---|
+| `telegram_token` | `str` | Telegram bot token |
+| `allowed_user_ids` | `list[int]` | Telegram allowlist |
+| `provider` | `str` | Default provider (`claude` or `codex`) |
+| `model` | `str` | Default model ID |
+| `reasoning_effort` | `str` | Default Codex reasoning level |
+| `user_timezone` | `str` | IANA timezone used by cron/heartbeat/cleanup/daily reset |
+| `idle_timeout_minutes` | `int` | Session freshness idle timeout |
+| `daily_reset_enabled` | `bool` | Enables daily session-boundary reset checks |
+| `daily_reset_hour` | `int` | Daily reset boundary hour (in `user_timezone`) |
+| `max_session_messages` | `int \| null` | Session rollover by message count |
+| `session_age_warning_hours` | `int` | `/new` reminder threshold |
+| `cli_timeout` | `float` | Per-call timeout for provider execution |
+| `permission_mode` | `str` | Provider approval/sandbox mode |
+| `file_access` | `str` | Outgoing file-send scope (`all`, `home`, `workspace`) |
+| `streaming.enabled` | `bool` | Live streaming on/off |
+| `docker.enabled` | `bool` | Docker sandbox mode |
+| `heartbeat.enabled` | `bool` | Background heartbeat system |
+| `cleanup.enabled` | `bool` | Daily retention cleanup |
+| `webhooks.enabled` | `bool` | Webhook HTTP server |
+| `cli_parameters.claude` | `list[str]` | Extra Claude CLI flags |
+| `cli_parameters.codex` | `list[str]` | Extra Codex CLI flags |
+
+Full schema and all defaults: [docs/config.md](https://github.com/PleasePrompto/ductor/blob/main/docs/config.md).
 
 #### CLI Parameters
 
@@ -242,13 +366,14 @@ Cron tasks support per-task execution overrides:
 
 All fields are optional and fall back to global config values if not specified.
 
-## Commands
+## Telegram Bot Commands
 
 | Command | Description |
 |---|---|
-| `/new` | Start a fresh session |
+| `/start` | Welcome screen with quick actions |
+| `/new` | Reset the active provider session for this chat (other provider history is kept) |
 | `/stop` | Stop active agent execution and discard queued messages |
-| `/model` | Switch AI model (interactive keyboard) |
+| `/model` | Switch AI model (interactive keyboard, preserves provider session context) |
 | `/model opus` | Switch directly to a specific model |
 | `/status` | Session info, tokens, cost, auth status |
 | `/memory` | View persistent memory |
@@ -259,6 +384,26 @@ All fields are optional and fall back to global config values if not specified.
 | `/restart` | Restart the bot |
 | `/diagnose` | Show system diagnostics and recent logs |
 | `/help` | Command reference |
+
+## CLI Commands
+
+| Command | Description |
+|---|---|
+| `ductor` | Start bot (runs onboarding if not configured) |
+| `ductor onboarding` | Run setup wizard (smart reset if already configured) |
+| `ductor reset` | Alias for `ductor onboarding` |
+| `ductor status` | Show runtime status and key paths |
+| `ductor stop` | Stop running bot process and Docker container |
+| `ductor restart` | Restart bot process |
+| `ductor upgrade` | Upgrade package and restart (non-dev installs) |
+| `ductor uninstall` | Remove bot, data, and package |
+| `ductor service install` | Install/start background service |
+| `ductor service status` | Service status |
+| `ductor service start` | Start service |
+| `ductor service stop` | Stop service |
+| `ductor service logs` | Service log view |
+| `ductor service uninstall` | Remove service |
+| `ductor help` | Show command help and status |
 
 ## Documentation
 

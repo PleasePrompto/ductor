@@ -68,22 +68,28 @@ _CAPTION_LIMIT = 1024
 
 _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in _COMMAND_DEFS]
 
+_CMD_DESC: dict[str, str] = dict(_COMMAND_DEFS)
+
+
+def _help_line(command: str) -> str:
+    """Return one command line for the help panel."""
+    description = _CMD_DESC.get(command, "")
+    return f"/{command} -- {description}" if description else f"/{command}"
+
+
 _HELP_TEXT = fmt(
     "**Command Reference**",
     SEP,
-    "Session\n"
-    "/new -- Start new session\n"
-    "/stop -- Stop the running agent\n"
-    "/status -- Show session info",
-    "AI\n/model -- Show/switch model\n/memory -- Show main memory",
-    "Automation\n/cron -- View/manage scheduled cron jobs",
+    f"Session\n{_help_line('new')}\n{_help_line('stop')}\n{_help_line('status')}",
+    f"AI\n{_help_line('model')}\n{_help_line('memory')}",
+    f"Automation\n{_help_line('cron')}",
     "System\n"
-    "/showfiles -- Browse ductor files\n"
-    "/info -- Docs, links & about\n"
-    "/upgrade -- Check for updates\n"
-    "/restart -- Restart bot\n"
-    "/diagnose -- Show system diagnostics\n"
-    "/help -- Show all commands",
+    f"{_help_line('showfiles')}\n"
+    f"{_help_line('info')}\n"
+    f"{_help_line('upgrade')}\n"
+    f"{_help_line('restart')}\n"
+    f"{_help_line('diagnose')}\n"
+    f"{_help_line('help')}",
     SEP,
     "Send any message to start working with your agent.",
 )

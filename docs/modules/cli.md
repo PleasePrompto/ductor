@@ -72,7 +72,7 @@ Current behavior: task-level `cli_parameters` are task-specific (no merge with g
 
 `CodexCacheObserver` (`codex_cache_observer.py`):
 
-- loads cache at startup,
+- loads cache at startup with `force_refresh=True`,
 - runs an hourly loop and re-runs `load_or_refresh()`,
 - exposes `get_cache()` for orchestrator/model-selector/diagnose paths.
 
@@ -105,6 +105,10 @@ Fallback handling:
   - aborted chat (`ProcessRegistry.was_aborted`) -> empty result,
   - accumulated text without stream error -> return accumulated text,
   - otherwise retry non-streaming `execute()` and mark `stream_fallback=True`.
+
+SIGKILL recovery note:
+
+- SIGKILL retry is orchestrator-managed (`flows._recover_after_sigkill`), not a CLIService fallback branch. On SIGKILL, orchestrator resets only the active provider session bucket, emits `recovering` status, and retries once.
 
 ## Provider Command Behavior
 

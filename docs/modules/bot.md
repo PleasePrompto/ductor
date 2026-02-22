@@ -5,11 +5,11 @@ Telegram interface layer (aiogram 3.x). Handles incoming updates, middleware, we
 ## Files
 
 - `app.py`: `TelegramBot` lifecycle, handler registration, startup/shutdown, restart watcher, webhook wake bridge.
-- `handlers.py`: helper handlers for abort, orchestrator command routing, new session reset.
+- `handlers.py`: helper handlers for abort, orchestrator command routing, provider-local `/new` reset.
 - `middleware.py`: `AuthMiddleware`, `SequentialMiddleware`, quick-command bypass, per-chat lock, queue entry tracking with cancel buttons.
 - `welcome.py`: `/start` welcome text + quick-start keyboard (`w:*` callbacks).
 - `file_browser.py`: interactive `~/.ductor/` navigator via inline keyboard (`sf:` / `sf!` callbacks).
-- `response_format.py`: shared formatting primitives (`SEP`, `fmt()`, `NEW_SESSION_TEXT`, `stop_text()`).
+- `response_format.py`: shared formatting primitives (`SEP`, `fmt()`, `new_session_text()`, `SESSION_ERROR_TEXT`, `stop_text()`).
 - `streaming.py`: append-mode stream editor + `create_stream_editor()` factory.
 - `edit_streaming.py`: default in-place edit stream editor.
 - `sender.py`: `send_rich()`, `send_file()`, `<file:...>` extraction, keyboard attachment.
@@ -66,6 +66,8 @@ Callback queries are not processed through `SequentialMiddleware.__call__`; lock
 - plain text -> `strip_mention(...)` (removes `@botname` when present),
 - non-text/non-media -> ignored.
 
+Command and message handlers wrap orchestrator calls in `TypingContext`, so Telegram shows typing indicators while provider calls are running.
+
 For media in groups, processing only happens when addressed to the bot (reply or mention in caption).
 
 ## Streaming Flow
@@ -78,6 +80,7 @@ For media in groups, processing only happens when addressed to the bot (reply or
 4. system status callback:
    - on `"thinking"` status, flush coalescer and show `[THINKING]`
    - on `"compacting"` status, flush coalescer and show `[COMPACTING]`
+   - on `"recovering"` status, flush coalescer and show `Please wait, recovering...` (SIGKILL recovery retry path)
 5. on completion: flush + `editor.finalize(full_text)`.
 6. output rules:
    - if stream fallback or no content streamed: send full text via `send_rich()`,

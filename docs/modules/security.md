@@ -31,6 +31,7 @@ Input and file-path safety utilities.
 Implementation details:
 
 - folds selected fullwidth characters to ASCII before matching (`_fold_fullwidth`).
+- marker sanitization helper (`_sanitize_markers`) exists, but `detect_suspicious_patterns()` currently scans folded text directly.
 - returns matches only; does not block by itself.
 
 Current use in orchestrator: log warning only.

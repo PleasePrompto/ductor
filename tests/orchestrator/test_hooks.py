@@ -175,7 +175,7 @@ async def test_hook_resets_on_new_session(orch: Orchestrator) -> None:
     for _ in range(5):
         await normal(orch, 1, "msg")
 
-    # Reset session (simulates /new or model switch)
+    # Reset session (simulates /new)
     await orch._sessions.reset_session(1)
 
     # Messages after reset should NOT carry the reminder (counter back to 0)

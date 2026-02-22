@@ -47,7 +47,6 @@ Both flow through `_handle_message_impl()`:
 Registered commands:
 
 - `/new`
-- `/stop`
 - `/status`
 - `/model`
 - `/model ` (prefix form, supports `/model <name>`)
@@ -61,7 +60,8 @@ Registered commands:
 Routing note:
 
 - In normal Telegram command handling, `/new` and `/stop` are handled in the bot layer.
-- These registry entries are still valid for orchestrator-routed text paths.
+- `/new` resets only the active provider bucket for that chat (via `Orchestrator.reset_active_provider_session`).
+- `/stop` is intentionally not registered in orchestrator `CommandRegistry`; abort handling is middleware/bot-local before normal routing.
 
 `/diagnose` includes Codex cache status (`loaded/not loaded`, `last_updated`, cached model count, default model).
 
@@ -94,20 +94,25 @@ If a message is only a model directive (`@sonnet` with no prompt text), orchestr
 `normal()`:
 
 - run `CLIService.execute()`.
-- retry once only when resume call fails (`response.is_error` and `request.resume_session`): reset session and retry fresh.
-- on final error: kill processes + reset session.
+- no automatic retry on non-SIGKILL errors.
+- on normal CLI error: kill processes, preserve session state, return `SESSION_ERROR_TEXT` (with `/new` hint).
+- on SIGKILL (`returncode == -SIGKILL`): reset only active provider session and retry once.
 
 `normal_streaming()`:
 
 - run `CLIService.execute_streaming()` with `on_system_status` callback for system indicators (`thinking`, `compacting`, clear).
-- same resume-failure retry behavior as `normal()`.
-- on final error: kill processes + reset session.
+- same non-SIGKILL behavior as `normal()` (no auto-retry, session preserved on error).
+- SIGKILL path resets only active provider session and retries once.
 
 On success both paths call `_finish_normal()`:
 
 - update stored session ID when provider returns a new one,
 - increment message count and usage metrics,
 - append session age warning when session exceeds `session_age_warning_hours` and message count is a multiple of 10.
+
+Session-target sync detail:
+
+- `_prepare_normal()` always calls `SessionManager.sync_session_target(...)` so provider/model changes persist without touching counters.
 
 ## Message Hooks
 
@@ -148,7 +153,8 @@ Model list behavior:
 
 `switch_model()` behavior:
 
-- if model changes: kill active processes + reset session,
+- if model changes: kill active processes but keep provider session buckets intact,
+- if target provider already has history: switch response includes a resume hint (session id, prior message count, `/new` hint),
 - if only reasoning effort changes on same Codex model: no reset, only config update,
 - update in-memory config + CLIService default model,
 - when provider changes: update config provider,

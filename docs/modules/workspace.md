@@ -36,6 +36,12 @@ Template source side:
 - `home_defaults`: `ductor_bot/_home_defaults/` (mirrors `~/.ductor` layout)
 - `config_example_path`: `<repo>/config.example.json` in source checkouts, otherwise bundled fallback `ductor_bot/_config_example.json`
 
+`resolve_paths()` resolution order:
+
+- `ductor_home`: explicit arg -> `DUCTOR_HOME` env -> `~/.ductor`
+- `framework_root`: explicit arg -> `DUCTOR_FRAMEWORK_ROOT` env -> package default
+- `home_defaults`: explicit arg -> package `_home_defaults`
+
 ## `init_workspace()` Flow
 
 1. one-time migration: `workspace/tasks` -> `workspace/cron_tasks`.

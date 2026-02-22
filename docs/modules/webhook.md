@@ -101,6 +101,8 @@ aiohttp routes:
 6. per-hook auth (`validate_hook_auth`) -> `401`
 7. if dispatch handler exists, run via `asyncio.create_task(...)` -> `202 Accepted`
 
+HTTP behavior detail: server returns `202` immediately after validation; dispatch work runs in a background task and does not block request latency.
+
 ## Authentication Modes
 
 ### `bearer` mode
@@ -131,6 +133,8 @@ Signature validation is configurable from hook fields:
    - `cron_task` -> `_dispatch_cron_task()`
 4. record trigger (`last_error` cleared on success, set on error).
 5. fire optional result callback with `WebhookResult`.
+
+`record_trigger()` is called for both success and failure paths so `trigger_count` / `last_error` stay current.
 
 ### Wake Mode
 

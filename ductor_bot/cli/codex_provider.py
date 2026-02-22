@@ -10,6 +10,7 @@ from pathlib import Path
 from shutil import which
 
 from ductor_bot.cli.base import (
+    _CREATION_FLAGS,
     _IS_WINDOWS,
     BaseCLI,
     CLIConfig,
@@ -164,6 +165,7 @@ class CodexCLI(BaseCLI):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
+            creationflags=_CREATION_FLAGS,
         )
         logger.info("Codex subprocess starting pid=%s", process.pid)
 
@@ -207,6 +209,7 @@ class CodexCLI(BaseCLI):
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
             limit=4 * 1024 * 1024,
+            creationflags=_CREATION_FLAGS,
         )
         if process.stdout is None or process.stderr is None:
             msg = "Subprocess created without stdout/stderr pipes"

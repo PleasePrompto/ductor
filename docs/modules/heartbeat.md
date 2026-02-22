@@ -41,7 +41,7 @@ Then it starts background `_loop()`.
 
 `_tick()`:
 
-- skip full cycle during quiet hours (evaluated in `user_timezone`, fallback UTC),
+- skip full cycle during quiet hours (evaluated in `user_timezone`, fallback host timezone then UTC),
 - iterate all `allowed_user_ids` and call `_run_for_chat(chat_id)`.
 
 `_run_for_chat()`:

@@ -42,6 +42,25 @@ async def test_new_command(orch: Orchestrator) -> None:
     mock_kill.assert_called_once_with(1)
 
 
+async def test_new_command_resets_only_active_provider_bucket(orch: Orchestrator) -> None:
+    claude, _ = await orch._sessions.resolve_session(1, provider="claude", model="opus")
+    claude.session_id = "claude-sid"
+    await orch._sessions.update_session(claude)
+
+    codex, _ = await orch._sessions.resolve_session(1, provider="codex", model="gpt-5.2-codex")
+    codex.session_id = "codex-sid"
+    await orch._sessions.update_session(codex)
+
+    result = await orch.handle_message(1, "/new")
+    assert "Session reset for Codex" in result.text
+
+    active = await orch._sessions.get_active(1)
+    assert active is not None
+    assert "claude" in active.provider_sessions
+    assert active.provider_sessions["claude"].session_id == "claude-sid"
+    assert "codex" not in active.provider_sessions
+
+
 async def test_stop_aborts_nothing_running(orch: Orchestrator) -> None:
     # /stop is handled by the middleware abort path before reaching the orchestrator.
     # Direct abort() returns 0 when no process is active.
@@ -503,6 +522,13 @@ async def test_reset_session_delegates(orch: Orchestrator) -> None:
     object.__setattr__(orch._sessions, "reset_session", mock_reset)
     await orch.reset_session(42)
     mock_reset.assert_awaited_once_with(42)
+
+
+async def test_reset_active_provider_session_delegates(orch: Orchestrator) -> None:
+    mock_reset = AsyncMock()
+    object.__setattr__(orch._sessions, "reset_provider_session", mock_reset)
+    await orch.reset_active_provider_session(42)
+    mock_reset.assert_awaited_once_with(42, provider="claude", model="opus")
 
 
 # ---------------------------------------------------------------------------

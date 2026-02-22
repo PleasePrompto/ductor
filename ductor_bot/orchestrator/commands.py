@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from ductor_bot.bot.response_format import NEW_SESSION_TEXT, SEP, fmt, stop_text
+from ductor_bot.bot.response_format import SEP, fmt, new_session_text, stop_text
 from ductor_bot.cli.auth import check_all_auth
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.cron_selector import cron_selector_start
@@ -27,11 +27,11 @@ logger = logging.getLogger(__name__)
 
 
 async def cmd_reset(orch: Orchestrator, chat_id: int, _text: str) -> OrchestratorResult:
-    """Handle /new: kill processes and reset session."""
+    """Handle /new: kill processes and reset only active provider session."""
     logger.info("Reset requested")
     await orch._process_registry.kill_all(chat_id)
-    await orch._sessions.reset_session(chat_id)
-    return OrchestratorResult(text=NEW_SESSION_TEXT)
+    provider = await orch.reset_active_provider_session(chat_id)
+    return OrchestratorResult(text=new_session_text(provider))
 
 
 async def cmd_stop(orch: Orchestrator, chat_id: int, _text: str) -> OrchestratorResult:

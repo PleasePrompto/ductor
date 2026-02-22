@@ -87,12 +87,16 @@ def setup_logging(
     root.setLevel(level)
     root.handlers.clear()
 
-    console = logging.StreamHandler(sys.stderr)
-    console.setLevel(level)
-    console.addFilter(ctx_filter)
-    use_color = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
-    console.setFormatter(_ColorFormatter(CONSOLE_FMT, datefmt=DATE_FMT, use_color=use_color))
-    root.addHandler(console)
+    # pythonw.exe (Windows service) sets sys.stderr to None
+    if sys.stderr is not None:
+        console_handler = logging.StreamHandler(sys.stderr)
+        console_handler.setLevel(level)
+        console_handler.addFilter(ctx_filter)
+        use_color = hasattr(sys.stderr, "isatty") and sys.stderr.isatty()
+        console_handler.setFormatter(
+            _ColorFormatter(CONSOLE_FMT, datefmt=DATE_FMT, use_color=use_color)
+        )
+        root.addHandler(console_handler)
 
     if log_dir is not None:
         log_dir.mkdir(parents=True, exist_ok=True)

@@ -84,13 +84,13 @@ class TestHandleNewSession:
         from ductor_bot.bot.handlers import handle_new_session
 
         orchestrator = MagicMock()
-        orchestrator.reset_session = AsyncMock()
+        orchestrator.reset_active_provider_session = AsyncMock(return_value="claude")
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
         msg = _make_message(chat_id=1, text="/new")
         await handle_new_session(orchestrator, bot, msg)
-        orchestrator.reset_session.assert_called_once_with(1)
+        orchestrator.reset_active_provider_session.assert_called_once_with(1)
 
 
 class TestStripMention:
@@ -146,7 +146,7 @@ class TestForumTopicPropagation:
         from ductor_bot.bot.handlers import handle_new_session
 
         orchestrator = MagicMock()
-        orchestrator.reset_session = AsyncMock()
+        orchestrator.reset_active_provider_session = AsyncMock(return_value="claude")
         bot = MagicMock()
         msg = _make_message(text="/new", topic_thread_id=55)
 

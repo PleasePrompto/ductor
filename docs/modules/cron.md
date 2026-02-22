@@ -62,6 +62,7 @@ Watcher behavior:
 
 - poll jobs file mtime every 5s,
 - on change: `manager.reload()` + cancel/reschedule all jobs.
+- interactive toggles (`/cron` callbacks) call `CronObserver.reschedule_now()` which updates cached mtime before rescheduling to avoid watcher races.
 
 `stop()`:
 
@@ -86,8 +87,9 @@ When a job is due:
 10. enforce timeout (`config.cli_timeout`).
 11. parse result (`parse_claude_result` or `parse_codex_result`).
 12. persist run status.
-13. fire optional callback `(title, result_text, status)`.
-14. reschedule next run.
+13. refresh cached jobs-file mtime (`_update_mtime`) so watcher does not treat run-status writes as user edits.
+14. fire optional callback `(title, result_text, status)`.
+15. reschedule next run.
 
 ## Status Codes
 
@@ -133,7 +135,7 @@ Resolution order per job:
 
 1. `CronJob.timezone` (per-job override).
 2. `AgentConfig.user_timezone` (global config).
-3. Host system timezone (via `$TZ` or `/etc/localtime`).
+3. Host system timezone (via `$TZ`, Windows local datetime tzinfo, or POSIX `/etc/localtime`).
 4. `UTC` (fallback).
 
 Implementation: `_schedule_job()` converts `datetime.now()` to the resolved timezone, passes naive local time to `CronSim`, then re-attaches the timezone to compute UTC delay.

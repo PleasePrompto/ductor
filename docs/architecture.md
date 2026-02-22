@@ -16,7 +16,7 @@ Telegram Update
        - /info -> links/version panel (URL inline buttons)
        - /showfiles -> interactive file browser (sf: / sf! callbacks)
        - /restart -> restart sentinel + exit 42
-       - /new -> direct session reset handler
+       - /new -> direct active-provider reset handler
        - /stop -> direct abort handler
        - normal text/media -> Orchestrator
   -> Orchestrator
@@ -46,13 +46,16 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 
 1. `_is_configured()` check (reads `config.json` for valid token + user IDs).
 2. If unconfigured: run onboarding wizard (`init_wizard.run_onboarding()`).
-3. Configure logging.
-4. Load or create `~/.ductor/config/config.json`.
-5. Deep-merge runtime config with current `AgentConfig` defaults.
-6. Run `init_workspace(paths)`.
-7. Validate required config (`telegram_token`, `allowed_user_ids`).
-8. Acquire PID lock (`bot.pid`, `kill_existing=True`).
-9. Start `TelegramBot`.
+3. If onboarding installed a background service, exit early (no foreground bot startup).
+4. Otherwise configure logging.
+5. Load or create `~/.ductor/config/config.json`.
+6. Deep-merge runtime config with current `AgentConfig` defaults.
+7. Run `init_workspace(paths)`.
+8. Validate required config (`telegram_token`, `allowed_user_ids`).
+9. Acquire PID lock (`bot.pid`, `kill_existing=True`).
+10. Start `TelegramBot`.
+
+Command-resolution detail: CLI command tokens are processed as an ordered list (left-to-right), not a set. This preserves argument order for combinations like `ductor service uninstall` so the `service` command path is selected deterministically.
 
 `KeyboardInterrupt` from `asyncio.run()` is caught at the top level to prevent ugly tracebacks on Windows (where Ctrl+C delivers the interrupt differently).
 
@@ -93,9 +96,10 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 ### Command ownership
 
 - Bot-level handlers: `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/restart`, `/new`.
-- Orchestrator command registry: `/new`, `/stop`, `/status`, `/model`, `/memory`, `/cron`, `/diagnose`, `/upgrade`.
+- Orchestrator command registry: `/new`, `/status`, `/model`, `/memory`, `/cron`, `/diagnose`, `/upgrade`.
 - In regular chat usage, `/status`, `/memory`, `/model`, `/cron`, `/diagnose`, `/upgrade` are routed via `handle_command()`.
-- `/new` in bot handlers resets session state; orchestrator `cmd_reset` additionally kills active processes (used only when routing reaches command registry).
+- `/new` in bot handlers resets only the active provider session bucket for that chat; orchestrator `cmd_reset` also kills active processes when it handles the command path.
+- `/stop` is handled in middleware/bot before normal routing and does not run through orchestrator command dispatch.
 - Quick-command bypass in middleware applies to `/status`, `/memory`, `/cron`, `/diagnose`, `/model`, and `/showfiles`.
 - `/showfiles` is handled directly in the quick-command path (no orchestrator needed).
 - `/model` bypass has a busy-check: when agent is active or messages are queued, it returns an immediate "agent is working" message instead of the model wizard.
@@ -117,15 +121,17 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
 
 1. Determine requested model/provider (`model_override` or config default).
 2. Resolve session (`SessionManager.resolve_session(chat_id, provider=...)`).
+   - provider state is isolated in `provider_sessions`, so Claude/Codex keep independent IDs and metrics.
 3. New session only: append `MAINMEMORY.md` to `append_system_prompt`.
 4. Apply message hooks (`MessageHookRegistry.apply`), currently `MAINMEMORY_REMINDER` every 6th message.
 5. Build `AgentRequest` with `resume_session` when session already has an ID.
 6. Execute CLI:
    - non-streaming: `CLIService.execute()`.
    - streaming: `CLIService.execute_streaming()` with fallback logic.
-7. Retry rule: only when a resumed session call fails (`response.is_error` and `request.resume_session`) -> reset session and retry once as fresh session.
-8. On final error: kill processes + reset session + user-facing session-reset message.
-9. On success: update session ID (if changed), message count, cost, tokens, append session age warning if applicable.
+7. Error behavior:
+   - SIGKILL (`returncode == -SIGKILL`): reset only active provider session (`reset_provider_session`) and retry once.
+   - other errors: kill processes, preserve session, return session-error guidance with `/new` hint.
+8. On success: update session ID (if changed), message count, cost, tokens, append session age warning if applicable.
 
 ## Streaming Path
 
@@ -139,6 +145,7 @@ CLI dispatch resolves subcommands (`help`, `status`, `stop`, `restart`, `upgrade
    - system status:
      - `"thinking"` -> `[THINKING]`
      - `"compacting"` -> `[COMPACTING]`
+     - `"recovering"` -> `Please wait, recovering...`
 4. Finalization:
    - flush remaining buffered text,
    - `editor.finalize(full_text)` to attach buttons,

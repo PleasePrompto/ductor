@@ -62,6 +62,7 @@ Background observers run in the same process:
 - heartbeat
 - webhook
 - cleanup
+- codex model cache
 - update checker
 - rule sync
 - skill sync
@@ -108,7 +109,7 @@ If rules/skills look wrong:
 ## 7) Important Behavior Details
 
 - `/stop` abort handling and queue draining are middleware-level behavior (`SequentialMiddleware`) before normal message routing.
-- `/new` from bot handlers resets session state; `cmd_reset` in orchestrator also kills active processes (used only when routing passes through orchestrator registry).
+- `/new` resets only the active provider bucket for that chat (other provider history is kept); when routed via orchestrator `cmd_reset`, active processes are also killed first.
 - Cron jobs and webhook `cron_task` runs can be gated by quiet hours and serialized via shared dependency keys.
 - Zone 2 sync in workspace init always overwrites:
   - `CLAUDE.md`, `AGENTS.md`

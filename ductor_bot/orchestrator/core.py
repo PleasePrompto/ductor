@@ -327,6 +327,23 @@ class Orchestrator:
         await self._sessions.reset_session(chat_id)
         logger.info("Session reset")
 
+    async def reset_active_provider_session(self, chat_id: int) -> str:
+        """Reset only the active provider session bucket for a given chat."""
+        active = await self._sessions.get_active(chat_id)
+        if active is not None:
+            provider = active.provider
+            model = active.model
+        else:
+            model, provider = self.resolve_runtime_target(self._config.model)
+
+        await self._sessions.reset_provider_session(
+            chat_id,
+            provider=provider,
+            model=model,
+        )
+        logger.info("Active provider session reset provider=%s", provider)
+        return provider
+
     async def abort(self, chat_id: int) -> int:
         """Kill all active CLI processes for chat_id."""
         return await self._process_registry.kill_all(chat_id)

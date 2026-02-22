@@ -34,7 +34,6 @@ async def test_model_list_returns_keyboard(orch: Orchestrator) -> None:
 async def test_model_direct_switch(orch: Orchestrator) -> None:
     kill_mock = AsyncMock(return_value=0)
     object.__setattr__(orch._process_registry, "kill_all", kill_mock)
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     result = await cmd_model(orch, 1, "/model sonnet")
     assert "opus" in result.text
     assert "sonnet" in result.text
@@ -49,14 +48,12 @@ async def test_model_already_set(orch: Orchestrator) -> None:
 
 async def test_model_provider_change(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     result = await cmd_model(orch, 1, "/model o3")
     assert "Provider:" in result.text
 
 
 async def test_model_switch_persists_to_config(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     await cmd_model(orch, 1, "/model sonnet")
     saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
     assert saved["model"] == "sonnet"
@@ -65,19 +62,17 @@ async def test_model_switch_persists_to_config(orch: Orchestrator) -> None:
 
 async def test_model_provider_change_persists_to_config(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     await cmd_model(orch, 1, "/model o3")
     saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
     assert saved["model"] == "o3"
     assert saved["provider"] == "codex"
 
 
-async def test_model_same_provider_resets_session(orch: Orchestrator) -> None:
+async def test_model_same_provider_does_not_show_reset(orch: Orchestrator) -> None:
     kill_mock = AsyncMock(return_value=0)
     object.__setattr__(orch._process_registry, "kill_all", kill_mock)
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     result = await cmd_model(orch, 1, "/model sonnet")
-    assert "Session reset" in result.text
+    assert "Session reset" not in result.text
     assert "Provider:" not in result.text
     kill_mock.assert_called_once_with(1)
 
@@ -233,7 +228,6 @@ async def test_stop_kills_multiple_processes(orch: Orchestrator) -> None:
 async def test_model_unknown_name(orch: Orchestrator) -> None:
     """Unknown model names are treated as codex models and the switch succeeds."""
     object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
-    object.__setattr__(orch._sessions, "reset_session", AsyncMock())
     result = await cmd_model(orch, 1, "/model totally_fake_model")
     assert "Model switched" in result.text
     assert "totally_fake_model" in result.text

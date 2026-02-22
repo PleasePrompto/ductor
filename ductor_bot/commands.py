@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 BOT_COMMANDS: list[tuple[str, str]] = [
-    ("new", "Start new session"),
+    ("new", "Reset active provider session"),
     ("stop", "Stop the running agent"),
     ("status", "Show session info"),
     ("model", "Show/switch model"),

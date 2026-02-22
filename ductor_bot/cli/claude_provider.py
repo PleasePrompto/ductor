@@ -11,6 +11,7 @@ from pathlib import Path
 from shutil import which
 
 from ductor_bot.cli.base import (
+    _CREATION_FLAGS,
     _IS_WINDOWS,
     BaseCLI,
     CLIConfig,
@@ -109,6 +110,7 @@ class ClaudeCodeCLI(BaseCLI):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
+            creationflags=_CREATION_FLAGS,
         )
         logger.info("CLI subprocess starting pid=%s", process.pid)
 
@@ -169,6 +171,7 @@ class ClaudeCodeCLI(BaseCLI):
             stderr=asyncio.subprocess.PIPE,
             cwd=use_cwd,
             limit=4 * 1024 * 1024,
+            creationflags=_CREATION_FLAGS,
         )
         if process.stdout is None or process.stderr is None:
             msg = "Subprocess created without stdout/stderr pipes"

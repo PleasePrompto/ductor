@@ -31,9 +31,10 @@ Runtime edits from `/model` switches (model/provider/reasoning) and webhook toke
 | `provider` | `str` | `"claude"` | Default provider stored in session/config state |
 | `model` | `str` | `"opus"` | Default model ID |
 | `ductor_home` | `str` | `"~/.ductor"` | Runtime home root |
-| `idle_timeout_minutes` | `int` | `1440` | Session freshness timeout (`0` = never expires, only `/new` resets) |
+| `idle_timeout_minutes` | `int` | `1440` | Session freshness timeout (`0` = never expires due to inactivity) |
 | `session_age_warning_hours` | `int` | `12` | Show `/new` reminder every 10th message after this age (`0` = disabled) |
-| `daily_reset_hour` | `int` | `4` | Session daily reset boundary (in `user_timezone`) |
+| `daily_reset_hour` | `int` | `4` | Daily reset boundary hour (in `user_timezone`), used only when `daily_reset_enabled=true` |
+| `daily_reset_enabled` | `bool` | `false` | Enables/disables daily session boundary checks |
 | `user_timezone` | `str` | `""` | IANA timezone (e.g. `"Europe/Berlin"`). Affects cron scheduling, daily session reset, heartbeat quiet hours, and cleanup check hour. Fallback: host system TZ, then UTC. |
 | `max_budget_usd` | `float \| None` | `None` | Passed to Claude CLI |
 | `max_turns` | `int \| None` | `None` | Passed to Claude CLI |
@@ -166,8 +167,9 @@ Current `_MODEL_EQUIVALENCE`:
 
 1. If `configured` (or `config.user_timezone`) is a valid IANA string -> use it.
 2. Else try `$TZ` environment variable.
-3. Else read `/etc/localtime` symlink target (Linux).
-4. Else fall back to `UTC`.
+3. Else on Windows: detect from local datetime timezone (`_detect_host_timezone()`).
+4. Else on POSIX: read `/etc/localtime` symlink target (`_detect_posix_timezone()`).
+5. Else fall back to `UTC`.
 
 Returns a `zoneinfo.ZoneInfo` instance. Used by:
 

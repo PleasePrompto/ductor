@@ -32,10 +32,12 @@ Prevents unbounded growth of:
 
 Loop behavior:
 
-1. wakes every hour
+1. wakes every hour (`_CHECK_INTERVAL = 3600`)
 2. resolves local time via `resolve_user_timezone(config.user_timezone)`
 3. runs cleanup only when `now.hour == check_hour`
 4. runs at most once per day (`_last_run_date` guard)
+
+Execution detail: actual deletion work runs in `asyncio.to_thread(_run_cleanup, ...)` so the observer never blocks the event loop.
 
 ## Deletion Rules
 
