@@ -105,6 +105,9 @@ async def run_streaming_message(
             "thinking": "THINKING",
             "compacting": "COMPACTING",
             "recovering": "Please wait, recovering...",
+            "timeout_warn_60": "Still working. About 60 seconds left before timeout.",
+            "timeout_warn_10": "Still working. About 10 seconds left before timeout.",
+            "timeout_extended": "Long-running task detected. Timeout window extended automatically.",
         }
         label = system_map.get(status or "")
         if label is None:

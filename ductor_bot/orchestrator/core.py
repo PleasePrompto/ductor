@@ -704,7 +704,7 @@ class Orchestrator:
             msg = f"Session '{session_name}' is still processing"
             raise ValueError(msg)
 
-        ns.status = "running"
+        self._named_sessions.mark_running(chat_id, session_name, prompt)
         exec_config = resolve_cli_config(self._config, self._codex_cache)
         sub = BackgroundSubmit(
             chat_id=chat_id,
@@ -769,6 +769,10 @@ class Orchestrator:
     def list_named_sessions(self, chat_id: int) -> list[NamedSession]:
         """List active named sessions for a chat."""
         return self._named_sessions.list_active(chat_id)
+
+    def pop_recovered_named_sessions(self, chat_id: int | None = None) -> list[NamedSession]:
+        """Pop sessions that were running when the previous process stopped."""
+        return self._named_sessions.pop_recovered_running(chat_id)
 
     def active_background_tasks(self, chat_id: int | None = None) -> list[BackgroundTask]:
         """Return active background tasks, optionally filtered by chat_id."""

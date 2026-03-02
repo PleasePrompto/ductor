@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
+import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 
@@ -19,11 +21,57 @@ from ductor_bot.cli.base import (
     CLIConfig,
     _win_feed_stdin,
 )
-from ductor_bot.cli.stream_events import ResultEvent, StreamEvent
+from ductor_bot.cli.stream_events import ResultEvent, StreamEvent, SystemStatusEvent
 from ductor_bot.cli.types import CLIResponse
 from ductor_bot.infra.process_tree import force_kill_process_tree
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_DYNAMIC_TIMEOUT_MAX_SECONDS = 3600.0
+_DYNAMIC_TIMEOUT_MAX_ENV = "DUCTOR_DYNAMIC_TIMEOUT_MAX_SECONDS"
+_STREAM_TIMEOUT_POLL_SECONDS = 5.0
+_TIMEOUT_WARN_60_SECONDS = 60.0
+_TIMEOUT_WARN_10_SECONDS = 10.0
+
+
+def _resolve_dynamic_timeout_max(timeout_seconds: float | None) -> float | None:
+    """Return the dynamic maximum timeout cap for one stream.
+
+    Priority:
+    1) ``DUCTOR_DYNAMIC_TIMEOUT_MAX_SECONDS`` env var (if valid positive float)
+    2) default: max(configured timeout, 1 hour)
+    """
+    if timeout_seconds is None or timeout_seconds <= 0:
+        return None
+
+    raw = os.environ.get(_DYNAMIC_TIMEOUT_MAX_ENV, "").strip()
+    if raw:
+        try:
+            configured = float(raw)
+        except ValueError:
+            logger.warning("Invalid %s='%s' (must be number)", _DYNAMIC_TIMEOUT_MAX_ENV, raw)
+        else:
+            if configured > 0:
+                return max(timeout_seconds, configured)
+            logger.warning("%s must be > 0, got '%s'", _DYNAMIC_TIMEOUT_MAX_ENV, raw)
+    return max(timeout_seconds, _DEFAULT_DYNAMIC_TIMEOUT_MAX_SECONDS)
+
+
+def _timeout_result_text(elapsed_seconds: float, base_timeout: float | None, cap_seconds: float | None) -> str:
+    """Build a user-facing timeout message (English by default)."""
+    elapsed_label = f"{elapsed_seconds:.0f}s"
+    base_label = f"{base_timeout:.0f}s" if base_timeout and base_timeout > 0 else "configured window"
+    if cap_seconds and cap_seconds > 0:
+        cap_label = f"{cap_seconds:.0f}s"
+        return (
+            f"Request timed out after {elapsed_label}. "
+            f"The timeout window started at {base_label} and was auto-extended up to {cap_label}.\n"
+            "If this is expected to run longer, try again and ask to continue from the previous state."
+        )
+    return (
+        f"Request timed out after {elapsed_label} (configured timeout: {base_label}).\n"
+        "If this is expected to run longer, try again and ask to continue from the previous state."
+    )
 
 
 def _build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
@@ -138,22 +186,95 @@ async def run_streaming_subprocess(
     tracked = reg.register(config.chat_id, process, config.process_label) if reg else None
     stderr_drain = asyncio.create_task(process.stderr.read())
 
+    base_timeout = spec.timeout_seconds
+    dynamic_timeout_cap = _resolve_dynamic_timeout_max(base_timeout)
+    stream_started_at = time.monotonic()
+    deadline = (
+        stream_started_at + base_timeout if base_timeout is not None and base_timeout > 0 else None
+    )
+    warned_60 = False
+    warned_10 = False
+
     try:
-        async with asyncio.timeout(spec.timeout_seconds):
-            while True:
+        while True:
+            if deadline is None:
                 line_bytes = await process.stdout.readline()
-                if not line_bytes:
-                    break
-                line = line_bytes.decode(errors="replace").rstrip()
-                logger.debug("Stream line: %s", line[:120])
-                async for event in line_handler(line):
-                    yield event
+            else:
+                while True:
+                    now = time.monotonic()
+                    elapsed = now - stream_started_at
+                    remaining = deadline - now
+
+                    if remaining <= 0:
+                        if dynamic_timeout_cap is not None and elapsed < dynamic_timeout_cap:
+                            extended_deadline = min(
+                                stream_started_at + dynamic_timeout_cap,
+                                deadline + (base_timeout or 0),
+                            )
+                            if extended_deadline > deadline:
+                                deadline = extended_deadline
+                                warned_60 = False
+                                warned_10 = False
+                                logger.info(
+                                    "%s stream timeout auto-extended elapsed=%.0fs cap=%.0fs",
+                                    provider_label,
+                                    elapsed,
+                                    dynamic_timeout_cap,
+                                )
+                                yield SystemStatusEvent(
+                                    type="system",
+                                    subtype="status",
+                                    status="timeout_extended",
+                                )
+                                continue
+                        raise TimeoutError
+
+                    if remaining <= _TIMEOUT_WARN_60_SECONDS and not warned_60:
+                        warned_60 = True
+                        yield SystemStatusEvent(
+                            type="system",
+                            subtype="status",
+                            status="timeout_warn_60",
+                        )
+                    if remaining <= _TIMEOUT_WARN_10_SECONDS and not warned_10:
+                        warned_10 = True
+                        yield SystemStatusEvent(
+                            type="system",
+                            subtype="status",
+                            status="timeout_warn_10",
+                        )
+
+                    poll_for = min(remaining, _STREAM_TIMEOUT_POLL_SECONDS)
+                    try:
+                        line_bytes = await asyncio.wait_for(process.stdout.readline(), timeout=poll_for)
+                        break
+                    except TimeoutError:
+                        continue
+
+            if not line_bytes:
+                break
+            line = line_bytes.decode(errors="replace").rstrip()
+            logger.debug("Stream line: %s", line[:120])
+            async for event in line_handler(line):
+                yield event
         stderr_bytes = await stderr_drain
     except TimeoutError:
         force_kill_process_tree(process.pid)
         await process.wait()
-        logger.warning("%s stream timed out after %.0fs", provider_label, spec.timeout_seconds)
-        yield ResultEvent(type="result", result="", is_error=True)
+        elapsed_seconds = max(0.0, time.monotonic() - stream_started_at)
+        logger.warning(
+            "%s stream timed out elapsed=%.0fs base=%.0fs cap=%.0fs",
+            provider_label,
+            elapsed_seconds,
+            base_timeout or 0.0,
+            dynamic_timeout_cap or 0.0,
+        )
+        yield ResultEvent(
+            type="result",
+            result=_timeout_result_text(elapsed_seconds, base_timeout, dynamic_timeout_cap),
+            is_error=True,
+            returncode=124,
+        )
         return
     finally:
         await _cancel_drain(stderr_drain)
@@ -210,7 +331,11 @@ async def run_oneshot_subprocess(
         force_kill_process_tree(process.pid)
         await process.wait()
         logger.warning("%s timed out after %.0fs", provider_label, spec.timeout_seconds)
-        return CLIResponse(result="", is_error=True, timed_out=True)
+        return CLIResponse(
+            result=f"Request timed out after {spec.timeout_seconds:.0f}s.",
+            is_error=True,
+            timed_out=True,
+        )
     finally:
         if tracked and reg:
             reg.unregister(tracked)

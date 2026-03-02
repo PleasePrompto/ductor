@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import html as html_mod
+import json
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -135,6 +137,81 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
             await task
 
 
+def _read_boot_id() -> str:
+    """Read Linux boot ID when available (empty string on failure)."""
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _load_startup_state(path: Path) -> dict[str, str]:
+    """Load persisted startup state from JSON."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def _save_startup_state(path: Path, state: dict[str, str]) -> None:
+    """Persist startup state JSON atomically."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _load_inflight_turns(path: Path) -> dict[str, dict[str, object]]:
+    """Load per-chat inflight foreground turns from disk."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    chats = data.get("chats")
+    if not isinstance(chats, dict):
+        return {}
+    out: dict[str, dict[str, object]] = {}
+    for key, value in chats.items():
+        if isinstance(value, dict):
+            out[str(key)] = dict(value)
+    return out
+
+
+def _save_inflight_turns(path: Path, turns: dict[str, dict[str, object]]) -> None:
+    """Persist per-chat inflight foreground turns atomically."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    payload = {"chats": turns}
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _parse_utc_iso(ts: str) -> datetime | None:
+    """Parse ISO timestamp to UTC datetime (best effort)."""
+    if not ts:
+        return None
+    try:
+        parsed = datetime.fromisoformat(ts)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 class TelegramBot:
     """Telegram frontend. All logic lives in the Orchestrator."""
 
@@ -208,6 +285,224 @@ class TelegramBot:
         for uid in self._config.allowed_user_ids:
             await send_rich(self._bot, uid, text, opts)
 
+    async def _notify_startup_status(self) -> None:
+        """Notify allowed users when service is started/restarted/rebooted."""
+        state_path = self._orch.paths.ductor_home / "startup-state.json"
+        prev = await asyncio.to_thread(_load_startup_state, state_path)
+        now = datetime.now(UTC)
+        now_label = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        current_boot_id = await asyncio.to_thread(_read_boot_id)
+
+        prev_boot_id = prev.get("boot_id", "")
+        prev_started_at = prev.get("started_at", "")
+
+        if prev_boot_id and current_boot_id and prev_boot_id != current_boot_id:
+            title = "System reboot detected"
+            body = f"Ductor service is online again.\nTime: {now_label}"
+        elif prev_started_at:
+            title = "Service restarted"
+            body = f"Ductor service restarted and is online.\nTime: {now_label}"
+        else:
+            title = "Service started"
+            body = f"Ductor service is online.\nTime: {now_label}"
+
+        await self._broadcast(
+            fmt(f"**{title}**", SEP, body),
+            SendRichOpts(allowed_roots=self._file_roots(self._orch.paths)),
+        )
+
+        await asyncio.to_thread(
+            _save_startup_state,
+            state_path,
+            {
+                "boot_id": current_boot_id,
+                "started_at": now.isoformat(),
+            },
+        )
+
+    def _inflight_turns_path(self) -> Path:
+        """Return the JSON path used for crash-safe foreground turn recovery."""
+        return self._orch.paths.ductor_home / "inflight-turns.json"
+
+    async def _mark_inflight_turn(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        message_id: int,
+        thread_id: int | None,
+    ) -> None:
+        """Persist the current foreground turn before execution starts."""
+        path = self._inflight_turns_path()
+        turns = await asyncio.to_thread(_load_inflight_turns, path)
+        turns[str(chat_id)] = {
+            "chat_id": chat_id,
+            "text": text,
+            "message_id": message_id,
+            "thread_id": thread_id,
+            "created_at": datetime.now(UTC).isoformat(),
+            "attempts": 0,
+        }
+        await asyncio.to_thread(_save_inflight_turns, path, turns)
+
+    async def _clear_inflight_turn(self, chat_id: int) -> None:
+        """Remove persisted foreground turn after successful completion."""
+        path = self._inflight_turns_path()
+        turns = await asyncio.to_thread(_load_inflight_turns, path)
+        if str(chat_id) not in turns:
+            return
+        turns.pop(str(chat_id), None)
+        await asyncio.to_thread(_save_inflight_turns, path, turns)
+
+    async def _resume_inflight_turns(self) -> None:
+        """Auto-resume unfinished foreground turns detected after restart."""
+        path = self._inflight_turns_path()
+        turns = await asyncio.to_thread(_load_inflight_turns, path)
+        if not turns:
+            logger.info("No inflight foreground turns to resume")
+            return
+
+        logger.info("Found %d inflight foreground turn(s) for auto-resume", len(turns))
+        now = datetime.now(UTC)
+        changed = False
+        for key in list(turns):
+            payload = turns.get(key, {})
+            chat_id = int(payload.get("chat_id", 0) or 0)
+            text = str(payload.get("text", "") or "").strip()
+            if chat_id <= 0 or not text:
+                turns.pop(key, None)
+                changed = True
+                continue
+
+            attempts = int(payload.get("attempts", 0) or 0)
+            created_at = _parse_utc_iso(str(payload.get("created_at", "") or ""))
+            if created_at and (now - created_at).total_seconds() > 2 * 60 * 60:
+                turns.pop(key, None)
+                changed = True
+                continue
+            if attempts >= 3:
+                turns.pop(key, None)
+                changed = True
+                await send_rich(
+                    self._bot,
+                    chat_id,
+                    fmt(
+                        "**Auto-resume skipped**",
+                        SEP,
+                        "A previous task failed to auto-resume multiple times. "
+                        "Send `continue from where you left off` to retry manually.",
+                    ),
+                    SendRichOpts(allowed_roots=self._file_roots(self._orch.paths)),
+                )
+                continue
+
+            thread_raw = payload.get("thread_id")
+            thread_id = int(thread_raw) if isinstance(thread_raw, int) else None
+            logger.info("Auto-resuming inflight turn chat=%d attempts=%d", chat_id, attempts + 1)
+
+            try:
+                await send_rich(
+                    self._bot,
+                    chat_id,
+                    fmt(
+                        "**Resuming previous work**",
+                        SEP,
+                        "Service restart was detected. Continuing the interrupted task automatically.",
+                    ),
+                    SendRichOpts(
+                        allowed_roots=self._file_roots(self._orch.paths), thread_id=thread_id
+                    ),
+                )
+                await self._handle_non_streaming(None, chat_id, text, thread_id=thread_id)
+            except Exception:
+                logger.exception("Failed to auto-resume foreground turn chat=%d", chat_id)
+                payload["attempts"] = attempts + 1
+                turns[key] = payload
+                changed = True
+                with contextlib.suppress(Exception):
+                    await send_rich(
+                        self._bot,
+                        chat_id,
+                        fmt(
+                            "**Auto-resume failed**",
+                            SEP,
+                            "The interrupted task could not be resumed automatically. "
+                            "Send `continue from where you left off` and I will continue from context.",
+                        ),
+                        SendRichOpts(
+                            allowed_roots=self._file_roots(self._orch.paths), thread_id=thread_id
+                        ),
+                    )
+            else:
+                turns.pop(key, None)
+                changed = True
+
+        if changed:
+            await asyncio.to_thread(_save_inflight_turns, path, turns)
+
+    def _build_named_session_resume_prompt(self, last_prompt: str, has_session_id: bool) -> str:
+        """Build recovery prompt for interrupted named background sessions."""
+        if has_session_id:
+            return (
+                "Service restart interrupted your work. Continue from the latest unfinished step "
+                "in this same session. Do not repeat completed work. Then provide a concise "
+                "progress update and next actions."
+            )
+        base = last_prompt.strip()
+        if base:
+            return base
+        return (
+            "Service restart interrupted this task. Continue the previous work and provide "
+            "the latest result."
+        )
+
+    async def _resume_interrupted_named_sessions(self) -> None:
+        """Auto-resume named background sessions that were running before restart."""
+        sessions = self._orch.pop_recovered_named_sessions()
+        if not sessions:
+            logger.info("No interrupted named sessions to auto-resume")
+            return
+
+        logger.info("Found %d interrupted named session(s) for auto-resume", len(sessions))
+        for ns in sessions:
+            # Inter-agent sessions are resumed by explicit bus traffic, not startup replay.
+            if ns.name.startswith("ia-"):
+                continue
+
+            prompt = self._build_named_session_resume_prompt(ns.last_prompt, bool(ns.session_id))
+            try:
+                logger.info("Auto-resuming named session name=%s chat=%d", ns.name, ns.chat_id)
+                await send_rich(
+                    self._bot,
+                    ns.chat_id,
+                    fmt(
+                        f"**[{ns.name}] Auto-resuming**",
+                        SEP,
+                        "Service restart was detected. Resuming this background session now.",
+                    ),
+                    SendRichOpts(allowed_roots=self._file_roots(self._orch.paths)),
+                )
+                self._orch.submit_named_followup_bg(
+                    ns.chat_id,
+                    ns.name,
+                    prompt,
+                    message_id=0,
+                    thread_id=None,
+                )
+            except Exception:
+                logger.exception("Failed to auto-resume named session name=%s", ns.name)
+                with contextlib.suppress(Exception):
+                    await send_rich(
+                        self._bot,
+                        ns.chat_id,
+                        fmt(
+                            f"**[{ns.name}] Auto-resume failed**",
+                            SEP,
+                            f"Send `@{ns.name} continue from where you left off` to continue manually.",
+                        ),
+                        SendRichOpts(allowed_roots=self._file_roots(self._orch.paths)),
+                    )
+
     async def _on_startup(self) -> None:
         from ductor_bot.orchestrator.core import Orchestrator
 
@@ -236,11 +531,15 @@ class TelegramBot:
                     ),
                 )
 
+        await self._notify_startup_status()
+
         self._orchestrator.set_cron_result_handler(self._on_cron_result)
         self._orchestrator.set_heartbeat_handler(self._on_heartbeat_result)
         self._orchestrator.set_webhook_result_handler(self._on_webhook_result)
         self._orchestrator.set_webhook_wake_handler(self._handle_webhook_wake)
         self._orchestrator.set_session_result_handler(self._on_session_result)
+        await self._resume_interrupted_named_sessions()
+        await self._resume_inflight_turns()
 
         # Check for post-upgrade notification
         upgrade = await asyncio.to_thread(consume_upgrade_sentinel, self._orch.paths.ductor_home)
@@ -1003,11 +1302,28 @@ class TelegramBot:
         chat_id = message.chat.id
         thread_id = get_thread_id(message)
         logger.debug("Message text=%s", text[:80])
+        await self._mark_inflight_turn(
+            chat_id,
+            text,
+            message_id=message.message_id,
+            thread_id=thread_id,
+        )
+        completed = False
 
-        if self._config.streaming.enabled:
-            await self._handle_streaming(message, chat_id, text, thread_id=thread_id)
-        else:
-            await self._handle_non_streaming(message, chat_id, text, thread_id=thread_id)
+        try:
+            if self._config.streaming.enabled:
+                await self._handle_streaming(message, chat_id, text, thread_id=thread_id)
+            else:
+                await self._handle_non_streaming(message, chat_id, text, thread_id=thread_id)
+            completed = True
+        except TelegramAPIError as exc:
+            # Network/API blips should not terminate the whole bot process.
+            logger.warning("Telegram API error while handling message chat=%s: %s", chat_id, exc)
+        except Exception:
+            logger.exception("Unhandled error in message handler chat=%s", chat_id)
+        finally:
+            if completed:
+                await self._clear_inflight_turn(chat_id)
 
     async def _resolve_text(self, message: Message) -> str | None:
         """Extract processable text from *message* (plain text or media prompt)."""

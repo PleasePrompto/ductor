@@ -140,6 +140,7 @@ class NamedSession:
     prompt_preview: str
     status: str  # "running" | "idle" | "ended"
     created_at: float
+    last_prompt: str = ""
     message_count: int = 0
 
 
@@ -152,6 +153,7 @@ def _session_from_dict(data: dict[str, Any]) -> NamedSession:
         model=str(data.get("model", "")),
         session_id=str(data.get("session_id", "")),
         prompt_preview=str(data.get("prompt_preview", "")),
+        last_prompt=str(data.get("last_prompt", data.get("prompt_preview", ""))),
         status=str(data.get("status", "ended")),
         created_at=float(data.get("created_at", 0.0)),
         message_count=int(data.get("message_count", 0)),
@@ -170,10 +172,12 @@ class NamedSessionRegistry:
         self._path = path
         self._lock = asyncio.Lock()
         self._sessions: dict[tuple[int, str], NamedSession] = {}
+        self._recovered_running: dict[tuple[int, str], NamedSession] = {}
         self._load()
 
     def _load(self) -> None:
         """Load sessions from JSON on disk."""
+        self._recovered_running.clear()
         raw = load_json(self._path)
         if not raw:
             return
@@ -185,6 +189,7 @@ class NamedSessionRegistry:
             # Downgrade stale "running" to "idle" after restart
             if ns.status == "running":
                 ns.status = "idle"
+                self._recovered_running[(ns.chat_id, ns.name)] = ns
             self._sessions[(ns.chat_id, ns.name)] = ns
         logger.info("Loaded %d named sessions from %s", len(self._sessions), self._path)
 
@@ -219,6 +224,7 @@ class NamedSessionRegistry:
             model=model,
             session_id="",
             prompt_preview=prompt_preview[:60],
+            last_prompt=prompt_preview[:4000],
             status="running",
             created_at=time.time(),
         )
@@ -283,6 +289,16 @@ class NamedSessionRegistry:
         ns.status = status
         self._persist()
 
+    def mark_running(self, chat_id: int, name: str, prompt: str) -> None:
+        """Mark a named session running and capture its latest prompt."""
+        ns = self._sessions.get((chat_id, name))
+        if ns is None:
+            return
+        ns.status = "running"
+        ns.prompt_preview = prompt[:60]
+        ns.last_prompt = prompt[:4000]
+        self._persist()
+
     def add(self, session: NamedSession) -> None:
         """Add a pre-built session to the registry and persist.
 
@@ -297,3 +313,19 @@ class NamedSessionRegistry:
         return {
             s.name for s in self._sessions.values() if s.chat_id == chat_id and s.status != "ended"
         }
+
+    def pop_recovered_running(self, chat_id: int | None = None) -> list[NamedSession]:
+        """Return and remove sessions that were running before the last startup."""
+        if not self._recovered_running:
+            return []
+        if chat_id is None:
+            out = list(self._recovered_running.values())
+            self._recovered_running.clear()
+            return sorted(out, key=lambda s: s.created_at)
+
+        out: list[NamedSession] = []
+        for key in list(self._recovered_running):
+            cid, _name = key
+            if cid == chat_id:
+                out.append(self._recovered_running.pop(key))
+        return sorted(out, key=lambda s: s.created_at)
