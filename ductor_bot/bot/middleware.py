@@ -20,7 +20,7 @@ from aiogram.types import (
     TelegramObject,
 )
 
-from ductor_bot.bot.abort import is_abort_all_message, is_abort_message
+from ductor_bot.bot.abort import is_abort_all_message, is_abort_message, is_interrupt_message
 from ductor_bot.bot.dedup import DedupeCache, build_dedup_key
 from ductor_bot.bot.topic import TopicNameCache, get_session_key, get_thread_id
 from ductor_bot.bus.lock_pool import LockPool
@@ -158,6 +158,7 @@ class SequentialMiddleware(BaseMiddleware):
         self._lock_pool = lock_pool if lock_pool is not None else LockPool()
         self._topic_names = topic_names
         self._dedup = DedupeCache()
+        self._interrupt_handler: AbortHandler | None = None
         self._abort_handler: AbortHandler | None = None
         self._abort_all_handler: AbortAllHandler | None = None
         self._quick_command_handler: QuickCommandHandler | None = None
@@ -173,6 +174,10 @@ class SequentialMiddleware(BaseMiddleware):
     def set_bot(self, bot: Bot) -> None:
         """Inject the Bot instance used to send/edit queue indicator messages."""
         self._bot = bot
+
+    def set_interrupt_handler(self, handler: AbortHandler) -> None:
+        """Register a callback invoked for interrupt triggers *before* the lock."""
+        self._interrupt_handler = handler
 
     def set_abort_handler(self, handler: AbortHandler) -> None:
         """Register a callback invoked for abort triggers *before* the lock."""
@@ -242,7 +247,15 @@ class SequentialMiddleware(BaseMiddleware):
     # -- Middleware entry point ------------------------------------------------
 
     async def _check_abort(self, chat_id: int, text: str, event: Message) -> bool:
-        """Check for abort-all and abort triggers. Returns True if handled."""
+        """Check for interrupt, abort-all and abort triggers. Returns True if handled."""
+        # Check interrupt FIRST — "esc" and "interrupt" trigger soft SIGINT,
+        # not a full kill.  Must come before abort which would match too.
+        if self._interrupt_handler and is_interrupt_message(text):
+            logger.debug("Interrupt trigger detected text=%s", text[:40])
+            handled = await self._interrupt_handler(chat_id, event)
+            if handled:
+                return True
+
         # Check "stop all" BEFORE "stop" — "stop all" contains "stop"
         if self._abort_all_handler and is_abort_all_message(text):
             logger.debug("Abort-all trigger detected text=%s", text[:40])

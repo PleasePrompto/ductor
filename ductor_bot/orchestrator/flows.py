@@ -341,15 +341,20 @@ async def normal(
     try:
         response = await orch._cli_service.execute(request)
         session_recovered = False
-        if not orch._process_registry.was_aborted(key.chat_id) and _needs_session_recovery(
+        _reg = orch._process_registry
+        if not _reg.was_aborted(key.chat_id) and not _reg.was_interrupted(key.chat_id) and _needs_session_recovery(
             response
         ):
             session_recovered = _is_invalid_session(response)
             reason = "invalid_session" if session_recovered else "sigkill"
             ctx = _RecoveryContext(reason=reason, model_override=model_override)
             request, session, response = await _recover_session(orch, key, text, ctx)
-        if orch._process_registry.was_aborted(key.chat_id):
+        if _reg.was_aborted(key.chat_id):
             logger.info("Normal flow aborted by user")
+            return OrchestratorResult(text="")
+        if _reg.was_interrupted(key.chat_id):
+            _reg.clear_interrupt(key.chat_id)
+            logger.info("Normal flow interrupted by user")
             return OrchestratorResult(text="")
         if response.timed_out:
             return await _handle_timeout(orch, key, session, response, request)
@@ -400,7 +405,8 @@ async def normal_streaming(
             on_tool_activity=cb.on_tool_activity,
             on_system_status=cb.on_system_status,
         )
-        if not orch._process_registry.was_aborted(key.chat_id) and _needs_session_recovery(
+        _reg = orch._process_registry
+        if not _reg.was_aborted(key.chat_id) and not _reg.was_interrupted(key.chat_id) and _needs_session_recovery(
             response
         ):
             reason = "invalid_session" if _is_invalid_session(response) else "sigkill"
@@ -408,8 +414,12 @@ async def normal_streaming(
                 reason=reason, model_override=model_override, streaming=True, cbs=cb
             )
             request, session, response = await _recover_session(orch, key, text, ctx)
-        if orch._process_registry.was_aborted(key.chat_id):
+        if _reg.was_aborted(key.chat_id):
             logger.info("Streaming flow aborted by user")
+            return OrchestratorResult(text="")
+        if _reg.was_interrupted(key.chat_id):
+            _reg.clear_interrupt(key.chat_id)
+            logger.info("Streaming flow interrupted by user")
             return OrchestratorResult(text="")
         if response.timed_out:
             return await _handle_timeout(orch, key, session, response, request)
@@ -562,6 +572,10 @@ async def named_session_flow(
     if orch._process_registry.was_aborted(key.chat_id):
         ns.status = "idle"
         return OrchestratorResult(text="")
+    if orch._process_registry.was_interrupted(key.chat_id):
+        orch._process_registry.clear_interrupt(key.chat_id)
+        ns.status = "idle"
+        return OrchestratorResult(text="")
     if response.is_error:
         ns.status = "idle"
         return OrchestratorResult(text=f"{tag}Error: {response.result[:500]}")
@@ -624,6 +638,10 @@ async def named_session_streaming(
     )
 
     if orch._process_registry.was_aborted(key.chat_id):
+        ns.status = "idle"
+        return OrchestratorResult(text="")
+    if orch._process_registry.was_interrupted(key.chat_id):
+        orch._process_registry.clear_interrupt(key.chat_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
     if response.is_error:

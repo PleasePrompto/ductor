@@ -13,6 +13,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     # Daily
     ("new", "Start new chat"),
     ("stop", "Stop running agent"),
+    ("interrupt", "Soft interrupt (ESC)"),
     ("model", "Show/switch model"),
     ("status", "Session info"),
     ("memory", "Show main memory"),

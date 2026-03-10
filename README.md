@@ -228,6 +228,7 @@ The bot logs in with password on first start, then persists `access_token` and `
 | `/model` | Interactive model/provider selector |
 | `/new` | Reset active provider session |
 | `/stop` | Abort active run |
+| `/interrupt` | Soft interrupt current tool (ESC equivalent) |
 | `/stop_all` | Abort runs across all agents |
 | `/status` | Session/provider/auth status |
 | `/memory` | Show persistent memory |

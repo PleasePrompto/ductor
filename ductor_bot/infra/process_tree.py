@@ -80,6 +80,23 @@ def force_kill_process_tree(pid: int) -> None:
     _send_posix_signal(targets, signal.SIGKILL)
 
 
+def interrupt_process(pid: int) -> None:
+    """Send SIGINT to a single process (soft interrupt, e.g. ESC in CLI).
+
+    Unlike :func:`terminate_process_tree` this targets only the lead process
+    and uses SIGINT so the CLI can handle the interrupt gracefully (e.g.
+    cancel the current tool execution without exiting).
+    """
+    if pid <= 0:
+        return
+    if _IS_WINDOWS:
+        with contextlib.suppress(OSError, PermissionError):
+            os.kill(pid, signal.CTRL_C_EVENT)
+        return
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+        os.kill(pid, signal.SIGINT)
+
+
 def _run_taskkill(pid: int, *, force: bool) -> None:
     cmd = ["taskkill"]
     if force:

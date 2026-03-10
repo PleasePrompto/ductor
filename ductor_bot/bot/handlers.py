@@ -22,6 +22,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def handle_interrupt(
+    orchestrator: Orchestrator | None,
+    bot: Bot,
+    *,
+    chat_id: int,
+    message: Message,
+) -> bool:
+    """Send SIGINT to active CLI processes (soft interrupt, like pressing ESC).
+
+    Returns True if handled, False if orchestrator not ready.
+    """
+    if orchestrator is None:
+        return False
+
+    interrupted = orchestrator.interrupt(chat_id)
+    logger.info("Interrupt requested interrupted=%d", interrupted)
+    msg = f"Interrupted {interrupted} process(es)." if interrupted else "No active processes."
+    await send_rich(
+        bot,
+        chat_id,
+        msg,
+        SendRichOpts(reply_to_message_id=message.message_id, thread_id=get_thread_id(message)),
+    )
+    return True
+
+
 async def handle_abort(
     orchestrator: Orchestrator | None,
     bot: Bot,

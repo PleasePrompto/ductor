@@ -11,7 +11,7 @@ For the Matrix transport equivalent, see [matrix.md](matrix.md).
 - `bot/callbacks.py`: shared selector callback helpers (`SelectorResponse` editing)
 - `bot/middleware.py`: `AuthMiddleware`, `SequentialMiddleware`, queue controls, quick-command bypass
 - `bot/message_dispatch.py`: shared streaming/non-streaming execution paths
-- `bot/handlers.py`: command helper handlers (`/new`, `/stop`, generic command path)
+- `bot/handlers.py`: command helper handlers (`/new`, `/stop`, `/interrupt`, generic command path)
 - `bot/chat_tracker.py`: persisted group chat activity (`chat_activity.json`) for `/where` and group audits
 - `bot/topic.py`: topic/session key helpers + topic-name cache
 - `bot/file_browser.py`, `bot/sender.py`, `bot/media.py`, `bot/welcome.py`, `bot/formatting.py`, `bot/typing.py`
@@ -20,7 +20,7 @@ For the Matrix transport equivalent, see [matrix.md](matrix.md).
 
 Bot-level handlers:
 
-- `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/stop_all`, `/restart`, `/new`, `/session`, `/sessions`, `/tasks`, `/agent_commands`
+- `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/interrupt`, `/stop_all`, `/restart`, `/new`, `/session`, `/sessions`, `/tasks`, `/agent_commands`
 - main-agent only: `/agents`, `/agent_start`, `/agent_stop`, `/agent_restart`
 - hidden but supported: `/where`, `/leave` (not in Telegram command popup)
 
@@ -44,7 +44,7 @@ Orchestrator-routed commands:
 
 Flow order:
 
-1. abort checks before lock (`/stop_all`, `/stop`, abort phrases)
+1. interrupt/abort checks before lock (`/interrupt`, `/stop_all`, `/stop`, abort phrases)
 2. quick-command bypass
 3. dedupe by `chat_id:message_id`
 4. queue indicator when lock is busy (`mq:<entry_id>` cancel callback)

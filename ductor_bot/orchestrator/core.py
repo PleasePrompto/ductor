@@ -430,6 +430,15 @@ class Orchestrator:
         self._named_sessions.end_all(chat_id)
         return killed
 
+    def interrupt(self, chat_id: int) -> int:
+        """Send SIGINT to active CLI processes for *chat_id*.
+
+        Unlike :meth:`abort` this does not kill or unregister the processes.
+        It sends a soft interrupt so the CLI can cancel the current tool
+        execution (equivalent to pressing ESC in the terminal).
+        """
+        return self._process_registry.interrupt_all(chat_id)
+
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
         """Resolve requested model to the effective ``(model, provider)`` pair."""
         return self._providers.resolve_runtime_target(requested_model)

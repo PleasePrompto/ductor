@@ -273,7 +273,10 @@ class MatrixBot:
             return
 
         key = SessionKey(chat_id=chat_id, topic_id=None)
-        await self._dispatch_message(key, text, room_id, event)
+        asyncio.create_task(
+            self._dispatch_with_lock(key, text, room_id, event),
+            name=f"mx-msg-{room_id[:8]}",
+        )
 
     async def _on_media(self, room: MatrixRoom | object, event: RoomMessageMedia | object) -> None:
         """Handle incoming media messages (images, audio, video, files)."""
@@ -320,7 +323,10 @@ class MatrixBot:
             return
 
         key = SessionKey(chat_id=chat_id, topic_id=None)
-        await self._dispatch_message(key, text, room_id, event)
+        asyncio.create_task(
+            self._dispatch_with_lock(key, text, room_id, event),
+            name=f"mx-media-{room_id[:8]}",
+        )
 
     # Commands routed to the orchestrator's CommandRegistry
     _ORCHESTRATOR_COMMANDS = frozenset({
@@ -342,12 +348,31 @@ class MatrixBot:
 
         handler = self._COMMAND_DISPATCH.get(cmd)
         if handler is not None:
-            await handler(self, text=text, room_id=room_id, key=key, event=event)
+            if cmd in self._IMMEDIATE_COMMANDS:
+                # Immediate commands (stop, interrupt, help, …) run without
+                # the lock so they can abort in-flight work instantly.
+                await handler(self, text=text, room_id=room_id, key=key, event=event)
+            else:
+                # Other dispatch-table commands (new, session) may call the
+                # orchestrator — run as a background task with the lock.
+                asyncio.create_task(
+                    self._run_handler_with_lock(
+                        handler, text=text, room_id=room_id, key=key, event=event,
+                    ),
+                    name=f"mx-cmd-{cmd}",
+                )
         elif cmd in self._ORCHESTRATOR_COMMANDS:
-            await self._cmd_orchestrator(text=text, room_id=room_id, key=key, event=event)
+            # Orchestrator commands may call the CLI — run with lock.
+            asyncio.create_task(
+                self._cmd_orchestrator_locked(text=text, room_id=room_id, key=key, event=event),
+                name=f"mx-orch-{cmd}",
+            )
         else:
             # Unknown command → treat as regular message
-            await self._dispatch_message(key, text, room_id, event)
+            asyncio.create_task(
+                self._dispatch_with_lock(key, text, room_id, event),
+                name=f"mx-cmd-{cmd}",
+            )
 
     # -- Individual command handlers ----------------------------------------
 
@@ -356,6 +381,13 @@ class MatrixBot:
         if orch:
             killed = await orch.abort(key.chat_id)
             msg = f"Stopped {killed} process(es)." if killed else "No active processes."
+            await self._send_rich(room_id, msg)
+
+    async def _cmd_interrupt(self, *, text: str, room_id: str, key: SessionKey, event: object) -> None:
+        orch = self._orchestrator
+        if orch:
+            interrupted = orch.interrupt(key.chat_id)
+            msg = f"Interrupted {interrupted} process(es)." if interrupted else "No active processes."
             await self._send_rich(room_id, msg)
 
     async def _cmd_stop_all(self, *, text: str, room_id: str, key: SessionKey, event: object) -> None:
@@ -455,6 +487,36 @@ class MatrixBot:
         if result and result.text:
             await self._send_selector_response(room_id, result.text, result.buttons)
 
+    async def _dispatch_with_lock(
+        self, key: SessionKey, text: str, room_id: str, event: object
+    ) -> None:
+        """Acquire the per-chat lock, then dispatch the message.
+
+        Spawned as an ``asyncio.create_task`` so the nio sync loop is never
+        blocked, allowing ``!stop`` / ``!interrupt`` to be processed
+        immediately even while a long-running message is in flight.
+        """
+        lock = self._lock_pool.get(key.lock_key)
+        async with lock:
+            await self._dispatch_message(key, text, room_id, event)
+
+    async def _run_handler_with_lock(
+        self, handler: Callable[..., Awaitable[None]], **kwargs: object
+    ) -> None:
+        """Run a command handler under the per-chat lock."""
+        key: SessionKey = kwargs["key"]  # type: ignore[assignment]
+        lock = self._lock_pool.get(key.lock_key)
+        async with lock:
+            await handler(self, **kwargs)
+
+    async def _cmd_orchestrator_locked(
+        self, *, text: str, room_id: str, key: SessionKey, event: object
+    ) -> None:
+        """Run an orchestrator command under the per-chat lock."""
+        lock = self._lock_pool.get(key.lock_key)
+        async with lock:
+            await self._cmd_orchestrator(text=text, room_id=room_id, key=key, event=event)
+
     async def _dispatch_message(self, key: SessionKey, text: str, room_id: str, event: object) -> None:
         """Route a message through streaming or non-streaming pipeline."""
         if self._config.streaming.enabled:
@@ -466,6 +528,7 @@ class MatrixBot:
     _COMMAND_DISPATCH: dict[str, Callable[..., Awaitable[None]]] = {
         "stop": _cmd_stop,
         "stop_all": _cmd_stop_all,
+        "interrupt": _cmd_interrupt,
         "restart": _cmd_restart,
         "new": _cmd_new,
         "help": _cmd_help,
@@ -475,6 +538,13 @@ class MatrixBot:
         "showfiles": _cmd_showfiles,
         "session": _cmd_session,
     }
+
+    # Commands that run immediately without the per-chat lock.
+    # These must be fast and non-blocking (no CLI calls).
+    _IMMEDIATE_COMMANDS: frozenset[str] = frozenset({
+        "stop", "stop_all", "interrupt", "restart",
+        "help", "start", "info", "agent_commands", "showfiles",
+    })
 
     def _build_help_text(self) -> str:
         """Build the help text showing all available commands."""

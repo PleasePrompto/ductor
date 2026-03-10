@@ -17,8 +17,7 @@ ABORT_WORDS: frozenset[str] = frozenset(
         "wait",
         "quit",
         "exit",
-        "esc",
-        "interrupt",
+        # Note: "esc" and "interrupt" are handled by is_interrupt_message()
         # German
         "stopp",
         "warte",
@@ -69,3 +68,25 @@ def is_abort_all_message(text: str) -> bool:
     if command == "/stop_all" or command.startswith("/stop_all@"):
         return True
     return is_abort_all_trigger(stripped)
+
+
+# -- Interrupt detection (soft SIGINT, not kill) ------------------------------
+
+INTERRUPT_WORDS: frozenset[str] = frozenset({"esc", "interrupt"})
+
+
+def is_interrupt_trigger(text: str) -> bool:
+    """Return *True* if *text* is a bare-word interrupt trigger."""
+    stripped = text.strip().lower()
+    if " " in stripped:
+        return False
+    return stripped in INTERRUPT_WORDS
+
+
+def is_interrupt_message(text: str) -> bool:
+    """Return *True* if *text* is a ``/interrupt`` command or bare-word interrupt."""
+    stripped = text.strip()
+    command = stripped.lower().split(None, 1)[0] if stripped else ""
+    if command in ("/interrupt", "!interrupt") or command.startswith("/interrupt@"):
+        return True
+    return is_interrupt_trigger(stripped)

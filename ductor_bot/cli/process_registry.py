@@ -8,7 +8,11 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from ductor_bot.infra.process_tree import force_kill_process_tree, terminate_process_tree
+from ductor_bot.infra.process_tree import (
+    force_kill_process_tree,
+    interrupt_process,
+    terminate_process_tree,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +36,7 @@ class ProcessRegistry:
         self._processes: dict[int, list[TrackedProcess]] = {}
         self._aborted: set[int] = set()
         self._aborted_labels: set[tuple[int, str]] = set()
+        self._interrupted: set[int] = set()
 
     def register(
         self, chat_id: int, process: asyncio.subprocess.Process, label: str
@@ -92,6 +97,14 @@ class ProcessRegistry:
         """Clear the abort flag for *chat_id*."""
         self._aborted.discard(chat_id)
 
+    def was_interrupted(self, chat_id: int) -> bool:
+        """Check whether *chat_id* was soft-interrupted since last clear."""
+        return chat_id in self._interrupted
+
+    def clear_interrupt(self, chat_id: int) -> None:
+        """Clear the interrupt flag for *chat_id*."""
+        self._interrupted.discard(chat_id)
+
     def has_active(self, chat_id: int) -> bool:
         """Return True if *chat_id* has at least one running subprocess."""
         entries = self._processes.get(chat_id, [])
@@ -118,6 +131,34 @@ class ProcessRegistry:
     def clear_label_abort(self, chat_id: int, label: str) -> None:
         """Clear the abort flag for a specific label."""
         self._aborted_labels.discard((chat_id, label))
+
+    def interrupt_all(self, chat_id: int) -> int:
+        """Send SIGINT to every active process for *chat_id*.
+
+        Unlike :meth:`kill_all` this does NOT terminate or unregister the
+        processes — it sends a soft interrupt so the CLI can cancel the
+        current operation (equivalent to pressing ESC in the terminal).
+        Returns the count of processes signalled.
+        """
+        entries = self._processes.get(chat_id, [])
+        if not entries:
+            return 0
+        self._interrupted.add(chat_id)
+        count = 0
+        for tracked in entries:
+            if tracked.process.returncode is not None:
+                continue
+            interrupt_process(tracked.process.pid)
+            logger.debug(
+                "SIGINT sent: pid=%s label=%s chat=%d",
+                tracked.process.pid,
+                tracked.label,
+                tracked.chat_id,
+            )
+            count += 1
+        if count:
+            logger.info("Interrupted %d CLI process(es) for chat=%d", count, chat_id)
+        return count
 
     async def kill_stale(self, max_age_seconds: float) -> int:
         """Kill processes older than *max_age_seconds* (wall-clock). Returns count killed."""
