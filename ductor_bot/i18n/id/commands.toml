@@ -1,0 +1,26 @@
+# Deskripsi perintah bot (maks 22 karakter untuk klien Telegram mobile).
+
+[bot]
+new = "Mulai obrolan baru"
+stop = "Hentikan + kosongkan antrean"
+interrupt = "Interupsi, simpan antrean"
+model = "Tampilkan/ganti model"
+status = "Info sesi"
+memory = "Tampilkan memori utama"
+session = "Sesi latar"
+tasks = "Tugas latar"
+cron = "Kelola cron job"
+agent_commands = "Sistem multi-agen"
+showfiles = "Jelajah file"
+info = "Dokumen, tautan & tentang"
+help = "Tampilkan semua perintah"
+diagnose = "Diagnostik sistem"
+upgrade = "Periksa pembaruan"
+restart = "Restart bot"
+
+[multiagent]
+agents = "Daftar semua agen"
+agent_start = "Mulai sub-agen"
+agent_stop = "Hentikan sub-agen"
+agent_restart = "Restart sub-agen"
+stop_all = "Hentikan semua"

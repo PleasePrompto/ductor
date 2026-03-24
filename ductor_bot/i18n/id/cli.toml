@@ -1,0 +1,286 @@
+# Indonesian CLI strings (Rich-formatted, shown in terminal).
+
+# -- Status command ------------------------------------------------------------
+
+[status]
+running = "[bold green]Berjalan[/bold green]  pid={pid}  uptime: {uptime}"
+not_running = "[dim]Tidak berjalan[/dim]"
+provider = "Provider:  [cyan]{provider}[/cyan] ({model})"
+docker_enabled = "Docker:    [green]aktif[/green] ({name})"
+docker_disabled = "Docker:    [dim]nonaktif[/dim]"
+errors_found = "Kesalahan: [bold red]{count}[/bold red] di log terbaru"
+errors_none = "Kesalahan: [green]0[/green]"
+paths_header = "[bold]Path:[/bold]"
+not_configured = "[bold yellow]Belum dikonfigurasi.[/bold yellow]\n\nJalankan [bold]ductor[/bold] untuk memulai wizard pengaturan."
+
+# -- Config validation ---------------------------------------------------------
+
+[config]
+incomplete = "[bold yellow]Konfigurasi tidak lengkap. Jalankan [bold]ductor onboarding[/bold].[/bold yellow]"
+matrix_no_homeserver = "[bold yellow]URL homeserver Matrix diperlukan.{hint}[/bold yellow]"
+matrix_no_user = "[bold yellow]user_id Matrix diperlukan.{hint}[/bold yellow]"
+matrix_no_auth = "[bold yellow]Kata sandi atau access_token Matrix diperlukan.{hint}[/bold yellow]"
+matrix_no_target = "[bold yellow]Setidaknya satu allowed_room atau allowed_user diperlukan.{hint}[/bold yellow]"
+onboarding_hint = " Jalankan [bold]ductor onboarding[/bold] untuk mengonfigurasi ulang."
+
+# -- Lifecycle -----------------------------------------------------------------
+
+[lifecycle]
+stopping_docker = "[dim]Menghentikan kontainer Docker '{name}'...[/dim]"
+docker_stopped = "[green]Kontainer Docker dihentikan.[/green]"
+stopping_bot = "[dim]Menghentikan bot (pid={pid})...[/dim]"
+bot_stopped = "[green]Bot dihentikan.[/green]"
+killed_extra = "[dim]Mematikan {count} proses ductor yang tersisa.[/dim]"
+no_instance = "[dim]Tidak ada instance bot yang berjalan.[/dim]"
+
+[lifecycle.uninstall]
+title = "[bold red]Hapus Instalasi ductor[/bold red]"
+body = """\
+[bold red]Ini akan menghapus ductor secara permanen dari sistem Anda.[/bold red]\n
+  1. Hentikan bot yang berjalan (jika aktif)
+  2. Hapus kontainer dan image Docker (jika digunakan)
+  3. Hapus semua data di ~/.ductor/
+  4. Hapus instalasi paket ductor"""
+confirm = "Apakah Anda yakin ingin menghapus segalanya?"
+cancelled = "[dim]Penghapusan instalasi dibatalkan.[/dim]"
+removing_image = "[dim]Menghapus image Docker '{image}'...[/dim]"
+image_removed = "[green]Image Docker dihapus.[/green]"
+uninstalling = "[dim]Menghapus instalasi paket ductor...[/dim]"
+delete_warning = "[yellow]Peringatan: Tidak dapat menghapus sepenuhnya {home} (beberapa file mungkin terkunci). Hapus secara manual.[/yellow]"
+deleted = "[green]Dihapus {home}[/green]"
+done_title = "[bold green]Selamat Tinggal[/bold green]"
+done_body = "[bold green]ductor telah dihapus sepenuhnya.[/bold green]\n\nTerima kasih telah menggunakan ductor!"
+
+[lifecycle.upgrade]
+dev_title = "[bold yellow]Instalasi Pengembangan[/bold yellow]"
+dev_body = """\
+[bold yellow]Berjalan dari kode sumber (editable install).[/bold yellow]\n
+Pembaruan mandiri tidak tersedia.
+Perbarui dengan [bold]git pull[/bold] di direktori proyek Anda."""
+title = "[bold cyan]Memperbarui ductor...[/bold cyan]"
+body = """\
+  1. Hentikan bot yang berjalan dengan baik
+  2. Perbarui ke versi terbaru
+  3. Restart"""
+upgrading = "[dim]Memperbarui paket...[/dim]"
+complete = "[green]Pembaruan selesai: {old} -> {new}[/green]"
+unchanged = "[bold yellow]Versi tidak berubah setelah pembaruan ({version}).[/bold yellow]\nPercobaan ulang otomatis dilakukan, tetapi versi baru yang terpasang belum dapat diverifikasi."
+restarting = "[dim]Memulai ulang...[/dim]"
+
+# -- Docker commands -----------------------------------------------------------
+
+[docker]
+config_not_found = "[bold red]Konfigurasi tidak ditemukan. Jalankan ductor terlebih dahulu.[/bold red]"
+config_read_error = "[bold red]Gagal membaca konfigurasi.[/bold red]"
+enabled = "Docker sandboxing: [green]aktif[/green]"
+disabled = "Docker sandboxing: [dim]nonaktif[/dim]"
+restart_hint = "[dim]Restart bot untuk menerapkan.[/dim]"
+
+[docker.rebuild]
+stopping = "[dim]Menghentikan bot...[/dim]"
+removing_container = "[dim]Menghapus kontainer '{name}'...[/dim]"
+removing_image = "[dim]Menghapus image '{name}'...[/dim]"
+done = "[green]Selesai.[/green] Image akan dibangun ulang saat bot berikutnya dimulai.\n[dim]Jika berjalan sebagai layanan, akan restart otomatis.[/dim]"
+
+[docker.mount]
+usage = "[bold red]Penggunaan: ductor docker mount <path>[/bold red]"
+not_exist = "[bold red]Path tidak ada: {path}[/bold red]"
+not_dir = "[bold red]Bukan direktori: {path}[/bold red]"
+already = "[dim]Sudah dimount: {path}[/dim]"
+done = "[green]Dimount:[/green] {path}{target}"
+apply_hint = "[dim]Restart bot (atau rebuild kontainer) untuk menerapkan.[/dim]"
+
+[docker.unmount]
+usage = "[bold red]Penggunaan: ductor docker unmount <path>[/bold red]"
+not_found = "[bold red]Mount tidak ditemukan: {path}[/bold red]"
+done = "[green]Di-unmount:[/green] {path}"
+
+[docker.mounts]
+empty = "[dim]Tidak ada mount yang dikonfigurasi.[/dim]"
+add_hint = "[dim]Gunakan 'ductor docker mount <path>' untuk menambahkan.[/dim]"
+
+[docker.extras]
+col_package = "Paket"
+col_description = "Fungsi"
+col_status = "Status"
+selected = "[green]dipilih[/green]"
+not_selected = "[dim]—[/dim]"
+apply_hint = "[dim]Jalankan 'ductor docker rebuild' untuk menerapkan extras yang dipilih ke image.[/dim]"
+add_hint = "[dim]Gunakan 'ductor docker extras-add <id>' untuk menambahkan extra.[/dim]"
+remove_hint = "[dim]Gunakan 'ductor docker extras-remove <id>' untuk menghapus extra.[/dim]"
+usage_add = "[bold red]Penggunaan: ductor docker extras-add <id>[/bold red]"
+usage_remove = "[bold red]Penggunaan: ductor docker extras-remove <id>[/bold red]"
+see_ids = "[dim]Jalankan 'ductor docker extras' untuk melihat ID yang tersedia.[/dim]"
+see_installed = "[dim]Jalankan 'ductor docker extras' untuk melihat ID yang terpasang.[/dim]"
+unknown = "[bold red]Extra tidak dikenal: {id}[/bold red]"
+already_installed = "[dim]Sudah terpasang: {id}[/dim]"
+not_installed = "[bold red]Belum terpasang: {id}[/bold red]"
+added = "[green]Ditambahkan:[/green] {names}"
+auto_deps = "[dim]Dependensi otomatis ditambahkan: {names}[/dim]"
+removed = "[green]Dihapus:[/green] {name}"
+rebuild_hint = "[yellow]Jalankan 'ductor docker rebuild' untuk menerapkan.[/yellow]"
+dep_warning = "[yellow]Peringatan: {dependents} bergantung pada {name}.[/yellow]"
+
+# -- Service commands ----------------------------------------------------------
+
+[service]
+not_installed = "[dim]Layanan belum terpasang. Jalankan [bold]ductor service install[/bold].[/dim]"
+not_running = "[dim]Layanan tidak berjalan.[/dim]"
+no_service = "[dim]Tidak ada layanan yang terpasang.[/dim]"
+no_binary = "[bold red]Tidak dapat menemukan biner ductor di PATH.[/bold red]"
+removed = "[green]Layanan dihapus.[/green]"
+started = "[green]Layanan dimulai.[/green]"
+stopped = "[green]Layanan dihentikan.[/green]"
+start_failed = "[red]Gagal memulai: {error}[/red]"
+stop_failed = "[red]Gagal menghentikan: {error}[/red]"
+
+[service.install]
+title = "layanan latar ductor"
+body = """\
+[bold green]ductor sekarang berjalan sebagai layanan latar.[/bold green]\n
+{detail}\n
+[bold]Perintah yang berguna:[/bold]\n
+  [cyan]ductor service status[/cyan]     Periksa apakah sedang berjalan
+  [cyan]ductor service stop[/cyan]       Hentikan layanan
+  [cyan]ductor service logs[/cyan]       {logs_hint}
+  [cyan]ductor service uninstall[/cyan]  Hapus layanan"""
+
+[service.linux]
+no_systemd = "[bold red]systemd tidak ditemukan. Instalasi layanan memerlukan Linux dengan systemd.[/bold red]"
+linger_warning = "[bold yellow]Linger harus diaktifkan agar ductor tetap berjalan setelah Anda keluar.[/bold yellow]"
+linger_enabled = "[green]Linger diaktifkan.[/green]"
+linger_manual = "[yellow]Tidak dapat mengaktifkan linger secara otomatis.[/yellow]\nJalankan secara manual: [bold]sudo loginctl enable-linger {user}[/bold]"
+start_failed = "[bold red]Gagal memulai layanan:[/bold red] {error}"
+detail = "Dimulai saat boot dan restart saat crash."
+
+[service.macos]
+no_launchctl = "[bold red]launchctl tidak ditemukan. Instalasi layanan memerlukan macOS.[/bold red]"
+start_failed = "[bold red]Gagal memuat Launch Agent:[/bold red] {error}"
+detail = "Dimulai saat login dan restart saat crash (throttle 10 detik)."
+unload_failed = "[red]Gagal membongkar agent: {error}[/red]"
+not_loaded = "[red]Agent tidak dimuat. Coba: [bold]ductor service install[/bold][/red]"
+
+[service.windows]
+admin_title = "[bold yellow]Hak Administrator Diperlukan[/bold yellow]"
+admin_body = """\
+[bold yellow]Diperlukan hak administrator.[/bold yellow]\n
+Buka terminal sebagai Administrator dan coba lagi:\n
+  [bold]1.[/bold] Klik kanan pada CMD atau PowerShell
+  [bold]2.[/bold] Pilih [cyan]'Jalankan sebagai administrator'[/cyan]
+  [bold]3.[/bold] Jalankan: [cyan]ductor service install[/cyan]"""
+no_scheduler = "[bold red]Task Scheduler tidak tersedia. Instalasi layanan memerlukan Windows.[/bold red]"
+no_pythonw = "[dim]Catatan: pythonw.exe tidak ditemukan. Jendela konsol mungkin terlihat.[/dim]"
+create_failed = "[bold red]Gagal membuat tugas terjadwal:[/bold red] {error}"
+start_failed = "[bold red]Tugas dibuat tetapi gagal dimulai:[/bold red] {error}"
+remove_failed = "[red]Gagal menghapus tugas: {error}[/red]"
+detail = "Dimulai 10 detik setelah login dan restart saat crash (hingga 3 percobaan, interval 1 menit)."
+query_failed = "[red]Tidak dapat menanyakan status tugas: {error}[/red]"
+
+[service.logs]
+no_logs = "[dim]Tidak ada file log yang ditemukan.[/dim]"
+showing = "[dim]Menampilkan {count} baris terakhir dari {name}[/dim]"
+read_error = "[red]Tidak dapat membaca file log: {error}[/red]"
+full_path = "[dim]Log lengkap: {path}[/dim]"
+not_installed = "[dim]Layanan belum terpasang.[/dim]"
+streaming = "[dim]Menampilkan log (Ctrl+C untuk berhenti)...[/dim]"
+no_journalctl = "[bold red]journalctl tidak ditemukan.[/bold red]"
+
+# -- API commands --------------------------------------------------------------
+
+[api]
+title = "[bold]Perintah API[/bold] [dim](beta)[/dim]"
+status_not_configured = "[dim]belum dikonfigurasi[/dim]"
+status_enabled = "[green]aktif[/green] (port {port})"
+status_disabled = "[dim]nonaktif[/dim]"
+
+[api.missing_dep]
+title = "[bold]Dependensi tidak ditemukan[/bold]"
+body = """\
+[bold yellow]PyNaCl diperlukan untuk server API (enkripsi E2E).[/bold yellow]\n
+Pasang dengan:\n
+  [bold]{hint}[/bold]\n
+Kemudian jalankan [bold]ductor api enable[/bold] lagi."""
+
+[api.enabled]
+title = "[bold]Server API[/bold] [dim](beta)[/dim]"
+body = """\
+[bold green]Server API diaktifkan.[/bold green]\n
+  Host:   [cyan]{host}[/cyan]
+  Port:   [cyan]{port}[/cyan]
+  Token:  [cyan]{token}[/cyan]\n
+[dim]Restart bot untuk memulai server API.[/dim]
+[dim]Dirancang untuk digunakan dengan Tailscale atau jaringan privat lainnya.[/dim]"""
+
+[api.disabled]
+status = "Server API: [dim]nonaktif[/dim]"
+
+# -- Agent commands ------------------------------------------------------------
+
+[agents]
+col_agent = "Agen"
+col_status = "Status"
+col_uptime = "Uptime"
+col_provider = "Provider"
+col_model = "Model"
+status_running = "[bold green]berjalan[/bold green]"
+status_starting = "[yellow]memulai[/yellow]"
+status_crashed = "[bold red]crash[/bold red]"
+status_stopped = "[dim]dihentikan[/dim]"
+empty = "[dim]Tidak ada sub-agen yang dikonfigurasi.[/dim]"
+add_hint = "[dim]Gunakan 'ductor agents add <nama>' untuk membuat satu.[/dim]"
+
+[agents.add]
+usage = "[bold red]Penggunaan: ductor agents add <nama>[/bold red]"
+reserved = "[bold red]Nama 'main' sudah dicadangkan.[/bold red]"
+exists = "[bold red]Agen '{name}' sudah ada.[/bold red]"
+prompt_token = "Token bot Telegram untuk '{name}':"
+prompt_users = "ID pengguna yang diizinkan (dipisah koma):"
+prompt_groups = "ID grup yang diizinkan (dipisah koma, kosongkan jika tidak ada):"
+prompt_provider = "Provider:"
+prompt_model = "Model (mis. opus, sonnet, o3):"
+cancelled = "[dim]Dibatalkan.[/dim]"
+done = "[green]Agen '{name}' ditambahkan ke agents.json.[/green]"
+auto_start = "[dim]Akan dimulai otomatis saat bot berikutnya (re)start.[/dim]"
+
+[agents.remove]
+usage = "[bold red]Penggunaan: ductor agents remove <nama>[/bold red]"
+not_found = "[bold red]Agen '{name}' tidak ditemukan.[/bold red]"
+confirm = "Hapus agen '{name}'? (Data workspace tidak akan dihapus.)"
+done = "[green]Agen '{name}' dihapus dari agents.json.[/green]"
+data_hint = "[dim]Data workspace tersimpan di {path}[/dim]"
+
+# -- Install extras ------------------------------------------------------------
+
+[install]
+already = "[green]✓[/green] {description} sudah terpasang."
+installing = "Memasang {description}..."
+command = "[dim]$ {cmd}[/dim]"
+done = "[green]✓[/green] {description} berhasil dipasang."
+failed = "[red]✗[/red] Pemasangan gagal."
+col_extra = "Extra"
+col_description = "Deskripsi"
+col_status = "Status"
+status_installed = "[green]terpasang[/green]"
+status_not_installed = "[dim]belum terpasang[/dim]"
+
+# -- Help table ----------------------------------------------------------------
+
+[help]
+col_command = "Perintah"
+col_description = "Deskripsi"
+ductor = "Mulai bot (jalankan onboarding jika perlu)"
+onboarding = "Wizard pengaturan (reset jika sudah dikonfigurasi)"
+stop = "Hentikan bot dan kontainer Docker yang berjalan"
+restart = "Restart bot"
+reset = "Reset penuh dan pengaturan ulang"
+upgrade = "Hentikan, perbarui ke terbaru, restart"
+uninstall = "Hapus segalanya dan hapus instalasi"
+service_install = "Jalankan sebagai layanan latar ({hint})"
+service = "Manajemen layanan (status/stop/logs/...)"
+agents = "Manajemen sub-agen (list/add/remove)"
+docker = "Manajemen Docker (rebuild/enable/disable)"
+api = "Manajemen server API (enable/disable) [beta]"
+install = "Pasang extras opsional (matrix, api)"
+status = "Tampilkan status bot, path, dan agen"
+help = "Tampilkan pesan ini"
+verbose = "Output log verbose"

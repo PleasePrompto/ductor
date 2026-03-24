@@ -1,0 +1,182 @@
+# Indonesian wizard strings (Rich-formatted, shown in terminal during onboarding).
+
+[common]
+cancelled = "[dim]Pengaturan dibatalkan.[/dim]"
+subtitle = "ductor.dev"
+
+[cli_backends]
+title = "Backend CLI"
+header = "[bold]Backend AI yang Terdeteksi:[/bold]\n"
+claude = "  Claude Code CLI   {status}"
+codex = "  OpenAI Codex CLI  {status}"
+gemini = "  Google Gemini CLI {status}"
+no_auth = """\
+\n[bold red]Setidaknya satu CLI harus terpasang dan terautentikasi.[/bold red]\n
+  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
+  Codex:  [dim]https://github.com/openai/codex[/dim]
+  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"""
+
+[disclaimer]
+title = "[bold yellow]Penafian[/bold yellow]"
+body = """\
+[bold]Penting -- harap baca sebelum melanjutkan.[/bold]\n
+ductor terhubung ke [bold]Anthropic Claude CLI[/bold] dan \
+[bold]OpenAI Codex CLI[/bold] sebagai backend agen AI.\n
+Bot beroperasi dalam [bold yellow]mode bypass izin penuh[/bold yellow]. \
+Agen dapat membaca, menulis, dan menghapus file, menjalankan perintah, \
+dan berinteraksi dengan sistem Anda tanpa meminta konfirmasi.\n
+Meskipun ada perlindungan, [bold red]tindakan yang tidak diinginkan dapat terjadi[/bold red] \
+-- termasuk kehilangan data, perubahan file yang tidak terduga, atau eksekusi perintah yang tidak diinginkan.\n
+[bold green]Kami sangat menyarankan untuk menjalankan ductor di dalam kontainer Docker[/bold green] \
+untuk mengisolasi dari sistem host Anda."""
+confirm = "Saya memahami risikonya dan ingin melanjutkan."
+
+[transport]
+title = "[bold]Transport Pesan[/bold]"
+body = """\
+[bold]Pilih cara pengguna berkomunikasi dengan bot:[/bold]\n
+  [bold cyan]Telegram[/bold cyan]  — Memerlukan token bot dari @BotFather
+  [bold cyan]Matrix[/bold cyan]    — Memerlukan akun Matrix di homeserver (mis. Element)"""
+prompt = "Pilih transport:"
+
+[telegram.token]
+title = "[bold]Token Bot Telegram[/bold]"
+body = """\
+[bold]Cara mendapatkan Token Bot Telegram Anda:[/bold]\n
+  1. Buka Telegram dan cari [bold cyan]@BotFather[/bold cyan]
+  2. Kirim [bold]/newbot[/bold] dan ikuti petunjuknya
+  3. Pilih nama dan username untuk bot Anda
+  4. BotFather akan membalas dengan token bot Anda\n
+[dim]Format token: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz[/dim]"""
+prompt = "Tempel token bot Anda:"
+error = "[red]Format token tidak valid. Diharapkan: angka:alfanumerik (mis. 123456:ABC-xyz)[/red]"
+
+[telegram.user_id]
+title = "[bold]ID Pengguna Telegram[/bold]"
+body = """\
+[bold]Cara menemukan ID Pengguna Telegram Anda:[/bold]\n
+  1. Buka Telegram dan cari [bold cyan]@userinfobot[/bold cyan]
+  2. Kirim [bold]/start[/bold] ke bot
+  3. Bot akan membalas dengan ID pengguna numerik Anda\n
+[dim]Hanya pesan dari ID pengguna ini yang akan diterima oleh bot.[/dim]"""
+prompt = "Masukkan ID pengguna numerik Anda:"
+error_nan = "[red]Masukkan angka yang valid.[/red]"
+error_negative = "[red]ID pengguna harus berupa angka positif.[/red]"
+
+[matrix.homeserver]
+title = "[bold]Homeserver Matrix[/bold]"
+body = """\
+[bold]Masukkan URL homeserver Matrix Anda.[/bold]\n
+  Ini adalah server tempat akun bot Anda berada.\n
+[dim]Contoh: https://matrix.example.com[/dim]"""
+prompt = "URL Homeserver:"
+error = "[red]Harus berupa URL HTTPS (mis. https://matrix.example.com)[/red]"
+
+[matrix.user_id]
+title = "[bold]ID Pengguna Bot Matrix[/bold]"
+body = """\
+[bold]Masukkan ID pengguna Matrix bot.[/bold]\n
+  Buat akun khusus untuk bot di homeserver Anda.\n
+[dim]Format: @namabot:homeserver.domain[/dim]"""
+prompt = "ID pengguna bot:"
+error = "[red]Format tidak valid. Diharapkan: @localpart:domain (mis. @mybot:matrix.org)[/red]"
+
+[matrix.password]
+title = "[bold]Kata Sandi Matrix[/bold]"
+body = """\
+[bold]Masukkan kata sandi akun bot.[/bold]\n
+  Digunakan hanya untuk login pertama kali. Setelah login pertama,
+  access token disimpan dan kata sandi tidak lagi diperlukan."""
+prompt = "Kata sandi:"
+error = "[red]Kata sandi tidak boleh kosong.[/red]"
+
+[matrix.allowed_users]
+title = "[bold]Pengguna yang Diizinkan[/bold]"
+body = """\
+[bold]Siapa yang diizinkan berbicara dengan bot ini?[/bold]\n
+  Masukkan ID pengguna Matrix Anda. Hanya pesan dari pengguna
+  yang diizinkan yang akan diproses.\n
+[dim]Format: @username:homeserver.domain[/dim]"""
+prompt = "ID pengguna Matrix Anda:"
+error = "[red]Format tidak valid. Diharapkan: @user:domain (mis. @nik:matrix.org)[/red]"
+
+[docker]
+title = "[bold]Docker Sandboxing[/bold]"
+found_body = """\
+[bold green]Docker terdeteksi di sistem Anda.[/bold green]\n
+Menjalankan ductor di dalam Docker mengisolasinya dari host Anda.
+Ini adalah pengaturan yang disarankan untuk keamanan."""
+found_prompt = "Aktifkan Docker sandboxing? (Disarankan)"
+not_found_body = """\
+[bold yellow]Docker tidak ditemukan di sistem Anda.[/bold yellow]\n
+Kami menyarankan untuk memasang Docker agar bot berjalan di kontainer terisolasi.
+Anda dapat mengaktifkan Docker sandboxing nanti di konfigurasi.\n
+[dim]https://docs.docker.com/get-docker/[/dim]"""
+
+[docker.extras]
+title = "[bold]Docker Extras yang Tersedia[/bold]"
+col_package = "Paket"
+col_description = "Fungsi"
+col_size = "Ukuran"
+prompt = "Pilih extras (Spasi untuk pilih/batal, Enter untuk konfirmasi):"
+hint = """\
+[dim]Paket-paket ini opsional dan meningkatkan waktu build image.
+Anda dapat mengubah ini nanti dengan [cyan]ductor docker extras-add / extras-remove[/cyan].[/dim]"""
+auto_deps = "[dim]Dependensi otomatis ditambahkan: {names}[/dim]"
+
+[timezone]
+title = "[bold]Zona Waktu[/bold]"
+body = """\
+Zona waktu Anda digunakan untuk penjadwalan cron, jam tenang heartbeat,
+dan reset sesi harian."""
+prompt = "Pilih zona waktu Anda:"
+manual_prompt = "Masukkan zona waktu IANA (mis. Asia/Jakarta):"
+error = "[red]Zona waktu tidak dikenal: {tz}[/red]"
+
+[service]
+title = "[bold]Layanan Latar[/bold]"
+body = """\
+[bold]Jalankan ductor sebagai layanan latar?[/bold]\n
+Ini membuat {mechanism} yang:\n
+  - Memulai ductor saat {trigger}
+  - Restart otomatis saat crash
+  - Tetap berjalan di latar\n
+[dim]Disarankan untuk VPS atau pengaturan yang selalu menyala.[/dim]"""
+prompt = "Pasang sebagai layanan latar? (Disarankan untuk VPS)"
+
+[complete]
+title = "[bold green]Siap[/bold green]"
+header = "[bold green]Pengaturan selesai![/bold green]"
+files_header = "[bold]File ductor Anda:[/bold]"
+home = "  Home:       [cyan]{path}[/cyan]"
+config = "  Config:     [cyan]{path}[/cyan]"
+workspace = "  Workspace:  [cyan]{path}[/cyan]"
+logs = "  Log:        [cyan]{path}[/cyan]"
+installing_service = "Memasang layanan..."
+starting_bot = "Memulai bot..."
+
+[reset]
+title = "[bold yellow]Pengaturan yang Ada Terdeteksi[/bold yellow]"
+body = """\
+[bold yellow]Anda sudah memiliki pengaturan yang dikonfigurasi.[/bold yellow]\n
+Menjalankan onboarding ulang akan melakukan [bold red]reset penuh[/bold red]:\n
+  [dim]{home}[/dim] akan dihapus seluruhnya.
+  Semua sesi, konfigurasi, memori, dan tugas cron akan hilang."""
+
+[reset.docker]
+title = "[bold]Pembersihan Docker[/bold]"
+body = """\
+[bold]Docker sandboxing diaktifkan di konfigurasi Anda saat ini.[/bold]\n
+  Kontainer: [cyan]{container}[/cyan]
+  Image:     [cyan]{image}[/cyan]"""
+prompt = "Hapus kontainer dan image Docker?"
+removing = "[dim]Menghapus sumber daya Docker...[/dim]"
+done = "[green]Pembersihan Docker selesai.[/green]"
+
+[reset.confirm]
+prompt = "Hapus segalanya dan mulai dari awal?"
+deleted = "[dim]Workspace dihapus.[/dim]"
+warning = "[yellow]Peringatan: Tidak dapat menghapus sepenuhnya {home}. Hapus secara manual.[/yellow]"
+
+[language]
+prompt = "Pilih bahasa / Select language:"
