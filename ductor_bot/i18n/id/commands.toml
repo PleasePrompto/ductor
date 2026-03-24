@@ -3,7 +3,7 @@
 [bot]
 new = "Mulai obrolan baru"
 stop = "Hentikan + kosongkan antrean"
-interrupt = "Interupsi, simpan antrean"
+interrupt = "Interupsi + simpan"
 model = "Tampilkan/ganti model"
 status = "Info sesi"
 memory = "Tampilkan memori utama"
