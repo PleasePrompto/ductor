@@ -191,6 +191,8 @@ async def shutdown(orch: Orchestrator) -> None:
     killed = await orch._process_registry.kill_all_active()
     if killed:
         logger.info("Shutdown terminated %d active CLI process(es)", killed)
+    if orch._linear_client is not None:
+        await orch._linear_client.close()
     if orch._api_stop is not None:
         await orch._api_stop()
     await asyncio.to_thread(cleanup_ductor_links, orch._paths)

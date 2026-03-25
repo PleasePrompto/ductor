@@ -34,7 +34,6 @@ from ductor_bot.orchestrator.commands import (
     cmd_reset,
     cmd_sessions,
     cmd_status,
-    cmd_tasks,
     cmd_upgrade,
 )
 from ductor_bot.orchestrator.directives import parse_directives
@@ -66,6 +65,7 @@ if TYPE_CHECKING:
     from ductor_bot.background import BackgroundObserver
     from ductor_bot.bus.bus import MessageBus
     from ductor_bot.config import ModelRegistry
+    from ductor_bot.integrations.linear.client import LinearClient
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.multiagent.supervisor import AgentSupervisor
     from ductor_bot.session.named import NamedSession
@@ -179,6 +179,8 @@ class Orchestrator:
         self._hook_registry.register(DELEGATION_REMINDER)
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
         self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
+        self._linear_client: LinearClient | None = None
+        self._linear_create_drafts: dict[str, str] = {}
         self._command_registry = CommandRegistry()
         self._register_commands()
 
@@ -201,6 +203,15 @@ class Orchestrator:
     def inflight_tracker(self) -> InflightTracker:
         """Public access to the inflight turn tracker."""
         return self._inflight_tracker
+
+    @property
+    def linear_client(self) -> LinearClient:
+        """Lazily initialized Linear API client."""
+        if self._linear_client is None:
+            from ductor_bot.integrations.linear.client import LinearClient
+
+            self._linear_client = LinearClient(self._config.linear)
+        return self._linear_client
 
     @property
     def named_sessions(self) -> NamedSessionRegistry:
@@ -371,6 +382,8 @@ class Orchestrator:
         )
 
     def _register_commands(self) -> None:
+        from ductor_bot.integrations.linear.commands import cmd_create, cmd_task, cmd_tasks
+
         reg = self._command_registry
         reg.register_async("/new", cmd_reset)
         # /stop is handled entirely by the Middleware abort path (before the lock)
@@ -384,6 +397,10 @@ class Orchestrator:
         reg.register_async("/upgrade", cmd_upgrade)
         reg.register_async("/sessions", cmd_sessions)
         reg.register_async("/tasks", cmd_tasks)
+        reg.register_async("/task", cmd_task)
+        reg.register_async("/task ", cmd_task)
+        reg.register_async("/create", cmd_create)
+        reg.register_async("/create ", cmd_create)
 
     def register_multiagent_commands(self) -> None:
         """Register /agents, /agent_start, /agent_stop, /agent_restart commands.

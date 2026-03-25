@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ductor_bot.integrations.linear.config import LinearConfig
+
 logger = logging.getLogger(__name__)
 NULLISH_TEXT_VALUES: frozenset[str] = frozenset({"null", "none"})
 DEFAULT_EMPTY_GEMINI_API_KEY: str = "null"
@@ -314,6 +316,7 @@ class AgentConfig(BaseModel):
     allowed_user_ids: list[int] = Field(default_factory=list)
     allowed_group_ids: list[int] = Field(default_factory=list)
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
+    linear: LinearConfig = Field(default_factory=LinearConfig)
 
     @field_validator("gemini_api_key", mode="before")
     @classmethod
