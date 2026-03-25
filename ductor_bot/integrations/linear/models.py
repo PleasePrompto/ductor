@@ -22,6 +22,7 @@ class LinearIssueDraft(BaseModel):
 
     title: str
     description: str
+    acceptance: str = Field(default="")
     project_key: str = Field(default="")
     priority: int = Field(default=0)
 

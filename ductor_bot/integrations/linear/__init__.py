@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ductor_bot.integrations.linear.client import LinearClient
-from ductor_bot.integrations.linear.config import LinearConfig
+from ductor_bot.integrations.linear.config import IntakeConfig, LinearConfig
 from ductor_bot.integrations.linear.models import (
     LinearIssue,
     LinearIssueDetails,
@@ -12,6 +12,7 @@ from ductor_bot.integrations.linear.models import (
 )
 
 __all__ = [
+    "IntakeConfig",
     "LinearClient",
     "LinearConfig",
     "LinearIssue",

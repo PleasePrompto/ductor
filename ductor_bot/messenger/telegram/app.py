@@ -1128,30 +1128,48 @@ class TelegramBot:
     ) -> bool:
         """Handle prefix-based callback namespaces. Returns True when handled."""
         chat_id = key.chat_id
-        if data.startswith(MQ_PREFIX):
+        handled = False
+        if data.startswith("linear:"):
+            await self._handle_linear_callback(key, message_id, data)
+            handled = True
+        elif data.startswith(MQ_PREFIX):
             await self._handle_queue_cancel(chat_id, data)
-            return True
-
-        if data.startswith("upg:"):
+            handled = True
+        elif data.startswith("upg:"):
             await self._handle_upgrade_callback(chat_id, message_id, data, thread_id=thread_id)
-            return True
+            handled = True
+        else:
+            from ductor_bot.orchestrator.selectors.session_selector import (
+                is_session_selector_callback,
+            )
+            from ductor_bot.orchestrator.selectors.task_selector import is_task_selector_callback
 
-        from ductor_bot.orchestrator.selectors.session_selector import is_session_selector_callback
-        from ductor_bot.orchestrator.selectors.task_selector import is_task_selector_callback
+            if is_session_selector_callback(data):
+                await self._handle_session_selector(chat_id, message_id, data)
+                handled = True
+            elif is_task_selector_callback(data):
+                await self._handle_task_selector(chat_id, message_id, data)
+                handled = True
+            elif data.startswith("ns:"):
+                await self._handle_ns_callback(key, data, thread_id=thread_id)
+                handled = True
 
-        if is_session_selector_callback(data):
-            await self._handle_session_selector(chat_id, message_id, data)
-            return True
+        return handled
 
-        if is_task_selector_callback(data):
-            await self._handle_task_selector(chat_id, message_id, data)
-            return True
+    async def _handle_linear_callback(self, key: SessionKey, message_id: int, data: str) -> None:
+        """Handle linear integration callbacks by editing the message in-place."""
+        from ductor_bot.orchestrator.selectors.models import SelectorResponse
 
-        if data.startswith("ns:"):
-            await self._handle_ns_callback(key, data, thread_id=thread_id)
-            return True
-
-        return False
+        async with self._sequential.get_lock(key.lock_key):
+            result = await self._orch.handle_callback(key, data)
+        if result is None:
+            return
+        await edit_selector_response(
+            self._bot,
+            key.chat_id,
+            message_id,
+            SelectorResponse(text=result.text, buttons=result.buttons),
+        )
 
     async def _handle_model_selector(self, key: SessionKey, message_id: int, data: str) -> None:
         """Handle model selector wizard by editing the message in-place."""

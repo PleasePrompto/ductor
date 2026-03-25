@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     from ductor_bot.bus.bus import MessageBus
     from ductor_bot.config import ModelRegistry
     from ductor_bot.integrations.linear.client import LinearClient
+    from ductor_bot.integrations.linear.models import LinearIssueDraft
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.multiagent.supervisor import AgentSupervisor
     from ductor_bot.session.named import NamedSession
@@ -180,7 +181,7 @@ class Orchestrator:
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
         self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
         self._linear_client: LinearClient | None = None
-        self._linear_create_drafts: dict[str, str] = {}
+        self._linear_create_drafts: dict[str, LinearIssueDraft] = {}
         self._command_registry = CommandRegistry()
         self._register_commands()
 
@@ -286,6 +287,18 @@ class Orchestrator:
         """Main entry point: route message to appropriate handler."""
         dispatch = _MessageDispatch(key=key, text=text, cmd=text.strip().lower())
         return await self._handle_message_impl(dispatch)
+
+    async def handle_callback(
+        self,
+        key: SessionKey,
+        callback_data: str,
+    ) -> OrchestratorResult | None:
+        """Route callback namespaces handled by the orchestrator."""
+        from ductor_bot.integrations.linear.commands import handle_linear_callback
+
+        if callback_data.startswith("linear:"):
+            return await handle_linear_callback(self, key, callback_data)
+        return None
 
     async def handle_message_streaming(
         self,

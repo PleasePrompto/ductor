@@ -41,6 +41,7 @@ def test_linear_issue_details_defaults() -> None:
 def test_linear_issue_draft_defaults() -> None:
     draft = LinearIssueDraft(title="Draft title", description="Draft description")
 
+    assert draft.acceptance == ""
     assert draft.project_key == ""
     assert draft.priority == 0
 

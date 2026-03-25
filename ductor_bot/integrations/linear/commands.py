@@ -1,15 +1,19 @@
-"""Telegram command handlers for Linear integration."""
+"""Telegram command handlers and callbacks for Linear integration."""
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
+from ductor_bot.integrations.linear.models import LinearIssueDraft
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
 
 if TYPE_CHECKING:
     from ductor_bot.orchestrator.core import Orchestrator
     from ductor_bot.session.key import SessionKey
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_command_argument(text: str, command: str) -> str:
@@ -44,7 +48,7 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, text: str) -> Orchestra
 
     try:
         issues = await orch.linear_client.list_recent_issues(team_id=team_id, limit=15)
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, TypeError) as exc:
         return OrchestratorResult(text=f"Failed to load Linear issues: {exc}")
 
     if not issues:
@@ -54,7 +58,9 @@ async def cmd_tasks(orch: Orchestrator, key: SessionKey, text: str) -> Orchestra
     rows: list[list[Button]] = []
     for index, issue in enumerate(issues, start=1):
         lines.append(f"{index}. {_status_emoji(issue.state_name)} {issue.identifier} {issue.title}")
-        rows.append([Button(text=issue.identifier, callback_data=f"linear:task:{issue.id}")])
+        rows.append(
+            [Button(text=issue.identifier, callback_data=f"linear:task:{issue.identifier}")]
+        )
 
     return OrchestratorResult(
         text="\n".join(lines),
@@ -72,7 +78,7 @@ async def cmd_task(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
 
     try:
         issue = await orch.linear_client.get_issue(identifier=identifier)
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, TypeError) as exc:
         return OrchestratorResult(text=f"Failed to fetch Linear issue: {exc}")
 
     if issue is None:
@@ -92,9 +98,9 @@ async def cmd_task(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
     buttons = ButtonGrid(
         rows=[
             [
-                Button(text="Refine", callback_data=f"linear:refine:{issue.identifier}"),
-                Button(text="Comment", callback_data=f"linear:comment:{issue.identifier}"),
-                Button(text="State", callback_data=f"linear:status:{issue.identifier}"),
+                Button(text="Проработать", callback_data=f"linear:refine:{issue.identifier}"),
+                Button(text="Комментарий", callback_data=f"linear:comment:{issue.identifier}"),
+                Button(text="Статус", callback_data=f"linear:status:{issue.identifier}"),
             ]
         ]
     )
@@ -103,10 +109,110 @@ async def cmd_task(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
 
 
 async def cmd_create(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
-    """Handle /create command (placeholder before AI intake implementation)."""
+    """Handle /create command with AI intake draft generation."""
     payload = _extract_command_argument(text, "/create")
     if not payload:
         return OrchestratorResult(text="Напиши описание задачи после /create")
 
-    orch._linear_create_drafts[key.storage_key] = payload
-    return OrchestratorResult(text="Задача будет создана через AI intake (Phase 2)")
+    cfg = orch.config.intake
+    try:
+        from ductor_bot.integrations.linear.intake import structure_task
+
+        draft = await structure_task(
+            payload,
+            provider=cfg.provider,
+            model=cfg.model,
+            api_key=cfg.api_key,
+        )
+    except Exception:
+        logger.exception("AI intake failed")
+        draft = LinearIssueDraft(title=payload[:80], description=payload)
+
+    orch._linear_create_drafts[key.storage_key] = draft
+
+    preview = (
+        "📋 Задача (draft):\n\n"
+        f"**{draft.title}**\n\n"
+        f"{draft.description}\n\n"
+        f"Acceptance: {draft.acceptance or '—'}\n"
+        f"Priority: {draft.priority}"
+    )
+
+    buttons = ButtonGrid(
+        rows=[
+            [
+                Button(text="✅ Создать", callback_data="linear:draft:confirm"),
+                Button(text="✏️ Изменить", callback_data="linear:draft:edit"),
+                Button(text="❌ Отмена", callback_data="linear:draft:cancel"),
+            ]
+        ]
+    )
+
+    return OrchestratorResult(text=preview, buttons=buttons)
+
+
+async def handle_linear_callback(
+    orch: Orchestrator,
+    key: SessionKey,
+    callback_data: str,
+) -> OrchestratorResult | None:
+    """Route linear:* callbacks."""
+    parts = callback_data.split(":")
+    if len(parts) < 3 or parts[0] != "linear":
+        return None
+
+    action = parts[1]
+    value = parts[2]
+
+    if action == "draft":
+        return await _handle_draft_callback(orch, key, value)
+
+    if action == "task":
+        try:
+            issue = await orch.linear_client.get_issue(identifier=value)
+        except (RuntimeError, ValueError, TypeError) as exc:
+            return OrchestratorResult(text=f"Failed to fetch Linear issue: {exc}")
+        if not issue:
+            return OrchestratorResult(text=f"Issue {value} not found")
+        return await cmd_task(orch, key, f"/task {issue.identifier}")
+
+    return None
+
+
+async def _handle_draft_callback(
+    orch: Orchestrator,
+    key: SessionKey,
+    action: str,
+) -> OrchestratorResult:
+    draft_obj = orch._linear_create_drafts.pop(key.storage_key, None)
+    draft = draft_obj if isinstance(draft_obj, LinearIssueDraft) else None
+
+    if action == "cancel":
+        return OrchestratorResult(text="Создание отменено.")
+
+    if action == "edit":
+        if draft is not None:
+            orch._linear_create_drafts[key.storage_key] = draft
+        return OrchestratorResult(text="Отправь исправленное описание - я пересоберу задачу.")
+
+    if action != "confirm":
+        return OrchestratorResult(text="Unknown action")
+
+    if draft is None:
+        return OrchestratorResult(text="Draft not found. Use /create again.")
+
+    team_id = orch.config.linear.default_team_id
+    if not team_id.strip():
+        return OrchestratorResult(text="Linear team is not configured.")
+
+    try:
+        issue = await orch.linear_client.create_issue(
+            team_id=team_id,
+            title=draft.title,
+            description=f"{draft.description}\n\n## Acceptance\n{draft.acceptance}",
+        )
+    except Exception as exc:
+        text = f"Ошибка создания: {exc}"
+    else:
+        text = f"✅ Создано: {issue.identifier}\n{issue.url}"
+    return OrchestratorResult(text=text)

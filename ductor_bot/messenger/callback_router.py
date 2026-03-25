@@ -71,24 +71,26 @@ async def route_callback(
         is_task_selector_callback,
     )
 
+    linear_result = await orch.handle_callback(key, callback_data)
+    if linear_result is not None:
+        return CallbackResult(text=linear_result.text, buttons=linear_result.buttons)
+
     if is_model_selector_callback(callback_data):
-        resp = await handle_model_callback(orch, key, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_cron_selector_callback(callback_data):
-        resp = await handle_cron_callback(orch, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_session_selector_callback(callback_data):
-        resp = await handle_session_callback(orch, key.chat_id, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_task_selector_callback(callback_data):
+        selector_response = await handle_model_callback(orch, key, callback_data)
+    elif is_cron_selector_callback(callback_data):
+        selector_response = await handle_cron_callback(orch, callback_data)
+    elif is_session_selector_callback(callback_data):
+        selector_response = await handle_session_callback(orch, key.chat_id, callback_data)
+    elif is_task_selector_callback(callback_data):
         hub = orch.task_hub
         if hub is None:
             return CallbackResult(text="Task system not available.", buttons=None)
-        resp = await handle_task_callback(hub, key.chat_id, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
+        selector_response = await handle_task_callback(hub, key.chat_id, callback_data)
+    else:
+        selector_response = None
+
+    if selector_response is not None:
+        return CallbackResult(text=selector_response.text, buttons=selector_response.buttons)
 
     # Transport-specific prefixes -- signal the caller to handle them.
     return CallbackResult(handled=False)
