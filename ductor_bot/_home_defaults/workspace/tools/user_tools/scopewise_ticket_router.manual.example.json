@@ -1,0 +1,23 @@
+{
+  "source": "manual",
+  "owner": "ops",
+  "summary": "Backfill the first Ductor-side Scopewise ticket intake path",
+  "routing_reason": "This is Ductor-side ticket routing and audit plumbing, so ops-agent owns the lane.",
+  "next_action": "Create the initial triage issue and confirm labels/body shape.",
+  "repo": "scopewise",
+  "environment": "n/a",
+  "severity": "n/a",
+  "evidence": {
+    "links": [
+      "https://github.com/samhavens/scopewise/pull/75"
+    ],
+    "first_seen": "n/a",
+    "last_seen": "n/a",
+    "count": "n/a"
+  },
+  "dedupe": {
+    "related_issue": "n/a",
+    "related_pr": "#75"
+  },
+  "trigger": "manual-cli"
+}

@@ -1,0 +1,24 @@
+{
+  "source": "alert",
+  "owner": "main",
+  "summary": "Frontend exception: project plan screen fails to render",
+  "routing_reason": "The failure is an app-level product bug in Scopewise, so main owns the lane.",
+  "next_action": "Open or refresh a triage ticket with the current evidence bundle.",
+  "repo": "scopewise",
+  "environment": "prod",
+  "fingerprint": "frontend-plan-screen-render-error",
+  "severity": "high",
+  "evidence": {
+    "links": [
+      "https://posthog.example.test/project/123/insights/abc"
+    ],
+    "first_seen": "2026-03-25T23:40:00Z",
+    "last_seen": "2026-03-25T23:55:00Z",
+    "count": 3
+  },
+  "dedupe": {
+    "related_issue": "n/a",
+    "related_pr": "n/a"
+  },
+  "trigger": "normalized-event"
+}
