@@ -160,6 +160,9 @@ async def start_api_server(
     server.set_active_state_getter(
         lambda: orch._providers.resolve_runtime_target(orch._config.model)
     )
+    server.set_sessions_path(paths.sessions_path)
+    server.set_logs_dir(paths.logs_dir)
+    server.set_task_hub_getter(lambda: orch.task_hub)
 
     try:
         await server.start()

@@ -34,6 +34,7 @@ import hmac
 import json
 import logging
 import shutil
+import time as _time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -123,17 +124,24 @@ class _SecureChannel:
 class _StreamCallbacks:
     """Streaming callbacks that forward encrypted orchestrator events to a WebSocket."""
 
-    __slots__ = ("channel", "disconnected")
+    __slots__ = ("channel", "disconnected", "_broadcast")
 
-    def __init__(self, channel: _SecureChannel) -> None:
+    def __init__(
+        self,
+        channel: _SecureChannel,
+        broadcast: Callable[[dict[str, object]], Awaitable[None]] | None = None,
+    ) -> None:
         self.channel = channel
         self.disconnected = False
+        self._broadcast = broadcast
 
     async def on_text(self, delta: str) -> None:
         if self.disconnected:
             return
         if not await self.channel.send({"type": "text_delta", "data": delta}):
             self.disconnected = True
+        if self._broadcast:
+            await self._broadcast({"type": "text_delta", "data": delta})
 
     async def on_tool(self, name: str) -> None:
         if self.disconnected:
@@ -141,12 +149,16 @@ class _StreamCallbacks:
         name = normalize_tool_name(name)
         if not await self.channel.send({"type": "tool_activity", "data": name}):
             self.disconnected = True
+        if self._broadcast:
+            await self._broadcast({"type": "tool_activity", "data": name})
 
     async def on_system(self, label: str | None) -> None:
         if self.disconnected:
             return
         if not await self.channel.send({"type": "system_status", "data": label}):
             self.disconnected = True
+        if self._broadcast:
+            await self._broadcast({"type": "system_status", "data": label})
 
 
 def _parse_file_refs(text: str) -> list[dict[str, object]]:
@@ -192,6 +204,12 @@ class ApiServer:
         self._workspace: Path | None = None
         self._provider_info: list[dict[str, object]] = []
         self._active_state_getter: Callable[[], tuple[str, str]] | None = None
+        # Dashboard
+        self._dashboard_ws: set[web.WebSocketResponse] = set()
+        self._start_time: float = _time.monotonic()
+        self._task_hub_getter: Callable[[], Any] | None = None
+        self._sessions_path: Path | None = None
+        self._logs_dir: Path | None = None
 
     # -- Handler wiring --------------------------------------------------------
 
@@ -223,6 +241,18 @@ class ApiServer:
         """Set a callback that returns (active_provider, active_model)."""
         self._active_state_getter = getter
 
+    def set_task_hub_getter(self, getter: Callable[[], Any]) -> None:
+        """Callback returning the TaskHub instance."""
+        self._task_hub_getter = getter
+
+    def set_sessions_path(self, path: Path) -> None:
+        """Path to sessions.json for dashboard sessions endpoint."""
+        self._sessions_path = path
+
+    def set_logs_dir(self, path: Path) -> None:
+        """Path to logs directory for dashboard logs endpoint."""
+        self._logs_dir = path
+
     # -- Lifecycle -------------------------------------------------------------
 
     async def start(self) -> None:
@@ -242,6 +272,13 @@ class ApiServer:
         app.router.add_get("/ws", self._handle_websocket)
         app.router.add_get("/files", self._handle_file_download)
         app.router.add_post("/upload", self._handle_file_upload)
+        # Dashboard endpoints (no NaCl, Bearer token or query-param token)
+        app.router.add_get("/dashboard/status", self._handle_dashboard_status)
+        app.router.add_get("/dashboard/sessions", self._handle_dashboard_sessions)
+        app.router.add_get("/dashboard/tasks", self._handle_dashboard_tasks)
+        app.router.add_get("/dashboard/logs", self._handle_dashboard_logs_list)
+        app.router.add_get("/dashboard/logs/{filename}", self._handle_dashboard_logs_file)
+        app.router.add_get("/dashboard/stream", self._handle_dashboard_stream)
 
         self._runner = web.AppRunner(app, access_log=None)
         await self._runner.setup()
@@ -261,6 +298,12 @@ class ApiServer:
                 message=b"server shutdown",
             )
         self._active_ws.clear()
+        for ws in list(self._dashboard_ws):
+            await ws.close(
+                code=aiohttp.WSCloseCode.GOING_AWAY,
+                message=b"server shutdown",
+            )
+        self._dashboard_ws.clear()
         if self._runner:
             await self._runner.cleanup()
             self._runner = None
@@ -373,6 +416,121 @@ class ApiServer:
                 "prompt": prompt,
             }
         )
+
+    # -- Dashboard HTTP handlers -----------------------------------------------
+
+    async def _handle_dashboard_status(self, request: web.Request) -> web.Response:
+        if not self._verify_bearer(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        provider, model = ("unknown", "unknown")
+        if self._active_state_getter:
+            provider, model = self._active_state_getter()
+        uptime_s = int(_time.monotonic() - self._start_time)
+        return web.json_response({
+            "status": "ok",
+            "provider": provider,
+            "model": model,
+            "uptime_seconds": uptime_s,
+            "connections": len(self._active_ws),
+            "dashboard_connections": len(self._dashboard_ws),
+        })
+
+    async def _handle_dashboard_sessions(self, request: web.Request) -> web.Response:
+        if not self._verify_bearer(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        if not self._sessions_path or not self._sessions_path.exists():
+            return web.json_response({})
+        data = await asyncio.to_thread(
+            lambda: json.loads(self._sessions_path.read_text())  # type: ignore[union-attr]
+        )
+        return web.json_response(data)
+
+    async def _handle_dashboard_tasks(self, request: web.Request) -> web.Response:
+        if not self._verify_bearer(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        if not self._task_hub_getter:
+            return web.json_response([])
+        hub = self._task_hub_getter()
+        if hub is None:
+            return web.json_response([])
+        import dataclasses as _dc
+        tasks = hub.active_tasks()
+        return web.json_response([
+            _dc.asdict(t) if _dc.is_dataclass(t) else dict(t) for t in tasks
+        ])
+
+    async def _handle_dashboard_logs_list(self, request: web.Request) -> web.Response:
+        if not self._verify_bearer(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        if not self._logs_dir or not self._logs_dir.exists():
+            return web.json_response([])
+        files = await asyncio.to_thread(
+            lambda: sorted(
+                [
+                    {"name": f.name, "size": f.stat().st_size, "mtime": f.stat().st_mtime}
+                    for f in self._logs_dir.iterdir()  # type: ignore[union-attr]
+                    if f.is_file()
+                ],
+                key=lambda x: x["mtime"],
+                reverse=True,
+            )
+        )
+        return web.json_response(files)
+
+    async def _handle_dashboard_logs_file(self, request: web.Request) -> web.StreamResponse:
+        if not self._verify_bearer(request):
+            return web.json_response({"error": "unauthorized"}, status=401)
+        filename = request.match_info["filename"]
+        if "/" in filename or ".." in filename:
+            return web.json_response({"error": "invalid filename"}, status=400)
+        if not self._logs_dir:
+            return web.json_response({"error": "logs not configured"}, status=503)
+        log_path = self._logs_dir / filename
+        if not log_path.exists() or not log_path.is_file():
+            return web.json_response({"error": "not found"}, status=404)
+        return web.FileResponse(log_path, headers={"Content-Type": "text/plain; charset=utf-8"})
+
+    # -- Dashboard WebSocket handler -------------------------------------------
+
+    async def _handle_dashboard_stream(self, request: web.Request) -> web.WebSocketResponse:
+        token = request.query.get("token", "")
+        if not hmac.compare_digest(token, self._config.token):
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            await ws.close(code=aiohttp.WSCloseCode.POLICY_VIOLATION, message=b"unauthorized")
+            return ws
+
+        ws = web.WebSocketResponse(heartbeat=30.0)
+        await ws.prepare(request)
+        logger.info("Dashboard WebSocket connected from %s", request.remote)
+
+        self._dashboard_ws.add(ws)
+        try:
+            await ws.send_json({"type": "ping"})
+            async for msg in ws:
+                if msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
+                    break
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._dashboard_ws.discard(ws)
+            logger.info("Dashboard WebSocket disconnected")
+        return ws
+
+    async def broadcast_dashboard(self, event: dict[str, object]) -> None:
+        """Broadcast an event to all connected dashboard WebSocket clients."""
+        if not self._dashboard_ws:
+            return
+        dead: set[web.WebSocketResponse] = set()
+        for ws in list(self._dashboard_ws):
+            if ws.closed:
+                dead.add(ws)
+                continue
+            try:
+                await ws.send_json(event)
+            except (ConnectionResetError, ConnectionError):
+                dead.add(ws)
+        self._dashboard_ws -= dead
 
     # -- WebSocket handlers ----------------------------------------------------
 
@@ -573,7 +731,7 @@ class ApiServer:
             )
             return
 
-        callbacks = _StreamCallbacks(channel)
+        callbacks = _StreamCallbacks(channel, broadcast=self.broadcast_dashboard)
         result = await self._execute_streaming(key, text, callbacks)
         if result is None:
             return
