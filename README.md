@@ -35,7 +35,7 @@ ductor runs on your machine and sends simple console commands as if you were typ
 ## Quick start
 
 ```bash
-pipx install ductor
+pipx install ductor    # or: uv tool install ductor
 ductor
 ```
 
@@ -422,9 +422,24 @@ ductor runs official provider CLIs and does not impersonate provider clients. Va
 ```bash
 git clone https://github.com/PleasePrompto/ductor.git
 cd ductor
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-pytest && ruff format . && ruff check . && mypy ductor_bot
+uv sync --extra dev
+```
+
+Run checks with [just](https://github.com/casey/just):
+
+```bash
+just check   # linters + type checks (parallel)
+just test    # test suite
+just fix     # auto-fix formatting and lint issues
+```
+
+Or directly with uv:
+
+```bash
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy ductor_bot
 ```
 
 Zero warnings, zero errors.

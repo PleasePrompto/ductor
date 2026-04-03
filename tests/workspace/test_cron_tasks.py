@@ -126,12 +126,18 @@ def test_create_cron_task_no_venv_by_default(tmp_path: Path) -> None:
     assert not (task_path / ".venv").exists()
 
 
-def test_create_cron_task_with_venv(tmp_path: Path) -> None:
+def test_create_cron_task_with_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_create(env_dir: Path, *, with_pip: bool = False) -> None:  # noqa: ARG001
+        env_dir.mkdir(parents=True, exist_ok=True)
+        (env_dir / "bin").mkdir()
+        (env_dir / "bin" / "python").touch()
+
+    monkeypatch.setattr("venv.create", fake_create)
     paths = _make_paths(tmp_path)
     task_path = create_cron_task(paths, "my-feature", "My Feature", "desc", with_venv=True)
     venv_dir = task_path / ".venv"
     assert venv_dir.is_dir()
-    assert (venv_dir / "bin" / "python").exists() or (venv_dir / "Scripts" / "python.exe").exists()
+    assert (venv_dir / "bin" / "python").exists()
 
 
 def test_create_cron_task_duplicate_raises(tmp_path: Path) -> None:

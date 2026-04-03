@@ -166,7 +166,7 @@ def _create_venv(venv_dir: Path) -> None:
     """Create a Python virtual environment, logging failures silently."""
     try:
         venv.create(venv_dir, with_pip=True)
-    except OSError:
+    except Exception:
         logger.warning("Failed to create .venv at %s", venv_dir, exc_info=True)
 
 

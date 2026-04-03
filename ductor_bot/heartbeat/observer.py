@@ -134,9 +134,7 @@ class HeartbeatObserver(BaseObserver):
                     continue
                 if not await self._validate_target(target.chat_id):
                     continue
-                prompt, ack_token, quiet_start, quiet_end = self._resolve_target_settings(
-                    target
-                )
+                prompt, ack_token, quiet_start, quiet_end = self._resolve_target_settings(target)
                 if self._is_target_quiet(target.chat_id, quiet_start, quiet_end):
                     continue
                 await self._run_for_chat(
