@@ -90,8 +90,8 @@ class CLIConfig:
     reasoning_effort: str = "medium"
     # Process tracking (shared across providers):
     process_registry: ProcessRegistry | None = None
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: str = ""
+    topic_id: str | None = None
     process_label: str = "main"
     # Gemini-specific auth fallback:
     gemini_api_key: str | None = None

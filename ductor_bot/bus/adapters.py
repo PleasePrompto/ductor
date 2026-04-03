@@ -52,13 +52,13 @@ def from_cron_result(  # noqa: PLR0913
     result: str,
     status: str,
     *,
-    chat_id: int = 0,
-    topic_id: int | None = None,
+    chat_id: str = "",
+    topic_id: str | None = None,
     transport: str = "tg",
 ) -> Envelope:
     """Convert a cron job result (title, text, status triple).
 
-    When *chat_id* is non-zero the envelope is unicast to that chat/topic.
+    When *chat_id* is non-empty the envelope is unicast to that chat/topic.
     Otherwise it broadcasts to all users (legacy behaviour).
     """
     if chat_id:
@@ -75,7 +75,7 @@ def from_cron_result(  # noqa: PLR0913
         )
     return Envelope(
         origin=Origin.CRON,
-        chat_id=0,
+        chat_id="",
         transport=transport,
         result_text=result,
         status=status,
@@ -89,9 +89,9 @@ def from_cron_result(  # noqa: PLR0913
 
 
 def from_heartbeat(
-    chat_id: int,
+    chat_id: str,
     text: str,
-    topic_id: int | None = None,
+    topic_id: str | None = None,
     *,
     transport: str = "tg",
 ) -> Envelope:
@@ -115,7 +115,7 @@ def from_webhook_cron_result(result: WebhookResult) -> Envelope:
     """Convert a webhook cron_task result (broadcast)."""
     return Envelope(
         origin=Origin.WEBHOOK_CRON,
-        chat_id=0,
+        chat_id="",
         result_text=result.result_text,
         status=result.status,
         delivery=DeliveryMode.BROADCAST,
@@ -127,7 +127,7 @@ def from_webhook_cron_result(result: WebhookResult) -> Envelope:
     )
 
 
-def from_webhook_wake(chat_id: int, prompt: str) -> Envelope:
+def from_webhook_wake(chat_id: str, prompt: str) -> Envelope:
     """Convert a webhook wake request (acquires lock, executes via orchestrator)."""
     return Envelope(
         origin=Origin.WEBHOOK_WAKE,
@@ -141,7 +141,7 @@ def from_webhook_wake(chat_id: int, prompt: str) -> Envelope:
 # -- Inter-agent ---------------------------------------------------------------
 
 
-def from_interagent_result(result: AsyncInterAgentResult, chat_id: int) -> Envelope:
+def from_interagent_result(result: AsyncInterAgentResult, chat_id: str) -> Envelope:
     """Convert an async inter-agent result.
 
     Uses ``result.chat_id`` / ``result.topic_id`` when available so that
@@ -207,7 +207,7 @@ def from_task_result(result: TaskResult) -> Envelope:
     return Envelope(
         origin=Origin.TASK_RESULT,
         chat_id=result.chat_id,
-        topic_id=result.thread_id,
+        topic_id=str(result.thread_id) if result.thread_id is not None else None,
         prompt=prompt,
         prompt_preview=result.prompt_preview,
         result_text=result.result_text,
@@ -263,9 +263,9 @@ def from_task_question(
     task_id: str,
     question: str,
     prompt_preview: str,
-    chat_id: int,
+    chat_id: str,
     *,
-    topic_id: int | None = None,
+    topic_id: str | None = None,
 ) -> Envelope:
     """Convert a task question (worker asks parent agent)."""
     return Envelope(
@@ -285,10 +285,10 @@ def from_task_question(
 
 
 def from_user_message(
-    chat_id: int,
+    chat_id: str,
     text: str,
     *,
-    topic_id: int | None = None,
+    topic_id: str | None = None,
     source: Origin = Origin.USER,
 ) -> Envelope:
     """Create an envelope for a user/API message (audit tracking only)."""

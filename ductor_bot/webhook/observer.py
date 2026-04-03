@@ -31,7 +31,7 @@ _SAFETY_END = "#-- END EXTERNAL WEBHOOK PAYLOAD --#"
 WebhookResultCallback = Callable[[WebhookResult], Awaitable[None]]
 
 # Wake handler: (chat_id, prompt) -> response text or None
-WakeHandler = Callable[[int, str], Awaitable[str | None]]
+WakeHandler = Callable[[str, str], Awaitable[str | None]]
 
 
 class WebhookObserver(BaseTaskObserver):
@@ -222,7 +222,7 @@ class WebhookObserver(BaseTaskObserver):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("Wake dispatch error hook=%s chat=%d", hook_id, chat_id)
+                logger.exception("Wake dispatch error hook=%s chat=%s", hook_id, chat_id)
 
         combined = "\n\n".join(results) if results else ""
         status = "success" if results else "error:no_response"

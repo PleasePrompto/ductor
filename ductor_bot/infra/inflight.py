@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class InflightTurn:
     """State of a single in-flight CLI turn."""
 
-    chat_id: int
+    chat_id: str
     provider: str
     model: str
     session_id: str
@@ -35,7 +35,7 @@ class InflightTurn:
 def _turn_from_dict(data: dict[str, Any]) -> InflightTurn:
     """Reconstruct an InflightTurn from a JSON dict."""
     return InflightTurn(
-        chat_id=int(data.get("chat_id", 0)),
+        chat_id=str(data.get("chat_id", "")),
         provider=str(data.get("provider", "")),
         model=str(data.get("model", "")),
         session_id=str(data.get("session_id", "")),
@@ -58,7 +58,7 @@ class InflightTracker:
         data[str(turn.chat_id)] = asdict(turn)
         atomic_json_save(self._path, {"turns": data})
 
-    def complete(self, chat_id: int) -> None:
+    def complete(self, chat_id: str) -> None:
         """Remove a completed turn (atomic write)."""
         data = self._load_raw()
         key = str(chat_id)
@@ -84,7 +84,7 @@ class InflightTracker:
             turn = _turn_from_dict(entry)
             if turn.is_recovery:
                 continue
-            if turn.chat_id <= 0:
+            if not turn.chat_id:
                 continue
             try:
                 started = datetime.fromisoformat(turn.started_at)

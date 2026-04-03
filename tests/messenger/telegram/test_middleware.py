@@ -452,7 +452,7 @@ class TestGetLock:
         from ductor_bot.messenger.telegram.middleware import SequentialMiddleware
 
         mw = SequentialMiddleware()
-        lock = mw.get_lock(1)
+        lock = mw.get_lock(("1", None))
         acquired = asyncio.Event()
         release = asyncio.Event()
 
@@ -511,7 +511,7 @@ class TestQueueManagement:
         from ductor_bot.messenger.telegram.middleware import SequentialMiddleware
 
         mw = SequentialMiddleware()
-        lock = mw.get_lock(1)
+        lock = mw.get_lock(("1", None))
 
         assert not mw.is_busy(1)
 
@@ -692,12 +692,12 @@ class TestQueueManagement:
         release = asyncio.Event()
 
         async def slow_handler(_event: object, _data: dict[str, object]) -> None:
-            registry.register(chat_id=1, process=process, label="main")
+            registry.register(chat_id="1", process=process, label="main")
             acquired.set()
             await release.wait()
 
         async def abort_handler(_chat_id: int, _msg: Message) -> bool:
-            await registry.kill_all(1)
+            await registry.kill_all("1")
             return True
 
         mw.set_abort_handler(abort_handler)
@@ -706,7 +706,7 @@ class TestQueueManagement:
         first_msg.message_id = 1
         slow_task = asyncio.create_task(mw(slow_handler, first_msg, {}))
         await acquired.wait()
-        assert registry.has_active(1)
+        assert registry.has_active("1")
 
         stop_msg = _make_message(chat_id=1, text="/stop")
         stop_msg.message_id = 2
@@ -715,8 +715,8 @@ class TestQueueManagement:
             await mw(AsyncMock(), stop_msg, {})
 
         assert process.stdin.close.called
-        assert registry.was_aborted(1) is True
-        assert registry.has_active(1) is False
+        assert registry.was_aborted("1") is True
+        assert registry.has_active("1") is False
 
         release.set()
         await slow_task

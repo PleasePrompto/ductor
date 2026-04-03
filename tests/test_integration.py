@@ -18,7 +18,7 @@ from ductor_bot.session.key import SessionKey
 from ductor_bot.workspace.init import init_workspace
 from ductor_bot.workspace.paths import DuctorPaths
 
-CHAT_ID = 12345
+CHAT_ID = "12345"
 KEY = SessionKey(chat_id=CHAT_ID)
 
 

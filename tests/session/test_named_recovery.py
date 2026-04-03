@@ -15,30 +15,30 @@ def _make_registry(tmp_path: Path) -> NamedSessionRegistry:
 class TestLastPrompt:
     def test_created_session_has_empty_last_prompt(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
-        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
+        ns = reg.create(chat_id="1", provider="claude", model="opus", prompt_preview="hello")
         assert ns.last_prompt == ""
 
     def test_mark_running_stores_prompt(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
-        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
-        reg.mark_running(1, ns.name, "full prompt text here")
-        updated = reg.get(1, ns.name)
+        ns = reg.create(chat_id="1", provider="claude", model="opus", prompt_preview="hello")
+        reg.mark_running("1", ns.name, "full prompt text here")
+        updated = reg.get("1", ns.name)
         assert updated is not None
         assert updated.status == "running"
         assert updated.last_prompt == "full prompt text here"
 
     def test_mark_running_truncates_at_4000(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
-        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hi")
+        ns = reg.create(chat_id="1", provider="claude", model="opus", prompt_preview="hi")
         long_prompt = "x" * 5000
-        reg.mark_running(1, ns.name, long_prompt)
-        updated = reg.get(1, ns.name)
+        reg.mark_running("1", ns.name, long_prompt)
+        updated = reg.get("1", ns.name)
         assert updated is not None
         assert len(updated.last_prompt) == 4000
 
     def test_mark_running_nonexistent_is_noop(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
-        reg.mark_running(1, "nonexistent", "prompt")  # should not raise
+        reg.mark_running("1", "nonexistent", "prompt")  # should not raise
 
 
 class TestRecoveredRunning:
@@ -47,7 +47,7 @@ class TestRecoveredRunning:
         tmp_path: Path,
         *,
         name: str = "boldowl",
-        chat_id: int = 42,
+        chat_id: str = "42",
         last_prompt: str = "do stuff",
     ) -> Path:
         """Write a JSON file with a running session for reload testing."""
@@ -76,7 +76,7 @@ class TestRecoveredRunning:
     def test_running_session_downgraded_to_idle(self, tmp_path: Path) -> None:
         path = self._persist_running_session(tmp_path)
         reg = NamedSessionRegistry(path)
-        ns = reg.get(42, "boldowl")
+        ns = reg.get("42", "boldowl")
         assert ns is not None
         assert ns.status == "idle"
 
@@ -98,10 +98,10 @@ class TestRecoveredRunning:
         assert len(second) == 0
 
     def test_pop_filtered_by_chat_id(self, tmp_path: Path) -> None:
-        path = self._persist_running_session(tmp_path, chat_id=42)
+        path = self._persist_running_session(tmp_path, chat_id="42")
         reg = NamedSessionRegistry(path)
-        assert len(reg.pop_recovered_running(chat_id=99)) == 0
-        assert len(reg.pop_recovered_running(chat_id=42)) == 1
+        assert len(reg.pop_recovered_running(chat_id="99")) == 0
+        assert len(reg.pop_recovered_running(chat_id="42")) == 1
 
     def test_ia_sessions_excluded(self, tmp_path: Path) -> None:
         path = self._persist_running_session(tmp_path, name="ia-sub1")
@@ -111,8 +111,8 @@ class TestRecoveredRunning:
     def test_last_prompt_round_trip(self, tmp_path: Path) -> None:
         """last_prompt survives persist -> reload."""
         reg = _make_registry(tmp_path)
-        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
-        reg.mark_running(1, ns.name, "my prompt")
+        ns = reg.create(chat_id="1", provider="claude", model="opus", prompt_preview="hello")
+        reg.mark_running("1", ns.name, "my prompt")
 
         reg2 = NamedSessionRegistry(tmp_path / "named_sessions.json")
         recovered = reg2.pop_recovered_running()

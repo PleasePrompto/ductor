@@ -27,7 +27,7 @@ def is_session_selector_callback(data: str) -> bool:
 
 async def session_selector_start(
     orch: Orchestrator,
-    chat_id: int,
+    chat_id: str,
 ) -> SelectorResponse:
     """Build the initial ``/sessions`` response with inline controls."""
     return await _build_page(orch, chat_id)
@@ -35,7 +35,7 @@ async def session_selector_start(
 
 async def handle_session_callback(
     orch: Orchestrator,
-    chat_id: int,
+    chat_id: str,
     data: str,
 ) -> SelectorResponse:
     """Route a ``nsc:*`` callback to the correct session selector action."""
@@ -79,7 +79,7 @@ def _format_topic_block(topic_sessions: list[SessionData]) -> str:
 
 async def _build_page(
     orch: Orchestrator,
-    chat_id: int,
+    chat_id: str,
     *,
     note: str = "",
 ) -> SelectorResponse:

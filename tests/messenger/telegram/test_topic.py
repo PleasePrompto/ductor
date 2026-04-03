@@ -100,62 +100,62 @@ class TestTopicNameCache:
 
     def test_resolve_returns_name_when_cached(self) -> None:
         cache = TopicNameCache()
-        cache.set(-100, 42, "test 1")
-        assert cache.resolve(-100, 42) == "test 1"
+        cache.set("-100", "42", "test 1")
+        assert cache.resolve("-100", "42") == "test 1"
 
     def test_resolve_falls_back_to_topic_number(self) -> None:
         cache = TopicNameCache()
-        assert cache.resolve(-100, 42) == "Topic #42"
+        assert cache.resolve("-100", "42") == "Topic #42"
 
     def test_set_overwrites_existing(self) -> None:
         cache = TopicNameCache()
-        cache.set(-100, 42, "old name")
-        cache.set(-100, 42, "new name")
-        assert cache.get(-100, 42) == "new name"
+        cache.set("-100", "42", "old name")
+        cache.set("-100", "42", "new name")
+        assert cache.get("-100", "42") == "new name"
 
     def test_seed_from_sessions(self) -> None:
         cache = TopicNameCache()
         sessions = [
-            SessionData(chat_id=-100, topic_id=1, topic_name="Alpha"),
-            SessionData(chat_id=-100, topic_id=2, topic_name="Beta"),
-            SessionData(chat_id=-200, topic_id=None),  # no topic
-            SessionData(chat_id=-100, topic_id=3),  # no name
+            SessionData(chat_id="-100", topic_id="1", topic_name="Alpha"),
+            SessionData(chat_id="-100", topic_id="2", topic_name="Beta"),
+            SessionData(chat_id="-200", topic_id=None),  # no topic
+            SessionData(chat_id="-100", topic_id="3"),  # no name
         ]
         count = cache.seed_from_sessions(sessions)
         assert count == 2
-        assert cache.get(-100, 1) == "Alpha"
-        assert cache.get(-100, 2) == "Beta"
-        assert cache.get(-100, 3) is None
+        assert cache.get("-100", "1") == "Alpha"
+        assert cache.get("-100", "2") == "Beta"
+        assert cache.get("-100", "3") is None
 
     def test_seed_does_not_overwrite_existing(self) -> None:
         cache = TopicNameCache()
-        cache.set(-100, 1, "Manual")
-        sessions = [SessionData(chat_id=-100, topic_id=1, topic_name="From Seed")]
+        cache.set("-100", "1", "Manual")
+        sessions = [SessionData(chat_id="-100", topic_id="1", topic_name="From Seed")]
         cache.seed_from_sessions(sessions)
         # seed_from_sessions does overwrite — this is intentional for startup
-        assert cache.get(-100, 1) == "From Seed"
+        assert cache.get("-100", "1") == "From Seed"
 
     def test_find_by_name(self) -> None:
         cache = TopicNameCache()
-        cache.set(-100, 42, "test 1")
-        cache.set(-100, 99, "test 2")
-        assert cache.find_by_name(-100, "test 1") == 42
-        assert cache.find_by_name(-100, "test 2") == 99
+        cache.set("-100", "42", "test 1")
+        cache.set("-100", "99", "test 2")
+        assert cache.find_by_name("-100", "test 1") == "42"
+        assert cache.find_by_name("-100", "test 2") == "99"
 
     def test_find_by_name_case_insensitive(self) -> None:
         cache = TopicNameCache()
-        cache.set(-100, 42, "Test Topic")
-        assert cache.find_by_name(-100, "test topic") == 42
-        assert cache.find_by_name(-100, "TEST TOPIC") == 42
+        cache.set("-100", "42", "Test Topic")
+        assert cache.find_by_name("-100", "test topic") == "42"
+        assert cache.find_by_name("-100", "TEST TOPIC") == "42"
 
     def test_find_by_name_returns_none_for_unknown(self) -> None:
         cache = TopicNameCache()
-        cache.set(-100, 42, "test 1")
-        assert cache.find_by_name(-100, "nonexistent") is None
+        cache.set("-100", "42", "test 1")
+        assert cache.find_by_name("-100", "nonexistent") is None
 
     def test_find_by_name_scoped_to_chat(self) -> None:
         cache = TopicNameCache()
-        cache.set(-100, 42, "shared name")
-        cache.set(-200, 99, "shared name")
-        assert cache.find_by_name(-100, "shared name") == 42
-        assert cache.find_by_name(-200, "shared name") == 99
+        cache.set("-100", "42", "shared name")
+        cache.set("-200", "99", "shared name")
+        assert cache.find_by_name("-100", "shared name") == "42"
+        assert cache.find_by_name("-200", "shared name") == "99"

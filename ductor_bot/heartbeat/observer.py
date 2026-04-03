@@ -19,13 +19,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Callback signature: (chat_id, alert_text, topic_id)
-HeartbeatResultCallback = Callable[[int, str, int | None], Awaitable[None]]
+HeartbeatResultCallback = Callable[[str, str, str | None], Awaitable[None]]
 
 # Handler signature: (chat_id, topic_id, prompt_override, ack_token_override)
-HeartbeatHandler = Callable[[int, int | None, str | None, str | None], Awaitable[str | None]]
+HeartbeatHandler = Callable[[str, str | None, str | None, str | None], Awaitable[str | None]]
 
 # Validator signature: (chat_id) -> is_accessible
-ChatValidator = Callable[[int], Awaitable[bool]]
+ChatValidator = Callable[[str], Awaitable[bool]]
 
 _VALIDATION_TTL = 3600
 
@@ -43,12 +43,12 @@ class HeartbeatObserver(BaseObserver):
         self._config = config
         self._on_result: HeartbeatResultCallback | None = None
         self._handle_heartbeat: HeartbeatHandler | None = None
-        self._is_chat_busy: Callable[[int], bool] | None = None
+        self._is_chat_busy: Callable[[str], bool] | None = None
         self._stale_cleanup: Callable[[], Awaitable[int]] | None = None
         self._chat_validator: ChatValidator | None = None
-        self._valid_targets: dict[int, float] = {}
-        self._target_last_run: dict[tuple[int, int | None], float] = {}
-        self._target_tasks: dict[tuple[int | None, int | None], asyncio.Task[None]] = {}
+        self._valid_targets: dict[str, float] = {}
+        self._target_last_run: dict[tuple[str, str | None], float] = {}
+        self._target_tasks: dict[tuple[str | None, str | None], asyncio.Task[None]] = {}
 
     @property
     def _hb(self) -> HeartbeatConfig:
@@ -62,7 +62,7 @@ class HeartbeatObserver(BaseObserver):
         """Set the function that executes a heartbeat turn (orchestrator.handle_heartbeat)."""
         self._handle_heartbeat = handler
 
-    def set_busy_check(self, check: Callable[[int], bool]) -> None:
+    def set_busy_check(self, check: Callable[[str], bool]) -> None:
         """Set the function that checks if a chat has active CLI processes."""
         self._is_chat_busy = check
 
@@ -116,7 +116,7 @@ class HeartbeatObserver(BaseObserver):
             task.add_done_callback(lambda _: None)
             self._target_tasks[key] = task
             logger.info(
-                "Heartbeat target %d/%s started (every %dm)",
+                "Heartbeat target %s/%s started (every %dm)",
                 target.chat_id,
                 target.topic_id,
                 interval,
@@ -134,9 +134,7 @@ class HeartbeatObserver(BaseObserver):
                     continue
                 if not await self._validate_target(target.chat_id):
                     continue
-                prompt, ack_token, quiet_start, quiet_end = self._resolve_target_settings(
-                    target
-                )
+                prompt, ack_token, quiet_start, quiet_end = self._resolve_target_settings(target)
                 if self._is_target_quiet(target.chat_id, quiet_start, quiet_end):
                     continue
                 await self._run_for_chat(
@@ -148,7 +146,7 @@ class HeartbeatObserver(BaseObserver):
                     quiet_end=quiet_end,
                 )
         except asyncio.CancelledError:
-            logger.debug("Target loop %d cancelled", target.chat_id)
+            logger.debug("Target loop %s cancelled", target.chat_id)
 
     def _resolve_target_settings(self, target: HeartbeatTarget) -> tuple[str, str, int, int]:
         """Resolve per-target settings with global fallback.
@@ -161,7 +159,7 @@ class HeartbeatObserver(BaseObserver):
         quiet_end = target.quiet_end if target.quiet_end is not None else self._hb.quiet_end
         return prompt, ack_token, quiet_start, quiet_end
 
-    async def _validate_target(self, chat_id: int) -> bool:
+    async def _validate_target(self, chat_id: str) -> bool:
         """Check if a group target is accessible, with TTL cache."""
         if self._chat_validator is None:
             return True
@@ -176,21 +174,21 @@ class HeartbeatObserver(BaseObserver):
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.warning("Chat validation failed for %d", chat_id)
+            logger.warning("Chat validation failed for %s", chat_id)
             return False
 
         if valid:
             self._valid_targets[chat_id] = now
             return True
 
-        logger.warning("Heartbeat target %d is not accessible, skipping", chat_id)
+        logger.warning("Heartbeat target %s is not accessible, skipping", chat_id)
         return False
 
     def _should_skip_target_interval(self, target: HeartbeatTarget, now: float) -> bool:
         """Return True if the target has a custom interval that has not yet elapsed."""
         if target.interval_minutes is None:
             return False
-        key = (target.chat_id or 0, target.topic_id)
+        key = (target.chat_id or "", target.topic_id)
         last_run = self._target_last_run.get(key, 0.0)
         if (now - last_run) < target.interval_minutes * 60:
             logger.debug(
@@ -287,7 +285,7 @@ class HeartbeatObserver(BaseObserver):
             )
 
     def _is_target_quiet(
-        self, chat_id: int, quiet_start: int | None, quiet_end: int | None
+        self, chat_id: str, quiet_start: int | None, quiet_end: int | None
     ) -> bool:
         """Check per-target quiet hours. Returns True if quiet."""
         if quiet_start is None or quiet_end is None:
@@ -300,13 +298,13 @@ class HeartbeatObserver(BaseObserver):
             global_quiet_end=self._hb.quiet_end,
         )
         if is_quiet:
-            logger.debug("Heartbeat skipped for %d: per-target quiet hours", chat_id)
+            logger.debug("Heartbeat skipped for %s: per-target quiet hours", chat_id)
         return is_quiet
 
     async def _run_for_chat(  # noqa: PLR0913
         self,
-        chat_id: int,
-        topic_id: int | None = None,
+        chat_id: str,
+        topic_id: str | None = None,
         *,
         prompt: str | None = None,
         ack_token: str | None = None,

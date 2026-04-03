@@ -89,8 +89,8 @@ class SessionData:
     """Active session state with provider-isolated IDs and metrics."""
 
     transport: str
-    chat_id: int
-    topic_id: int | None
+    chat_id: str
+    topic_id: str | None
     topic_name: str | None
     provider: str
     model: str
@@ -98,10 +98,10 @@ class SessionData:
     last_active: str
     provider_sessions: dict[str, ProviderSessionData] = field(default_factory=dict)
 
-    def __init__(self, chat_id: int, **raw: object) -> None:
+    def __init__(self, chat_id: str, **raw: object) -> None:
         """Create session data from current or legacy serialized fields."""
         transport = _as_str(raw.pop("transport", "tg"), default="tg")
-        topic_id = _as_optional_int(raw.pop("topic_id", None))
+        topic_id = _as_optional_str(raw.pop("topic_id", None))
         topic_name = _as_optional_str(raw.pop("topic_name", None))
         provider = _as_str(raw.pop("provider", "claude"), default="claude")
         model = _as_str(raw.pop("model", "opus"), default="opus")
@@ -116,7 +116,7 @@ class SessionData:
         total_tokens = _as_optional_int(raw.pop("total_tokens", None))
 
         self.transport = transport
-        self.chat_id = chat_id
+        self.chat_id = chat_id if isinstance(chat_id, str) else str(chat_id)
         self.topic_id = topic_id
         self.topic_name = topic_name
         self.provider = provider
@@ -258,7 +258,7 @@ class SessionData:
             return 0.0
 
 
-TopicNameResolver = Callable[[int, int], str]
+TopicNameResolver = Callable[[str, str], str]
 """Callback: (chat_id, topic_id) → human-readable topic name."""
 
 
@@ -346,7 +346,7 @@ class SessionManager:
         sessions = await self._load()
         return sessions.get(key.storage_key)
 
-    async def list_active_for_chat(self, chat_id: int) -> list[SessionData]:
+    async def list_active_for_chat(self, chat_id: str) -> list[SessionData]:
         """Return all fresh sessions belonging to *chat_id*."""
         sessions = await self._load()
         return [s for s in sessions.values() if s.chat_id == chat_id and self._is_fresh(s)]

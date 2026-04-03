@@ -42,10 +42,10 @@ class SessionInjector(Protocol):
     async def inject_prompt(
         self,
         prompt: str,
-        chat_id: int,
+        chat_id: str,
         label: str,
         *,
-        topic_id: int | None = None,
+        topic_id: str | None = None,
         transport: str = "tg",
     ) -> str:
         """Execute *prompt* in the active session. Returns response text."""
@@ -109,7 +109,7 @@ class MessageBus:
                 logger.exception("Audit hook failed for envelope %s", envelope.envelope_id)
 
         logger.debug(
-            "Bus submit: origin=%s chat=%d delivery=%s lock=%s inject=%s",
+            "Bus submit: origin=%s chat=%s delivery=%s lock=%s inject=%s",
             envelope.origin.value,
             envelope.chat_id,
             envelope.delivery.value,
@@ -139,7 +139,7 @@ class MessageBus:
                 envelope.result_text = response
             except Exception:
                 logger.exception(
-                    "Injection failed: origin=%s chat=%d",
+                    "Injection failed: origin=%s chat=%s",
                     envelope.origin.value,
                     envelope.chat_id,
                 )
@@ -156,7 +156,7 @@ class MessageBus:
         """Route to the correct transport(s) with cascading fallback."""
         if not self._transports:
             logger.warning(
-                "No transports registered — envelope lost: origin=%s chat=%d",
+                "No transports registered — envelope lost: origin=%s chat=%s",
                 envelope.origin.value,
                 envelope.chat_id,
             )
@@ -204,7 +204,7 @@ class MessageBus:
             )
             fallback_env = Envelope(
                 origin=envelope.origin,
-                chat_id=0,
+                chat_id="",
                 result_text=(
                     f"**Delivery fallback**\n\n"
                     f"Target transport '{target_transport}' is not available.\n\n"

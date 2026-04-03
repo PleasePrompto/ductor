@@ -171,7 +171,7 @@ class ObserverManager:
         self,
         bus: MessageBus,
         *,
-        wake_handler: Callable[[int, str], Awaitable[str | None]] | None = None,
+        wake_handler: Callable[[str, str], Awaitable[str | None]] | None = None,
     ) -> None:
         """Wire all observer result callbacks to the message bus.
 
@@ -190,8 +190,8 @@ class ObserverManager:
                 title: str,
                 result: str,
                 status: str,
-                chat_id: int = 0,
-                topic_id: int | None = None,
+                chat_id: str = "",
+                topic_id: str | None = None,
                 transport: str = "tg",
             ) -> None:
                 await bus.submit(
@@ -207,7 +207,7 @@ class ObserverManager:
 
             self.cron.set_result_handler(_on_cron)
 
-        async def _on_heartbeat(chat_id: int, text: str, topic_id: int | None = None) -> None:
+        async def _on_heartbeat(chat_id: str, text: str, topic_id: str | None = None) -> None:
             await bus.submit(from_heartbeat(chat_id, text, topic_id))
 
         self.heartbeat.set_result_handler(_on_heartbeat)

@@ -208,11 +208,11 @@ class SequentialMiddleware(BaseMiddleware):
         """Register a callback for read-only commands dispatched *before* the lock."""
         self._quick_command_handler = handler
 
-    def get_lock(self, lock_key: tuple[int, int | None] | int) -> asyncio.Lock:
+    def get_lock(self, lock_key: tuple[str, str | None] | str) -> asyncio.Lock:
         """Return the per-session lock, creating it if needed.
 
         Accepts either a ``(chat_id, topic_id)`` tuple (from
-        ``SessionKey.lock_key``) or a plain ``chat_id`` integer for
+        ``SessionKey.lock_key``) or a plain ``chat_id`` string for
         backward compatibility.
 
         Used by webhook wake dispatch to queue behind active conversations.
@@ -230,7 +230,7 @@ class SequentialMiddleware(BaseMiddleware):
 
         Checks all topic-scoped locks for the given chat.
         """
-        return self._lock_pool.any_locked_for_chat(chat_id) or self.has_pending(chat_id)
+        return self._lock_pool.any_locked_for_chat(str(chat_id)) or self.has_pending(chat_id)
 
     async def cancel_entry(self, chat_id: int, entry_id: int) -> bool:
         """Cancel a single queued message and edit its indicator.

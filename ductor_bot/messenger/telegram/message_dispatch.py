@@ -76,7 +76,8 @@ async def run_non_streaming_message(
     dispatch: NonStreamingDispatch,
 ) -> str:
     """Execute one non-streaming turn and deliver the result to Telegram."""
-    async with TypingContext(dispatch.bot, dispatch.key.chat_id, thread_id=dispatch.thread_id):
+    tg_chat_id = int(dispatch.key.chat_id)
+    async with TypingContext(dispatch.bot, tg_chat_id, thread_id=dispatch.thread_id):
         result = await dispatch.orchestrator.handle_message(dispatch.key, dispatch.text)
 
     footer = _build_footer(result, dispatch.scene_config)
@@ -84,7 +85,7 @@ async def run_non_streaming_message(
     reply_id = dispatch.reply_to.message_id if dispatch.reply_to else None
     await send_rich(
         dispatch.bot,
-        dispatch.key.chat_id,
+        tg_chat_id,
         result.text,
         SendRichOpts(
             reply_to_message_id=reply_id,
@@ -101,9 +102,11 @@ async def run_streaming_message(
     """Execute one streaming turn and deliver text/files to Telegram."""
     logger.info("Streaming flow started")
 
+    tg_chat_id = int(dispatch.key.chat_id)
+
     editor = create_stream_editor(
         dispatch.bot,
-        dispatch.key.chat_id,
+        tg_chat_id,
         reply_to=dispatch.message,
         cfg=dispatch.streaming_cfg,
         thread_id=dispatch.thread_id,
@@ -139,7 +142,7 @@ async def run_streaming_message(
         await coalescer.flush(force=True)
         await editor.append_system(label)
 
-    async with TypingContext(dispatch.bot, dispatch.key.chat_id, thread_id=dispatch.thread_id):
+    async with TypingContext(dispatch.bot, tg_chat_id, thread_id=dispatch.thread_id):
         result = await dispatch.orchestrator.handle_message_streaming(
             dispatch.key,
             dispatch.text,
@@ -165,7 +168,7 @@ async def run_streaming_message(
     if result.stream_fallback or not editor.has_content:
         await send_rich(
             dispatch.bot,
-            dispatch.key.chat_id,
+            tg_chat_id,
             result.text,
             SendRichOpts(
                 reply_to_message_id=dispatch.message.message_id,
@@ -176,7 +179,7 @@ async def run_streaming_message(
     else:
         await send_files_from_text(
             dispatch.bot,
-            dispatch.key.chat_id,
+            tg_chat_id,
             result.text,
             allowed_roots=dispatch.allowed_roots,
             thread_id=dispatch.thread_id,

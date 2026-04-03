@@ -52,8 +52,8 @@ class AgentRequest:
     append_system_prompt: str | None = None
     model_override: str | None = None
     provider_override: str | None = None
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: str = ""
+    topic_id: str | None = None
     process_label: str = "main"
     resume_session: str | None = None
     continue_session: bool = False

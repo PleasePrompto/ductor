@@ -57,8 +57,8 @@ class AsyncSendOptions:
 
     new_session: bool = False
     summary: str = ""
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: str = ""
+    topic_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -73,8 +73,8 @@ class AsyncInterAgentTask:
     summary: str = ""
     timestamp: float = field(default_factory=time.time)
     asyncio_task: asyncio.Task[None] | None = field(default=None, repr=False)
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: str = ""
+    topic_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -92,8 +92,8 @@ class AsyncInterAgentResult:
     session_name: str = ""
     provider_switch_notice: str = ""
     original_message: str = ""
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: str = ""
+    topic_id: str | None = None
 
 
 AsyncResultCallback = Callable[["AsyncInterAgentResult"], Awaitable[None]]
@@ -396,7 +396,7 @@ class InterAgentBus:
                 preview=preview,
             )
 
-            chat_id = target.config.allowed_user_ids[0] if target.config.allowed_user_ids else 0
+            chat_id = target.config.allowed_user_ids[0] if target.config.allowed_user_ids else ""
             if chat_id:
                 await ns.notify(chat_id, text)
             else:

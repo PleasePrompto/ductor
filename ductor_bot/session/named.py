@@ -133,7 +133,7 @@ class NamedSession:
     """State for a named background session."""
 
     name: str
-    chat_id: int
+    chat_id: str
     provider: str
     model: str
     session_id: str
@@ -149,7 +149,7 @@ def _session_from_dict(data: dict[str, Any]) -> NamedSession:
     """Reconstruct a NamedSession from a JSON-serialized dict."""
     return NamedSession(
         name=str(data.get("name", "")),
-        chat_id=int(data.get("chat_id", 0)),
+        chat_id=str(data.get("chat_id", "")),
         provider=str(data.get("provider", "")),
         model=str(data.get("model", "")),
         session_id=str(data.get("session_id", "")),
@@ -173,8 +173,8 @@ class NamedSessionRegistry:
     def __init__(self, path: Path) -> None:
         self._path = path
         self._lock = asyncio.Lock()
-        self._sessions: dict[tuple[int, str], NamedSession] = {}
-        self._recovered_running: dict[tuple[int, str], NamedSession] = {}
+        self._sessions: dict[tuple[str, str], NamedSession] = {}
+        self._recovered_running: dict[tuple[str, str], NamedSession] = {}
         self._load()
 
     def _load(self) -> None:
@@ -212,7 +212,7 @@ class NamedSessionRegistry:
 
     def create(
         self,
-        chat_id: int,
+        chat_id: str,
         provider: str,
         model: str,
         prompt_preview: str,
@@ -237,35 +237,35 @@ class NamedSessionRegistry:
         self._sessions[(chat_id, name)] = session
         self._persist()
         logger.info(
-            "Named session created name=%s chat=%d provider=%s",
+            "Named session created name=%s chat=%s provider=%s",
             name,
             chat_id,
             provider,
         )
         return session
 
-    def get(self, chat_id: int, name: str) -> NamedSession | None:
+    def get(self, chat_id: str, name: str) -> NamedSession | None:
         """Look up a named session (any status)."""
         return self._sessions.get((chat_id, name))
 
-    def list_active(self, chat_id: int) -> list[NamedSession]:
+    def list_active(self, chat_id: str) -> list[NamedSession]:
         """Return all non-ended sessions for *chat_id*, ordered by creation."""
         return sorted(
             (s for s in self._sessions.values() if s.chat_id == chat_id and s.status != "ended"),
             key=lambda s: s.created_at,
         )
 
-    def end_session(self, chat_id: int, name: str) -> bool:
+    def end_session(self, chat_id: str, name: str) -> bool:
         """Mark a session as ended. Returns True if found and ended."""
         ns = self._sessions.get((chat_id, name))
         if ns is None or ns.status == "ended":
             return False
         ns.status = "ended"
         self._persist()
-        logger.info("Named session ended name=%s chat=%d", name, chat_id)
+        logger.info("Named session ended name=%s chat=%s", name, chat_id)
         return True
 
-    def end_all(self, chat_id: int) -> int:
+    def end_all(self, chat_id: str) -> int:
         """End all active sessions for *chat_id*. Returns count ended."""
         count = 0
         for ns in self._sessions.values():
@@ -274,12 +274,12 @@ class NamedSessionRegistry:
                 count += 1
         if count:
             self._persist()
-            logger.info("All named sessions ended chat=%d count=%d", chat_id, count)
+            logger.info("All named sessions ended chat=%s count=%d", chat_id, count)
         return count
 
     def update_after_response(
         self,
-        chat_id: int,
+        chat_id: str,
         name: str,
         session_id: str,
         *,
@@ -304,7 +304,7 @@ class NamedSessionRegistry:
         self._sessions[(session.chat_id, session.name)] = session
         self._persist()
 
-    def mark_running(self, chat_id: int, name: str, prompt: str) -> None:
+    def mark_running(self, chat_id: str, name: str, prompt: str) -> None:
         """Mark a session as running and store the prompt for recovery."""
         ns = self._sessions.get((chat_id, name))
         if ns is None:
@@ -313,14 +313,14 @@ class NamedSessionRegistry:
         ns.last_prompt = prompt[:4000]
         self._persist()
 
-    def pop_recovered_running(self, chat_id: int | None = None) -> list[NamedSession]:
+    def pop_recovered_running(self, chat_id: str | None = None) -> list[NamedSession]:
         """Return sessions that were running at last shutdown, then clear them.
 
         If *chat_id* is given, only return sessions for that chat.
         Excludes inter-agent sessions (``ia-`` prefix).
         """
         results: list[NamedSession] = []
-        to_remove: list[tuple[int, str]] = []
+        to_remove: list[tuple[str, str]] = []
         for key, ns in self._recovered_running.items():
             if chat_id is not None and ns.chat_id != chat_id:
                 continue
@@ -332,7 +332,7 @@ class NamedSessionRegistry:
             del self._recovered_running[key]
         return sorted(results, key=lambda s: s.created_at)
 
-    def active_names(self, chat_id: int) -> set[str]:
+    def active_names(self, chat_id: str) -> set[str]:
         """Return the set of active session names for collision checks."""
         return {
             s.name for s in self._sessions.values() if s.chat_id == chat_id and s.status != "ended"

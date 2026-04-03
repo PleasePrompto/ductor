@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class HookContext:
     """Immutable snapshot of session state passed to hook conditions."""
 
-    chat_id: int
+    chat_id: str
     message_count: int
     is_new_session: bool
     provider: str

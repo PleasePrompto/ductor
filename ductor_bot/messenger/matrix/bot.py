@@ -24,7 +24,6 @@ from ductor_bot.infra.version import get_current_version
 from ductor_bot.messenger.commands import classify_command
 from ductor_bot.messenger.matrix.buttons import ButtonTracker
 from ductor_bot.messenger.matrix.credentials import login_or_restore
-from ductor_bot.messenger.matrix.id_map import MatrixIdMap
 from ductor_bot.messenger.matrix.sender import send_rich as matrix_send_rich
 from ductor_bot.messenger.matrix.streaming import MatrixStreamEditor
 from ductor_bot.messenger.matrix.typing import MatrixTypingContext
@@ -63,15 +62,12 @@ class MatrixNotificationService:
     def __init__(self, bot: MatrixBot) -> None:
         self._bot = bot
 
-    async def notify(self, chat_id: int, text: str) -> None:
-        room_id = self._bot.id_map.int_to_room(chat_id)
-        if room_id:
-            event_id = await matrix_send_rich(self._bot.client, room_id, text)
+    async def notify(self, chat_id: str, text: str) -> None:
+        if chat_id:
+            event_id = await matrix_send_rich(self._bot.client, chat_id, text)
             self._bot._track_sent_event(event_id)
         else:
-            logger.warning(
-                "notify: cannot resolve chat_id=%d to room, falling back to notify_all", chat_id
-            )
+            logger.warning("notify: empty chat_id, falling back to notify_all")
             await self.notify_all(text)
 
     async def notify_all(self, text: str) -> None:
@@ -106,7 +102,6 @@ class MatrixBot:
         self._store_path.mkdir(parents=True, exist_ok=True)
 
         self._client = AsyncClient(mx.homeserver, mx.user_id)
-        self._id_map = MatrixIdMap(self._store_path)
         self._button_tracker = ButtonTracker()
         self._lock_pool = lock_pool or LockPool()
         self._bus = bus or MessageBus(lock_pool=self._lock_pool)
@@ -167,10 +162,6 @@ class MatrixBot:
     def client(self) -> AsyncClient:
         """The nio AsyncClient instance."""
         return self._client
-
-    @property
-    def id_map(self) -> MatrixIdMap:
-        return self._id_map
 
     def register_startup_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
         self._startup_hooks.append(hook)
@@ -312,7 +303,6 @@ class MatrixBot:
 
         room_id = room.room_id
         self._last_active_room = room_id
-        chat_id = self._id_map.room_to_int(room_id)
 
         if self._config.scene.seen_reaction:
             await self._set_seen_read_receipt(room_id, event.event_id)
@@ -325,10 +315,10 @@ class MatrixBot:
 
         # Handle commands (! prefix for Matrix, / also accepted)
         if text.startswith(("!", "/")):
-            await self._handle_command(text, room_id, chat_id, event)
+            await self._handle_command(text, room_id, room_id, event)
             return
 
-        key = SessionKey.matrix(chat_id)
+        key = SessionKey.matrix(room_id)
         self._spawn_task(
             self._dispatch_with_lock(key, text, room_id, event),
             name=f"mx-msg-{room_id[:8]}",
@@ -358,7 +348,6 @@ class MatrixBot:
 
         room_id = room.room_id
         self._last_active_room = room_id
-        chat_id = self._id_map.room_to_int(room_id)
 
         if self._config.scene.seen_reaction:
             await self._set_seen_read_receipt(room_id, event.event_id)
@@ -382,13 +371,13 @@ class MatrixBot:
         if not text:
             return
 
-        key = SessionKey.matrix(chat_id)
+        key = SessionKey.matrix(room_id)
         self._spawn_task(
             self._dispatch_with_lock(key, text, room_id, event),
             name=f"mx-media-{room_id[:8]}",
         )
 
-    async def _handle_command(self, text: str, room_id: str, chat_id: int, event: object) -> None:
+    async def _handle_command(self, text: str, room_id: str, chat_id: str, event: object) -> None:
         """Handle commands in Matrix. Supports both !cmd and /cmd prefixes."""
         # Normalize: strip prefix, extract command name
         cmd = text.split(maxsplit=1)[0].lower().lstrip("/!")
@@ -911,8 +900,7 @@ class MatrixBot:
         if not orch:
             return
 
-        chat_id = self._id_map.room_to_int(room_id)
-        key = SessionKey.matrix(chat_id)
+        key = SessionKey.matrix(room_id)
 
         result = await route_callback(orch, key, callback_data)
         if result.handled:
@@ -1059,18 +1047,16 @@ class MatrixBot:
     # --- Room discovery ---
 
     def _populate_rooms_from_sync(self) -> None:
-        """Pre-populate id_map and _last_active_room from joined rooms.
+        """Pre-populate _last_active_room from joined rooms.
 
         After the initial sync, ``self._client.rooms`` contains all joined
-        rooms.  We register them in the id_map so that inter-agent
+        rooms.  We set the default delivery target so that inter-agent
         notifications can resolve a target room even before a user sends a
         direct message.
         """
         rooms = getattr(self._client, "rooms", {})
         if not rooms:
             return
-        for room_id in rooms:
-            self._id_map.room_to_int(room_id)  # ensure mapping exists
         # Set _last_active_room to the first DM-like room, or any room
         if self._last_active_room is None:
             # Prefer DM rooms (unnamed, ≤2 members) as default target
@@ -1126,8 +1112,8 @@ class MatrixBot:
         task_id: str,
         question: str,
         prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
+        chat_id: str,
+        thread_id: str | None = None,
     ) -> None:
         from ductor_bot.bus.adapters import from_task_question
 
@@ -1135,14 +1121,14 @@ class MatrixBot:
             chat_id = self._default_chat_id()
         await self._bus.submit(from_task_question(task_id, question, prompt_preview, chat_id))
 
-    def _default_chat_id(self) -> int:
+    def _default_chat_id(self) -> str:
         """Default delivery target: first allowed room, or last active room."""
         if self._config.matrix.allowed_rooms:
-            return self._id_map.room_to_int(self._config.matrix.allowed_rooms[0])
+            return self._config.matrix.allowed_rooms[0]
         if self._last_active_room:
-            return self._id_map.room_to_int(self._last_active_room)
+            return self._last_active_room
         logger.warning("No default chat_id: no allowed_rooms and no active room yet")
-        return 0
+        return ""
 
     # --- Restart watcher ---
 

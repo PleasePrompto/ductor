@@ -146,7 +146,7 @@ async def start_api_server(
         logger.info("Generated API auth token (persisted to config)")
 
     default_chat_id = config.api.chat_id or (
-        config.allowed_user_ids[0] if config.allowed_user_ids else 1
+        config.allowed_user_ids[0] if config.allowed_user_ids else ""
     )
     server = ApiServer(config.api, default_chat_id=default_chat_id)
     server.set_message_handler(orch.handle_message_streaming)

@@ -24,9 +24,9 @@ class TrackedProcess:
     """A registered subprocess with metadata."""
 
     process: asyncio.subprocess.Process
-    chat_id: int
+    chat_id: str
     label: str
-    topic_id: int | None = None
+    topic_id: str | None = None
     registered_at: float = field(default_factory=time.time)
 
 
@@ -34,18 +34,18 @@ class ProcessRegistry:
     """Global registry of active CLI subprocesses, keyed by *chat_id*."""
 
     def __init__(self) -> None:
-        self._processes: dict[int, list[TrackedProcess]] = {}
-        self._aborted: set[int] = set()
-        self._aborted_labels: set[tuple[int, str]] = set()
-        self._interrupted: set[int] = set()
+        self._processes: dict[str, list[TrackedProcess]] = {}
+        self._aborted: set[str] = set()
+        self._aborted_labels: set[tuple[str, str]] = set()
+        self._interrupted: set[str] = set()
 
     def register(
         self,
-        chat_id: int,
+        chat_id: str,
         process: asyncio.subprocess.Process,
         label: str,
         *,
-        topic_id: int | None = None,
+        topic_id: str | None = None,
     ) -> TrackedProcess:
         """Register a subprocess. Returns the tracking handle."""
         tracked = TrackedProcess(
@@ -56,7 +56,7 @@ class ProcessRegistry:
         )
         self._processes.setdefault(chat_id, []).append(tracked)
         logger.debug(
-            "Process registered: chat=%d label=%s pid=%s",
+            "Process registered: chat=%s label=%s pid=%s",
             chat_id,
             label,
             process.pid,
@@ -75,13 +75,13 @@ class ProcessRegistry:
         if not entries:
             del self._processes[tracked.chat_id]
         logger.debug(
-            "Process unregistered: chat=%d label=%s pid=%s",
+            "Process unregistered: chat=%s label=%s pid=%s",
             tracked.chat_id,
             tracked.label,
             tracked.process.pid,
         )
 
-    async def kill_all(self, chat_id: int) -> int:
+    async def kill_all(self, chat_id: str) -> int:
         """Kill every active process for *chat_id*. Returns count killed."""
         self._aborted.add(chat_id)
         entries = self._processes.pop(chat_id, [])
@@ -96,23 +96,23 @@ class ProcessRegistry:
             total += await self.kill_all(chat_id)
         return total
 
-    def was_aborted(self, chat_id: int) -> bool:
+    def was_aborted(self, chat_id: str) -> bool:
         """Check whether *chat_id* has been aborted since last clear."""
         return chat_id in self._aborted
 
-    def clear_abort(self, chat_id: int) -> None:
+    def clear_abort(self, chat_id: str) -> None:
         """Clear the abort flag for *chat_id*."""
         self._aborted.discard(chat_id)
 
-    def was_interrupted(self, chat_id: int) -> bool:
+    def was_interrupted(self, chat_id: str) -> bool:
         """Check whether *chat_id* was soft-interrupted since last clear."""
         return chat_id in self._interrupted
 
-    def clear_interrupt(self, chat_id: int) -> None:
+    def clear_interrupt(self, chat_id: str) -> None:
         """Clear the interrupt flag for *chat_id*."""
         self._interrupted.discard(chat_id)
 
-    def has_active(self, chat_id: int, topic_id: int | None = None) -> bool:
+    def has_active(self, chat_id: str, topic_id: str | None = None) -> bool:
         """Return True if *chat_id* has at least one running subprocess.
 
         When *topic_id* is given, only processes for that specific topic are
@@ -123,7 +123,7 @@ class ProcessRegistry:
             return any(e.process.returncode is None and e.topic_id == topic_id for e in entries)
         return any(e.process.returncode is None for e in entries)
 
-    async def kill_by_label(self, chat_id: int, label: str) -> int:
+    async def kill_by_label(self, chat_id: str, label: str) -> int:
         """Kill processes matching *label* for *chat_id*. Returns count killed."""
         self._aborted_labels.add((chat_id, label))
         entries = self._processes.get(chat_id, [])
@@ -137,11 +137,11 @@ class ProcessRegistry:
             self._processes.pop(chat_id, None)
         return await _kill_processes(to_kill)
 
-    def clear_label_abort(self, chat_id: int, label: str) -> None:
+    def clear_label_abort(self, chat_id: str, label: str) -> None:
         """Clear the abort flag for a specific label."""
         self._aborted_labels.discard((chat_id, label))
 
-    def interrupt_all(self, chat_id: int) -> int:
+    def interrupt_all(self, chat_id: str) -> int:
         """Send SIGINT to every active process for *chat_id*.
 
         Unlike :meth:`kill_all` this does NOT terminate or unregister the
@@ -159,14 +159,14 @@ class ProcessRegistry:
                 continue
             interrupt_process(tracked.process.pid)
             logger.debug(
-                "SIGINT sent: pid=%s label=%s chat=%d",
+                "SIGINT sent: pid=%s label=%s chat=%s",
                 tracked.process.pid,
                 tracked.label,
                 tracked.chat_id,
             )
             count += 1
         if count:
-            logger.info("Interrupted %d CLI process(es) for chat=%d", count, chat_id)
+            logger.info("Interrupted %d CLI process(es) for chat=%s", count, chat_id)
         return count
 
     async def kill_stale(self, max_age_seconds: float) -> int:
@@ -180,7 +180,7 @@ class ProcessRegistry:
                 age = now - tracked.registered_at
                 if age > max_age_seconds:
                     logger.warning(
-                        "Stale process: pid=%s label=%s chat=%d age=%.0fs",
+                        "Stale process: pid=%s label=%s chat=%s age=%.0fs",
                         tracked.process.pid,
                         tracked.label,
                         tracked.chat_id,

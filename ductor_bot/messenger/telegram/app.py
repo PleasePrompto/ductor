@@ -159,12 +159,12 @@ class TelegramNotificationService:
         self._bot = bot
         self._config = config
 
-    async def notify(self, chat_id: int, text: str) -> None:
-        await send_rich(self._bot, chat_id, text, None)
+    async def notify(self, chat_id: str, text: str) -> None:
+        await send_rich(self._bot, int(chat_id), text, None)
 
     async def notify_all(self, text: str) -> None:
         for uid in self._config.allowed_user_ids:
-            await send_rich(self._bot, uid, text, None)
+            await send_rich(self._bot, int(uid), text, None)
 
 
 class TelegramBot:
@@ -201,8 +201,8 @@ class TelegramBot:
         self._upgrade_lock = asyncio.Lock()
         self._group_audit_task: asyncio.Task[None] | None = None
 
-        allowed = set(config.allowed_user_ids)
-        allowed_groups = set(config.allowed_group_ids)
+        allowed = {int(uid) for uid in config.allowed_user_ids}
+        allowed_groups = {int(gid) for gid in config.allowed_group_ids}
         self._allowed_users = allowed
         self._allowed_groups = allowed_groups
         self._chat_tracker: ChatTracker | None = None  # set in _on_startup
@@ -303,7 +303,7 @@ class TelegramBot:
     async def broadcast(self, text: str, opts: SendRichOpts | None = None) -> None:
         """Send a message to all allowed users."""
         for uid in self._config.allowed_user_ids:
-            await send_rich(self._bot, uid, text, opts)
+            await send_rich(self._bot, int(uid), text, opts)
 
     async def _on_startup(self) -> None:
         from ductor_bot.messenger.telegram.startup import run_startup
@@ -360,11 +360,11 @@ class TelegramBot:
         """Update auth sets and language in-place when config is hot-reloaded."""
         if "allowed_user_ids" in hot:
             self._allowed_users.clear()
-            self._allowed_users.update(config.allowed_user_ids)
+            self._allowed_users.update(int(uid) for uid in config.allowed_user_ids)
             logger.info("Auth hot-reloaded: allowed_user_ids (%d)", len(self._allowed_users))
         if "allowed_group_ids" in hot:
             self._allowed_groups.clear()
-            self._allowed_groups.update(config.allowed_group_ids)
+            self._allowed_groups.update(int(gid) for gid in config.allowed_group_ids)
             logger.info("Auth hot-reloaded: allowed_group_ids (%d)", len(self._allowed_groups))
             self._group_audit_task = asyncio.create_task(self._fire_audit())
         if "language" in hot:
@@ -860,7 +860,7 @@ class TelegramBot:
 
         name = get_topic_name_from_message(message)
         if name and message.message_thread_id is not None:
-            self._topic_names.set(message.chat.id, message.message_thread_id, name)
+            self._topic_names.set(str(message.chat.id), str(message.message_thread_id), name)
             logger.debug(
                 "Topic name cached: %d/%d = %s", message.chat.id, message.message_thread_id, name
             )
@@ -871,7 +871,7 @@ class TelegramBot:
 
         name = get_topic_name_from_message(message)
         if name and message.message_thread_id is not None:
-            self._topic_names.set(message.chat.id, message.message_thread_id, name)
+            self._topic_names.set(str(message.chat.id), str(message.message_thread_id), name)
             logger.debug(
                 "Topic name updated: %d/%d = %s", message.chat.id, message.message_thread_id, name
             )
@@ -923,13 +923,14 @@ class TelegramBot:
 
         text = (message.text or "").strip()
         parts = text.split(None, 1)
-        chat_id = message.chat.id
+        tg_chat_id = message.chat.id
+        str_chat_id = str(tg_chat_id)
         thread_id = get_thread_id(message)
 
         if len(parts) < 2 or not parts[1].strip():
             await send_rich(
                 self._bot,
-                chat_id,
+                tg_chat_id,
                 self._build_session_help(),
                 SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
             )
@@ -961,18 +962,18 @@ class TelegramBot:
                         if self._orch.is_known_model(candidate):
                             model_override = candidate
                             prompt = prompt[model_match.end() :]
-            elif self._orch.get_named_session(chat_id, key):
+            elif self._orch.get_named_session(str_chat_id, key):
                 session_followup = key
                 prompt = rest
 
         try:
             if session_followup:
                 task_id = self._orch.submit_named_followup_bg(
-                    chat_id, session_followup, prompt, message.message_id, thread_id
+                    str_chat_id, session_followup, prompt, message.message_id, thread_id
                 )
                 await send_rich(
                     self._bot,
-                    chat_id,
+                    tg_chat_id,
                     fmt(
                         f"**[{session_followup}] Follow-up sent**",
                         SEP,
@@ -990,11 +991,11 @@ class TelegramBot:
                     model_override=model_override,
                 )
                 task_id, session_name = self._orch.submit_named_session(
-                    chat_id,
+                    str_chat_id,
                     prompt,
                     ns_request,
                 )
-                ns = self._orch.get_named_session(chat_id, session_name)
+                ns = self._orch.get_named_session(str_chat_id, session_name)
                 provider = ns.provider if ns else (provider_override or self._orch.config.provider)
                 model = ns.model if ns else ""
                 provider_label = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}.get(
@@ -1003,7 +1004,7 @@ class TelegramBot:
                 model_info = f" ({model})" if model else ""
                 await send_rich(
                     self._bot,
-                    chat_id,
+                    tg_chat_id,
                     fmt(
                         f"**Session `{session_name}` started**",
                         SEP,
@@ -1015,7 +1016,7 @@ class TelegramBot:
         except ValueError as exc:
             await send_rich(
                 self._bot,
-                chat_id,
+                tg_chat_id,
                 str(exc),
                 SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
             )
@@ -1133,7 +1134,7 @@ class TelegramBot:
             return True
 
         if data.startswith("upg:"):
-            await self._handle_upgrade_callback(chat_id, message_id, data, thread_id=thread_id)
+            await self._handle_upgrade_callback(int(chat_id), message_id, data, thread_id=thread_id)
             return True
 
         from ductor_bot.orchestrator.selectors.session_selector import is_session_selector_callback
@@ -1159,25 +1160,25 @@ class TelegramBot:
 
         async with self._sequential.get_lock(key.lock_key):
             resp = await handle_model_callback(self._orch, key, data)
-        await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+        await edit_selector_response(self._bot, int(key.chat_id), message_id, resp)
 
-    async def _handle_cron_selector(self, chat_id: int, message_id: int, data: str) -> None:
+    async def _handle_cron_selector(self, chat_id: str, message_id: int, data: str) -> None:
         """Handle cron selector wizard by editing the message in-place."""
         from ductor_bot.orchestrator.selectors.cron_selector import handle_cron_callback
 
         async with self._sequential.get_lock(chat_id):
             resp = await handle_cron_callback(self._orch, data)
-        await edit_selector_response(self._bot, chat_id, message_id, resp)
+        await edit_selector_response(self._bot, int(chat_id), message_id, resp)
 
-    async def _handle_session_selector(self, chat_id: int, message_id: int, data: str) -> None:
+    async def _handle_session_selector(self, chat_id: str, message_id: int, data: str) -> None:
         """Handle session selector wizard by editing the message in-place."""
         from ductor_bot.orchestrator.selectors.session_selector import handle_session_callback
 
         async with self._sequential.get_lock(chat_id):
             resp = await handle_session_callback(self._orch, chat_id, data)
-        await edit_selector_response(self._bot, chat_id, message_id, resp)
+        await edit_selector_response(self._bot, int(chat_id), message_id, resp)
 
-    async def _handle_task_selector(self, chat_id: int, message_id: int, data: str) -> None:
+    async def _handle_task_selector(self, chat_id: str, message_id: int, data: str) -> None:
         """Handle task selector wizard by editing the message in-place."""
         from ductor_bot.orchestrator.selectors.task_selector import handle_task_callback
 
@@ -1185,7 +1186,7 @@ class TelegramBot:
         if hub is None:
             return
         resp = await handle_task_callback(hub, chat_id, data)
-        await edit_selector_response(self._bot, chat_id, message_id, resp)
+        await edit_selector_response(self._bot, int(chat_id), message_id, resp)
 
     async def _handle_ns_callback(
         self, key: SessionKey, data: str, *, thread_id: int | None = None
@@ -1209,7 +1210,7 @@ class TelegramBot:
             if result.text:
                 await send_rich(
                     self._bot,
-                    key.chat_id,
+                    int(key.chat_id),
                     result.text,
                     SendRichOpts(
                         allowed_roots=self.file_roots(self._orch.paths),
@@ -1221,19 +1222,19 @@ class TelegramBot:
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> None:
         """Handle file browser navigation or file request."""
-        chat_id = key.chat_id
+        tg_chat_id = int(key.chat_id)
         text, keyboard, prompt = await handle_file_browser_callback(self._orch.paths, data)
 
         if prompt:
             # File request: remove the keyboard and send prompt to orchestrator
             with contextlib.suppress(TelegramBadRequest):
                 await self._bot.edit_message_reply_markup(
-                    chat_id=chat_id, message_id=message_id, reply_markup=None
+                    chat_id=tg_chat_id, message_id=message_id, reply_markup=None
                 )
             async with self._sequential.get_lock(key.lock_key):
                 if self._config.streaming.enabled:
                     fake_msg = await self._bot.send_message(
-                        chat_id,
+                        tg_chat_id,
                         prompt,
                         parse_mode=None,
                         message_thread_id=thread_id,
@@ -1247,19 +1248,19 @@ class TelegramBot:
         with contextlib.suppress(TelegramBadRequest):
             await self._bot.edit_message_text(
                 text=markdown_to_telegram_html(text),
-                chat_id=chat_id,
+                chat_id=tg_chat_id,
                 message_id=message_id,
                 reply_markup=keyboard,
                 parse_mode=ParseMode.HTML,
             )
 
-    async def _handle_queue_cancel(self, chat_id: int, data: str) -> None:
+    async def _handle_queue_cancel(self, chat_id: str, data: str) -> None:
         """Handle a ``mq:<entry_id>`` callback to cancel a queued message."""
         try:
             entry_id = int(data[len(MQ_PREFIX) :])
         except (ValueError, IndexError):
             return
-        await self._sequential.cancel_entry(chat_id, entry_id)
+        await self._sequential.cancel_entry(int(chat_id), entry_id)
 
     async def _mark_button_choice(self, chat_id: int, msg: Message, label: str) -> None:
         """Edit the bot message to append ``[USER ANSWER] label`` and remove the keyboard."""
@@ -1371,26 +1372,26 @@ class TelegramBot:
 
         # Prefer the originating chat context carried by the result;
         # fall back to the sender agent's default DM.
-        chat_id = result.chat_id or (
-            self._config.allowed_user_ids[0] if self._config.allowed_user_ids else 0
+        raw_chat_id = result.chat_id or (
+            self._config.allowed_user_ids[0] if self._config.allowed_user_ids else ""
         )
-        if not chat_id:
+        if not raw_chat_id:
             logger.warning("No chat_id available for async interagent result delivery")
             return
-        set_log_context(operation="ia-async", chat_id=chat_id)
-        await self._bus.submit(from_interagent_result(result, chat_id))
+        set_log_context(operation="ia-async", chat_id=str(raw_chat_id))
+        await self._bus.submit(from_interagent_result(result, str(raw_chat_id)))
 
     async def on_task_result(self, result: TaskResult) -> None:
         """Handle background task result via the message bus."""
         from ductor_bot.bus.adapters import from_task_result
 
-        chat_id = result.chat_id
-        if not chat_id:
-            chat_id = self._config.allowed_user_ids[0] if self._config.allowed_user_ids else 0
-        if not chat_id:
+        raw_chat_id = result.chat_id
+        if not raw_chat_id:
+            raw_chat_id = self._config.allowed_user_ids[0] if self._config.allowed_user_ids else ""
+        if not raw_chat_id:
             logger.warning("No chat_id for task result delivery (task=%s)", result.task_id)
             return
-        set_log_context(operation="task", chat_id=chat_id)
+        set_log_context(operation="task", chat_id=str(raw_chat_id))
         await self._bus.submit(from_task_result(result))
 
     async def on_task_question(
@@ -1398,14 +1399,14 @@ class TelegramBot:
         task_id: str,
         question: str,
         prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
+        chat_id: str,
+        thread_id: str | None = None,
     ) -> None:
         """Deliver a background task question via the message bus."""
         from ductor_bot.bus.adapters import from_task_question
 
         if not chat_id:
-            chat_id = self._config.allowed_user_ids[0] if self._config.allowed_user_ids else 0
+            chat_id = self._config.allowed_user_ids[0] if self._config.allowed_user_ids else ""
         if not chat_id:
             logger.warning("No chat_id for task question delivery (task=%s)", task_id)
             return
@@ -1414,12 +1415,13 @@ class TelegramBot:
             from_task_question(task_id, question, prompt_preview, chat_id, topic_id=thread_id)
         )
 
-    async def _handle_webhook_wake(self, chat_id: int, prompt: str) -> str | None:
+    async def _handle_webhook_wake(self, chat_id: str, prompt: str) -> str | None:
         """Process webhook wake prompt via the message bus."""
         from ductor_bot.bus.envelope import LockMode
 
         set_log_context(operation="wh", chat_id=chat_id)
-        key = SessionKey(chat_id=chat_id)
+        str_chat_id = chat_id
+        key = SessionKey.telegram(chat_id=str_chat_id)
         lock = self._lock_pool.get(key.lock_key)
         async with lock:
             result = await self._orch.handle_message(key, prompt)
@@ -1427,7 +1429,7 @@ class TelegramBot:
         # Deliver result — lock already released, skip bus lock
         from ductor_bot.bus.adapters import from_webhook_wake
 
-        env = from_webhook_wake(chat_id, prompt)
+        env = from_webhook_wake(str_chat_id, prompt)
         env.result_text = result.text
         env.lock_mode = LockMode.NONE  # Lock already held above
         await self._bus.submit(env)

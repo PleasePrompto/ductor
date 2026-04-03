@@ -30,13 +30,12 @@ def _make_transport() -> tuple[MatrixTransport, MagicMock]:
     bot.orchestrator.paths = MagicMock()
     bot.file_roots.return_value = [Path("/tmp/roots")]
     bot.orchestrator = MagicMock()
-    bot.id_map.int_to_room.return_value = "!room1:test"
     transport = MatrixTransport(bot)
     return transport, bot
 
 
 def _env(**kwargs: object) -> Envelope:
-    defaults: dict[str, object] = {"origin": Origin.CRON, "chat_id": 42}
+    defaults: dict[str, object] = {"origin": Origin.CRON, "chat_id": "42"}
     defaults.update(kwargs)
     return Envelope(**defaults)  # type: ignore[arg-type]
 
@@ -174,7 +173,7 @@ class TestHeartbeatDelivery:
         transport, _ = _make_transport()
         env = _env(
             origin=Origin.HEARTBEAT,
-            chat_id=99,
+            chat_id="99",
             result_text="Something happened",
         )
 
@@ -451,8 +450,7 @@ class TestDispatchFallback:
 
     async def test_no_room_skips_delivery(self) -> None:
         transport, bot = _make_transport()
-        bot.id_map.int_to_room.return_value = None
-        env = _env(origin=Origin.BACKGROUND, result_text="test", status="success")
+        env = _env(origin=Origin.BACKGROUND, result_text="test", status="success", chat_id="")
 
         with patch(
             "ductor_bot.messenger.matrix.transport.matrix_send_rich", new_callable=AsyncMock

@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 
 # Callback types matching Orchestrator.handle_message_streaming / abort
 StreamingMessageHandler = Callable[..., Awaitable[Any]]
-AbortHandler = Callable[[int], Awaitable[int]]
+AbortHandler = Callable[[str], Awaitable[int]]
 
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
@@ -176,7 +176,7 @@ class ApiServer:
         self,
         config: ApiConfig,
         *,
-        default_chat_id: int = 0,
+        default_chat_id: str = "",
         lock_pool: LockPool | None = None,
     ) -> None:
         self._config = config
@@ -456,12 +456,12 @@ class ApiServer:
             return None
 
         chat_id = data.get("chat_id", self._default_chat_id)
-        if not isinstance(chat_id, int) or chat_id <= 0:
+        if not isinstance(chat_id, str) or not chat_id:
             chat_id = self._default_chat_id
 
         # Optional channel_id for per-channel session isolation (maps to topic_id)
         channel_id = data.get("channel_id")
-        if not isinstance(channel_id, int) or channel_id <= 0:
+        if not isinstance(channel_id, str) or not channel_id:
             channel_id = None
 
         key = SessionKey(chat_id=chat_id, topic_id=channel_id)
@@ -631,7 +631,7 @@ class ApiServer:
     async def _dispatch_abort(
         self,
         channel: _SecureChannel,
-        chat_id: int,
+        chat_id: str,
     ) -> None:
         """Abort running CLI processes for this chat."""
         killed = 0

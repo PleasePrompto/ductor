@@ -14,7 +14,7 @@ class NotificationService(Protocol):
     notifications without knowing which transport is active.
     """
 
-    async def notify(self, chat_id: int, text: str) -> None:
+    async def notify(self, chat_id: str, text: str) -> None:
         """Send a notification to a specific chat/room."""
         ...
 
@@ -32,7 +32,7 @@ class CompositeNotificationService:
     def add(self, service: NotificationService) -> None:
         self._services.append(service)
 
-    async def notify(self, chat_id: int, text: str) -> None:
+    async def notify(self, chat_id: str, text: str) -> None:
         for svc in self._services:
             await svc.notify(chat_id, text)
 

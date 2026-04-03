@@ -12,7 +12,7 @@ from typing import Any
 class TaskSubmit:
     """Input for creating a background task."""
 
-    chat_id: int
+    chat_id: str
     prompt: str
     message_id: int
     thread_id: int | None
@@ -28,7 +28,7 @@ class TaskEntry:
     """Persisted task metadata."""
 
     task_id: str
-    chat_id: int
+    chat_id: str
     parent_agent: str
     name: str
     prompt_preview: str
@@ -115,7 +115,7 @@ class TaskResult:
     """Outcome delivered to parent agent after task completion."""
 
     task_id: str
-    chat_id: int
+    chat_id: str
     parent_agent: str
     name: str
     prompt_preview: str

@@ -441,7 +441,7 @@ async def _stream_events_plain(
     *,
     timeout_seconds: float,
     process_registry: ProcessRegistry | None,
-    chat_id: int,
+    chat_id: str,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Read stream output with a fixed timeout (legacy behavior)."""
     assert process.stdout is not None
@@ -471,7 +471,7 @@ async def _stream_events_with_controller(
     *,
     timeout_controller: TimeoutController,
     process_registry: ProcessRegistry | None,
-    chat_id: int,
+    chat_id: str,
 ) -> AsyncGenerator[StreamEvent, None]:
     """Read stream output with managed timeout extensions + warnings."""
     assert process.stdout is not None

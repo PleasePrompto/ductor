@@ -62,10 +62,11 @@ class TelegramTransport:
         return self._bot.file_roots(self._bot._orch.paths)
 
     def _opts(self, envelope: Envelope) -> SendRichOpts:
+        raw_thread = envelope.topic_id or envelope.thread_id
         return SendRichOpts(
             reply_to_message_id=envelope.reply_to_message_id,
             allowed_roots=self._roots(),
-            thread_id=envelope.topic_id or envelope.thread_id,
+            thread_id=int(raw_thread) if raw_thread is not None else None,
         )
 
     # -- Origin handlers (unicast) -----------------------------------------
@@ -85,10 +86,10 @@ class TelegramTransport:
             cleaned, markup = extract_buttons_for_session(text, env.session_name)
             opts = self._opts(env)
             opts.reply_markup = markup
-            await send_rich(self._bot.bot_instance, env.chat_id, cleaned, opts)
+            await send_rich(self._bot.bot_instance, int(env.chat_id), cleaned, opts)
         else:
             text = self._format_stateless(env, elapsed)
-            await send_rich(self._bot.bot_instance, env.chat_id, text, self._opts(env))
+            await send_rich(self._bot.bot_instance, int(env.chat_id), text, self._opts(env))
 
     @staticmethod
     def _format_named_session(env: Envelope, elapsed: str) -> str:
@@ -127,9 +128,12 @@ class TelegramTransport:
         """Deliver heartbeat to chat/topic. Falls back to main user on failure."""
         from aiogram.exceptions import TelegramAPIError
 
-        opts = SendRichOpts(allowed_roots=self._roots(), thread_id=env.topic_id)
+        opts = SendRichOpts(
+            allowed_roots=self._roots(),
+            thread_id=int(env.topic_id) if env.topic_id is not None else None,
+        )
         try:
-            await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
+            await send_rich(self._bot.bot_instance, int(env.chat_id), env.result_text, opts)
             logger.info("Heartbeat delivered")
         except TelegramAPIError:
             target = f"Chat {env.chat_id}"
@@ -141,7 +145,7 @@ class TelegramTransport:
                 f"Could not deliver to {target}.\n\n"
                 f"---\n{env.result_text}"
             )
-            fallback_id = self._bot._config.allowed_user_ids[0]
+            fallback_id = int(self._bot._config.allowed_user_ids[0])
             await send_rich(
                 self._bot.bot_instance,
                 fallback_id,
@@ -162,7 +166,10 @@ class TelegramTransport:
                 f"Request: _{env.prompt_preview}_"
             )
             await send_rich(
-                self._bot.bot_instance, env.chat_id, error_text, SendRichOpts(allowed_roots=roots)
+                self._bot.bot_instance,
+                int(env.chat_id),
+                error_text,
+                SendRichOpts(allowed_roots=roots),
             )
             return
 
@@ -171,7 +178,7 @@ class TelegramTransport:
         if notice:
             await send_rich(
                 self._bot.bot_instance,
-                env.chat_id,
+                int(env.chat_id),
                 f"**Provider Switch Detected**\n\n{notice}",
                 SendRichOpts(allowed_roots=roots),
             )
@@ -180,7 +187,7 @@ class TelegramTransport:
         if env.result_text:
             await send_rich(
                 self._bot.bot_instance,
-                env.chat_id,
+                int(env.chat_id),
                 env.result_text,
                 SendRichOpts(allowed_roots=roots),
             )
@@ -203,11 +210,11 @@ class TelegramTransport:
             note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
 
         if note:
-            await send_rich(self._bot.bot_instance, env.chat_id, note, opts)
+            await send_rich(self._bot.bot_instance, int(env.chat_id), note, opts)
 
         # 2. Injected response (filled by bus injection for done/failed)
         if env.needs_injection and env.result_text:
-            await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
+            await send_rich(self._bot.bot_instance, int(env.chat_id), env.result_text, opts)
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         """Deliver task question notification + injected agent response."""
@@ -216,18 +223,18 @@ class TelegramTransport:
 
         # 1. Notification
         note = f"**Task `{task_id}` has a question:**\n{env.prompt}"
-        await send_rich(self._bot.bot_instance, env.chat_id, note, opts)
+        await send_rich(self._bot.bot_instance, int(env.chat_id), note, opts)
 
         # 2. Agent response (filled by bus injection)
         if env.result_text:
-            await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
+            await send_rich(self._bot.bot_instance, int(env.chat_id), env.result_text, opts)
 
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         """Deliver webhook wake result."""
         if env.result_text:
             await send_rich(
                 self._bot.bot_instance,
-                env.chat_id,
+                int(env.chat_id),
                 env.result_text,
                 SendRichOpts(allowed_roots=self._roots()),
             )
@@ -254,13 +261,13 @@ class TelegramTransport:
         )
         opts = SendRichOpts(
             allowed_roots=self._roots(),
-            thread_id=env.topic_id,
+            thread_id=int(env.topic_id) if env.topic_id is not None else None,
         )
         try:
-            await send_rich(self._bot.bot_instance, env.chat_id, text, opts)
+            await send_rich(self._bot.bot_instance, int(env.chat_id), text, opts)
         except TelegramAPIError:
             logger.warning(
-                "Cron '%s' delivery failed for chat %d, falling back to main agent",
+                "Cron '%s' delivery failed for chat %s, falling back to main agent",
                 title,
                 env.chat_id,
             )
@@ -272,7 +279,7 @@ class TelegramTransport:
                 f"Task **{title}** could not be delivered to {target}.\n\n"
                 f"---\n{clean_result or env.status}"
             )
-            fallback_id = self._bot._config.allowed_user_ids[0]
+            fallback_id = int(self._bot._config.allowed_user_ids[0])
             await send_rich(
                 self._bot.bot_instance,
                 fallback_id,

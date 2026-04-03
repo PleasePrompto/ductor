@@ -70,7 +70,7 @@ def _make_observer(
             quiet_end=global_quiet_end,
             group_targets=targets or [],
         ),
-        allowed_user_ids=[100],
+        allowed_user_ids=["100"],
     )
     obs = HeartbeatObserver(config)
     obs.set_heartbeat_handler(AsyncMock(return_value=None))
@@ -79,45 +79,45 @@ def _make_observer(
 
 class TestHeartbeatSettingsResolution:
     def test_resolve_prompt_from_target(self) -> None:
-        target = HeartbeatTarget(chat_id=123, prompt="Custom check")
+        target = HeartbeatTarget(chat_id="123", prompt="Custom check")
         obs = _make_observer(global_prompt="Global prompt", targets=[target])
         prompt, _ack, _qs, _qe = obs._resolve_target_settings(target)
         assert prompt == "Custom check"
 
     def test_resolve_prompt_fallback_to_global(self) -> None:
-        target = HeartbeatTarget(chat_id=123)
+        target = HeartbeatTarget(chat_id="123")
         obs = _make_observer(global_prompt="Global prompt", targets=[target])
         prompt, _ack, _qs, _qe = obs._resolve_target_settings(target)
         assert prompt == "Global prompt"
 
     def test_resolve_ack_token_from_target(self) -> None:
-        target = HeartbeatTarget(chat_id=123, ack_token="CUSTOM_OK")
+        target = HeartbeatTarget(chat_id="123", ack_token="CUSTOM_OK")
         obs = _make_observer(global_ack="HEARTBEAT_OK", targets=[target])
         _prompt, ack, _qs, _qe = obs._resolve_target_settings(target)
         assert ack == "CUSTOM_OK"
 
     def test_resolve_ack_token_fallback_to_global(self) -> None:
-        target = HeartbeatTarget(chat_id=123)
+        target = HeartbeatTarget(chat_id="123")
         obs = _make_observer(global_ack="HEARTBEAT_OK", targets=[target])
         _prompt, ack, _qs, _qe = obs._resolve_target_settings(target)
         assert ack == "HEARTBEAT_OK"
 
     def test_resolve_quiet_hours_from_target(self) -> None:
-        target = HeartbeatTarget(chat_id=123, quiet_start=22, quiet_end=7)
+        target = HeartbeatTarget(chat_id="123", quiet_start=22, quiet_end=7)
         obs = _make_observer(global_quiet_start=21, global_quiet_end=8, targets=[target])
         _prompt, _ack, qs, qe = obs._resolve_target_settings(target)
         assert qs == 22
         assert qe == 7
 
     def test_resolve_quiet_hours_fallback_to_global(self) -> None:
-        target = HeartbeatTarget(chat_id=123)
+        target = HeartbeatTarget(chat_id="123")
         obs = _make_observer(global_quiet_start=21, global_quiet_end=8, targets=[target])
         _prompt, _ack, qs, qe = obs._resolve_target_settings(target)
         assert qs == 21
         assert qe == 8
 
     def test_resolve_partial_quiet_hours_override(self) -> None:
-        target = HeartbeatTarget(chat_id=123, quiet_start=23)
+        target = HeartbeatTarget(chat_id="123", quiet_start=23)
         obs = _make_observer(global_quiet_start=21, global_quiet_end=8, targets=[target])
         _prompt, _ack, qs, qe = obs._resolve_target_settings(target)
         assert qs == 23
@@ -132,7 +132,7 @@ class TestHeartbeatSettingsResolution:
 class TestPerTargetQuietHours:
     async def test_target_quiet_hours_suppress_heartbeat(self) -> None:
         """A target with quiet_start=10, quiet_end=16 skips heartbeat at 14:00."""
-        target = HeartbeatTarget(chat_id=-1001, quiet_start=10, quiet_end=16)
+        target = HeartbeatTarget(chat_id="-1001", quiet_start=10, quiet_end=16)
         config = AgentConfig(
             heartbeat=HeartbeatConfig(
                 enabled=True,
@@ -148,7 +148,7 @@ class TestPerTargetQuietHours:
 
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._run_for_chat(
-                -1001,
+                "-1001",
                 quiet_start=10,
                 quiet_end=16,
             )
@@ -157,7 +157,7 @@ class TestPerTargetQuietHours:
 
     async def test_target_not_in_quiet_hours_runs(self) -> None:
         """A target with quiet_start=22, quiet_end=6 runs at 14:00."""
-        target = HeartbeatTarget(chat_id=-1001, quiet_start=22, quiet_end=6)
+        target = HeartbeatTarget(chat_id="-1001", quiet_start=22, quiet_end=6)
         config = AgentConfig(
             heartbeat=HeartbeatConfig(
                 enabled=True,
@@ -173,7 +173,7 @@ class TestPerTargetQuietHours:
 
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._run_for_chat(
-                -1001,
+                "-1001",
                 quiet_start=22,
                 quiet_end=6,
             )
@@ -189,7 +189,7 @@ class TestPerTargetQuietHours:
 class TestPerTargetPromptAckInTick:
     async def test_tick_passes_target_prompt_and_ack(self) -> None:
         """Group target with per-target prompt/ack should pass them to handler."""
-        target = HeartbeatTarget(chat_id=-1001, prompt="Check servers", ack_token="SERVER_OK")
+        target = HeartbeatTarget(chat_id="-1001", prompt="Check servers", ack_token="SERVER_OK")
         config = AgentConfig(
             heartbeat=HeartbeatConfig(
                 enabled=True,
@@ -206,7 +206,7 @@ class TestPerTargetPromptAckInTick:
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        handler.assert_awaited_once_with(-1001, None, "Check servers", "SERVER_OK")
+        handler.assert_awaited_once_with("-1001", None, "Check servers", "SERVER_OK")
 
     async def test_tick_passes_none_for_default_user_targets(self) -> None:
         """User targets (allowed_user_ids) use None prompt/ack (global fallback)."""
@@ -216,7 +216,7 @@ class TestPerTargetPromptAckInTick:
                 prompt="Global prompt",
                 ack_token="HEARTBEAT_OK",
             ),
-            allowed_user_ids=[100],
+            allowed_user_ids=["100"],
         )
         obs = HeartbeatObserver(config)
         handler = AsyncMock(return_value=None)
@@ -225,7 +225,7 @@ class TestPerTargetPromptAckInTick:
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        handler.assert_awaited_once_with(100, None, None, None)
+        handler.assert_awaited_once_with("100", None, None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ class TestPerTargetPromptAckInTick:
 class TestHeartbeatValidation:
     async def test_validated_target_is_cached(self) -> None:
         validator = AsyncMock(return_value=True)
-        obs = _make_observer(targets=[HeartbeatTarget(chat_id=-1001)])
+        obs = _make_observer(targets=[HeartbeatTarget(chat_id="-1001")])
         obs.set_chat_validator(validator)
 
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
@@ -248,18 +248,18 @@ class TestHeartbeatValidation:
     async def test_invalid_target_is_skipped(self) -> None:
         validator = AsyncMock(return_value=False)
         handler = AsyncMock(return_value=None)
-        obs = _make_observer(targets=[HeartbeatTarget(chat_id=-1001)])
+        obs = _make_observer(targets=[HeartbeatTarget(chat_id="-1001")])
         obs.set_heartbeat_handler(handler)
         obs.set_chat_validator(validator)
 
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        handler.assert_awaited_once_with(100, None, None, None)
+        handler.assert_awaited_once_with("100", None, None, None)
 
     async def test_cache_expires_after_one_hour(self) -> None:
         validator = AsyncMock(return_value=True)
-        obs = _make_observer(targets=[HeartbeatTarget(chat_id=-1001)])
+        obs = _make_observer(targets=[HeartbeatTarget(chat_id="-1001")])
         obs.set_chat_validator(validator)
 
         t0 = datetime(2026, 1, 15, 14, 0, tzinfo=UTC)
@@ -288,7 +288,7 @@ class TestHeartbeatValidation:
 
     async def test_no_validator_skips_validation(self) -> None:
         """When no validator is set, group targets run without validation."""
-        obs = _make_observer(targets=[HeartbeatTarget(chat_id=-1001)])
+        obs = _make_observer(targets=[HeartbeatTarget(chat_id="-1001")])
         handler = AsyncMock(return_value=None)
         obs.set_heartbeat_handler(handler)
 
@@ -306,7 +306,7 @@ class TestHeartbeatValidation:
 class TestPerTargetInterval:
     async def test_target_with_custom_interval_gets_own_loop(self) -> None:
         """A target with interval_minutes runs independently, not in global _tick."""
-        target = HeartbeatTarget(chat_id=-1001, interval_minutes=60)
+        target = HeartbeatTarget(chat_id="-1001", interval_minutes=60)
         config = AgentConfig(
             heartbeat=HeartbeatConfig(
                 enabled=True,
@@ -320,7 +320,7 @@ class TestPerTargetInterval:
         obs.set_heartbeat_handler(handler)
         obs._start_target_loops()
 
-        assert (-1001, None) in obs._target_tasks
+        assert ("-1001", None) in obs._target_tasks
 
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
@@ -328,7 +328,7 @@ class TestPerTargetInterval:
 
     async def test_target_without_interval_runs_every_tick(self) -> None:
         """A target without a custom interval runs on every tick."""
-        target = HeartbeatTarget(chat_id=-1001)
+        target = HeartbeatTarget(chat_id="-1001")
         config = AgentConfig(
             heartbeat=HeartbeatConfig(
                 enabled=True,

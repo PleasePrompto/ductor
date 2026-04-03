@@ -24,7 +24,7 @@ class TestSubAgentConfig:
         cfg = SubAgentConfig(
             name="sub1",
             telegram_token="tok:123",
-            allowed_user_ids=[100, 200],
+            allowed_user_ids=["100", "200"],
             provider="codex",
             model="gpt-4",
         )
@@ -47,7 +47,7 @@ class TestMergeSubAgentConfig:
         return AgentConfig(
             provider="claude",
             model="opus",
-            allowed_user_ids=[1, 2, 3],
+            allowed_user_ids=["1", "2", "3"],
             ductor_home="/main/home",
             cli_timeout=600,
             telegram_token="main-token",
@@ -101,11 +101,11 @@ class TestMergeSubAgentConfig:
         sub = SubAgentConfig(
             name="sub1",
             telegram_token="sub-token",
-            allowed_user_ids=[100, 200],
+            allowed_user_ids=["100", "200"],
         )
         result = merge_sub_agent_config(main, sub, Path("/agents/sub1"))
 
-        assert result.allowed_user_ids == [100, 200]
+        assert result.allowed_user_ids == ["100", "200"]
 
     def test_allowed_user_ids_none_uses_empty_list(self) -> None:
         """When sub-agent has no allowed_user_ids (None), result is empty list."""
@@ -122,7 +122,7 @@ class TestMergeSubAgentConfig:
         This is intentional: sub-agents need explicit user lists for security.
         """
         main = self._main_config()
-        assert main.allowed_user_ids == [1, 2, 3]
+        assert main.allowed_user_ids == ["1", "2", "3"]
 
         sub = SubAgentConfig(name="sub1", telegram_token="sub-token")
         result = merge_sub_agent_config(main, sub, Path("/agents/sub1"))
@@ -133,20 +133,20 @@ class TestMergeSubAgentConfig:
     def test_allowed_group_ids_from_sub(self) -> None:
         """Sub-agent's allowed_group_ids override main config."""
         main = self._main_config()
-        main.allowed_group_ids = [-1001, -1002]
+        main.allowed_group_ids = ["-1001", "-1002"]
         sub = SubAgentConfig(
             name="sub1",
             telegram_token="sub-token",
-            allowed_group_ids=[-2001],
+            allowed_group_ids=["-2001"],
         )
         result = merge_sub_agent_config(main, sub, Path("/agents/sub1"))
 
-        assert result.allowed_group_ids == [-2001]
+        assert result.allowed_group_ids == ["-2001"]
 
     def test_allowed_group_ids_none_uses_empty_list(self) -> None:
         """When sub-agent has no allowed_group_ids (None), result is empty list."""
         main = self._main_config()
-        main.allowed_group_ids = [-1001]
+        main.allowed_group_ids = ["-1001"]
         sub = SubAgentConfig(name="sub1", telegram_token="sub-token")
         result = merge_sub_agent_config(main, sub, Path("/agents/sub1"))
 

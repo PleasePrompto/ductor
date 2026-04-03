@@ -198,7 +198,7 @@ class CLIService:
                 timeout_controller=request.timeout_controller,
             ):
                 if self._process_registry.was_aborted(request.chat_id):
-                    logger.info("Streaming aborted mid-stream chat=%d", request.chat_id)
+                    logger.info("Streaming aborted mid-stream chat=%s", request.chat_id)
                     break
                 text, result = await callbacks.dispatch(event)
                 accumulated_text += text

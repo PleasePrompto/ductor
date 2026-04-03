@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 class BackgroundSubmit:
     """Input for submitting a background task."""
 
-    chat_id: int
+    chat_id: str
     prompt: str
     message_id: int
     thread_id: int | None
@@ -25,7 +25,7 @@ class BackgroundTask:
     """In-flight background task metadata."""
 
     task_id: str
-    chat_id: int
+    chat_id: str
     prompt: str
     message_id: int
     thread_id: int | None
@@ -42,7 +42,7 @@ class BackgroundResult:
     """Outcome delivered after a background task completes."""
 
     task_id: str
-    chat_id: int
+    chat_id: str
     message_id: int
     thread_id: int | None
     prompt_preview: str

@@ -26,7 +26,7 @@ _RESUMABLE = frozenset({"done", "failed", "cancelled", "waiting"})
 _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
-QuestionHandler = Callable[[str, str, str, int, int | None], Awaitable[None]]
+QuestionHandler = Callable[[str, str, str, str, str | None], Awaitable[None]]
 # QuestionHandler(task_id, question, prompt_preview, chat_id, thread_id) -> None
 
 TASK_PROMPT_SUFFIX = """
@@ -81,7 +81,7 @@ class TaskHub:
         self._in_flight: dict[str, TaskInFlight] = {}
         self._result_handlers: dict[str, TaskResultCallback] = {}
         self._question_handlers: dict[str, QuestionHandler] = {}
-        self._agent_chat_ids: dict[str, int] = {}
+        self._agent_chat_ids: dict[str, str] = {}
         self._maintenance_task: asyncio.Task[None] | None = None
 
     def start_maintenance(self) -> None:
@@ -111,7 +111,7 @@ class TaskHub:
         """Register per-agent paths for task folder isolation."""
         self._agent_tasks_dirs[agent_name] = paths.tasks_dir
 
-    def set_agent_chat_id(self, agent_name: str, chat_id: int) -> None:
+    def set_agent_chat_id(self, agent_name: str, chat_id: str) -> None:
         """Register the primary chat_id for an agent (for resolving CLI-submitted tasks)."""
         self._agent_chat_ids[agent_name] = chat_id
 
@@ -129,7 +129,7 @@ class TaskHub:
 
         # Resolve chat_id: CLI subprocess doesn't know it, look up from agent name
         if not submit.chat_id:
-            resolved = self._agent_chat_ids.get(submit.parent_agent, 0)
+            resolved = self._agent_chat_ids.get(submit.parent_agent, "")
             if resolved:
                 submit.chat_id = resolved
 
@@ -285,7 +285,7 @@ class TaskHub:
                 question,
                 entry.prompt_preview,
                 entry.chat_id,
-                entry.thread_id,
+                str(entry.thread_id) if entry.thread_id is not None else None,
             )
         except Exception:
             logger.exception("Question delivery failed for task %s", entry.task_id)
@@ -300,7 +300,7 @@ class TaskHub:
             await inflight.asyncio_task
         return True
 
-    async def cancel_all(self, chat_id: int) -> int:
+    async def cancel_all(self, chat_id: str) -> int:
         """Cancel all running tasks for a chat."""
         count = 0
         cancelled: list[asyncio.Task[None]] = []
@@ -317,7 +317,7 @@ class TaskHub:
             await asyncio.gather(*cancelled, return_exceptions=True)
         return count
 
-    def active_tasks(self, chat_id: int | None = None) -> list[TaskEntry]:
+    def active_tasks(self, chat_id: str | None = None) -> list[TaskEntry]:
         """Return in-flight task entries."""
         entries = [
             t.entry

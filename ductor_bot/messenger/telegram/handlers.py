@@ -41,7 +41,7 @@ async def handle_interrupt(
     if orchestrator is None:
         return False
 
-    interrupted = orchestrator.interrupt(chat_id)
+    interrupted = orchestrator.interrupt(str(chat_id))
     logger.info("Interrupt requested interrupted=%d", interrupted)
     msg = t("interrupt.done", count=interrupted) if interrupted else t("interrupt.nothing")
     await send_rich(
@@ -67,7 +67,7 @@ async def handle_abort(
     if orchestrator is None:
         return False
 
-    killed = await orchestrator.abort(chat_id)
+    killed = await orchestrator.abort(str(chat_id))
     logger.info("Abort requested killed=%d", killed)
     text = stop_text(bool(killed), orchestrator.active_provider_name)
     await send_rich(
@@ -117,15 +117,15 @@ async def handle_command(orchestrator: Orchestrator, bot: Bot, message: Message)
     if not message.text:
         return
     key = get_session_key(message)
-    chat_id = key.chat_id
+    tg_chat_id = int(key.chat_id)
     thread_id = get_thread_id(message)
     logger.info("Command dispatched cmd=%s", message.text.strip()[:40])
-    async with TypingContext(bot, chat_id, thread_id=thread_id):
+    async with TypingContext(bot, tg_chat_id, thread_id=thread_id):
         result = await orchestrator.handle_message(key, message.text.strip())
     markup = button_grid_to_markup(result.buttons) if result.buttons else None
     await send_rich(
         bot,
-        chat_id,
+        tg_chat_id,
         result.text,
         SendRichOpts(
             reply_to_message_id=message.message_id,
@@ -150,7 +150,7 @@ async def handle_new_session(
     the topic.  The topic is resolved via ``TopicNameCache``.
     """
     logger.info("Session reset requested")
-    chat_id = message.chat.id
+    tg_chat_id = message.chat.id
     thread_id = get_thread_id(message)
     text = (message.text or "").strip()
 
@@ -160,33 +160,36 @@ async def handle_new_session(
 
     if topic_arg.startswith("@") and topic_names is not None:
         topic_name = topic_arg[1:]
-        topic_id = topic_names.find_by_name(chat_id, topic_name)
+        topic_id = topic_names.find_by_name(str(tg_chat_id), topic_name)
         if topic_id is None:
             await send_rich(
                 bot,
-                chat_id,
+                tg_chat_id,
                 t("new.topic_not_found", name=topic_name),
                 SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
             )
             return
-        key = SessionKey(chat_id=chat_id, topic_id=topic_id)
-        resolved_name = topic_names.resolve(chat_id, topic_id)
-        async with TypingContext(bot, chat_id, thread_id=thread_id):
+        key = SessionKey.telegram(
+            chat_id=str(tg_chat_id),
+            topic_id=str(topic_id),
+        )
+        resolved_name = topic_names.resolve(tg_chat_id, topic_id)
+        async with TypingContext(bot, tg_chat_id, thread_id=thread_id):
             provider = await orchestrator.reset_active_provider_session(key)
         await send_rich(
             bot,
-            chat_id,
+            tg_chat_id,
             t("new.topic_reset", name=resolved_name, provider=provider),
             SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
         )
         return
 
     key = get_session_key(message)
-    async with TypingContext(bot, chat_id, thread_id=thread_id):
+    async with TypingContext(bot, tg_chat_id, thread_id=thread_id):
         provider = await orchestrator.reset_active_provider_session(key)
     await send_rich(
         bot,
-        chat_id,
+        tg_chat_id,
         new_session_text(provider),
         SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
     )

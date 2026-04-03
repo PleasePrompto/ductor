@@ -48,7 +48,7 @@ def test_agent_request_defaults() -> None:
     assert req.append_system_prompt is None
     assert req.model_override is None
     assert req.provider_override is None
-    assert req.chat_id == 0
+    assert req.chat_id == ""
     assert req.process_label == "main"
     assert req.resume_session is None
     assert req.continue_session is False

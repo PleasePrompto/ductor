@@ -41,9 +41,9 @@ class TestSessionMigration:
             },
         )
         mgr = _make_manager(tmp_path)
-        session = await mgr.get_active(SessionKey(chat_id=6087616160))
+        session = await mgr.get_active(SessionKey(chat_id="6087616160"))
         assert session is not None
-        assert session.chat_id == 6087616160
+        assert session.chat_id == "6087616160"
         assert session.transport == "tg"
 
     async def test_load_legacy_topic_key_migrates(self, tmp_path: Path) -> None:
@@ -59,10 +59,10 @@ class TestSessionMigration:
             },
         )
         mgr = _make_manager(tmp_path)
-        session = await mgr.get_active(SessionKey(chat_id=123, topic_id=45))
+        session = await mgr.get_active(SessionKey(chat_id="123", topic_id="45"))
         assert session is not None
-        assert session.chat_id == 123
-        assert session.topic_id == 45
+        assert session.chat_id == "123"
+        assert session.topic_id == "45"
         assert session.transport == "tg"
 
     async def test_load_legacy_negative_chat_id_migrates(self, tmp_path: Path) -> None:
@@ -78,9 +78,9 @@ class TestSessionMigration:
             },
         )
         mgr = _make_manager(tmp_path)
-        session = await mgr.get_active(SessionKey(chat_id=-100123))
+        session = await mgr.get_active(SessionKey(chat_id="-100123"))
         assert session is not None
-        assert session.chat_id == -100123
+        assert session.chat_id == "-100123"
         assert session.transport == "tg"
 
     async def test_load_new_keys_preserved(self, tmp_path: Path) -> None:
@@ -97,15 +97,15 @@ class TestSessionMigration:
             },
         )
         mgr = _make_manager(tmp_path)
-        session = await mgr.get_active(SessionKey(chat_id=123))
+        session = await mgr.get_active(SessionKey(chat_id="123"))
         assert session is not None
-        assert session.chat_id == 123
+        assert session.chat_id == "123"
         assert session.transport == "tg"
 
     async def test_save_uses_prefixed_keys(self, tmp_path: Path) -> None:
         """Saved sessions.json always uses transport-prefixed keys."""
         mgr = _make_manager(tmp_path)
-        await mgr.resolve_session(key=SessionKey(chat_id=42))
+        await mgr.resolve_session(key=SessionKey(chat_id="42"))
 
         data = _read_sessions(tmp_path)
         assert "tg:42" in data
@@ -124,7 +124,7 @@ class TestSessionMigration:
             },
         )
         mgr = _make_manager(tmp_path)
-        session = await mgr.get_active(SessionKey(chat_id=999))
+        session = await mgr.get_active(SessionKey(chat_id="999"))
         assert session is not None
 
         # Trigger a save by updating the session
@@ -165,22 +165,22 @@ class TestSessionMigration:
         )
         mgr = _make_manager(tmp_path)
 
-        s1 = await mgr.get_active(SessionKey(chat_id=100))
+        s1 = await mgr.get_active(SessionKey(chat_id="100"))
         assert s1 is not None
         assert s1.transport == "tg"
 
-        s2 = await mgr.get_active(SessionKey(chat_id=200))
+        s2 = await mgr.get_active(SessionKey(chat_id="200"))
         assert s2 is not None
         assert s2.transport == "tg"
         assert s2.provider == "codex"
 
-        s3 = await mgr.get_active(SessionKey(transport="mx", chat_id=300))
+        s3 = await mgr.get_active(SessionKey(transport="mx", chat_id="300"))
         assert s3 is not None
         assert s3.transport == "mx"
 
-        s4 = await mgr.get_active(SessionKey(chat_id=-100500, topic_id=7))
+        s4 = await mgr.get_active(SessionKey(chat_id="-100500", topic_id="7"))
         assert s4 is not None
-        assert s4.topic_id == 7
+        assert s4.topic_id == "7"
         assert s4.transport == "tg"
 
     async def test_legacy_transport_field_injected(self, tmp_path: Path) -> None:
@@ -196,10 +196,10 @@ class TestSessionMigration:
             },
         )
         mgr = _make_manager(tmp_path)
-        session = await mgr.get_active(SessionKey(chat_id=42))
+        session = await mgr.get_active(SessionKey(chat_id="42"))
         assert session is not None
         assert session.transport == "tg"
-        assert session.session_key == SessionKey(transport="tg", chat_id=42)
+        assert session.session_key == SessionKey(transport="tg", chat_id="42")
 
     async def test_list_all_after_migration(self, tmp_path: Path) -> None:
         """list_all returns all sessions regardless of original key format."""
@@ -223,7 +223,7 @@ class TestSessionMigration:
         all_sessions = await mgr.list_all()
         assert len(all_sessions) == 2
         chat_ids = {s.chat_id for s in all_sessions}
-        assert chat_ids == {1, 2}
+        assert chat_ids == {"1", "2"}
 
     async def test_resolve_after_legacy_load(self, tmp_path: Path) -> None:
         """resolve_session finds and reuses a migrated legacy session."""
@@ -239,7 +239,7 @@ class TestSessionMigration:
             },
         )
         mgr = _make_manager(tmp_path, idle_timeout_minutes=30)
-        session, is_new = await mgr.resolve_session(key=SessionKey(chat_id=555))
+        session, is_new = await mgr.resolve_session(key=SessionKey(chat_id="555"))
         assert is_new is False
         assert session.session_id == "legacy-sid"
         assert session.transport == "tg"

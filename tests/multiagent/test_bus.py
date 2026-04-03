@@ -432,14 +432,14 @@ class TestBusChatTopicPropagation:
             "sender",
             "target",
             "Hello",
-            opts=AsyncSendOptions(chat_id=12345, topic_id=678),
+            opts=AsyncSendOptions(chat_id="12345", topic_id="678"),
         )
         await asyncio.sleep(0.1)
 
         assert len(delivered) == 1
         result = delivered[0]
-        assert result.chat_id == 12345
-        assert result.topic_id == 678
+        assert result.chat_id == "12345"
+        assert result.topic_id == "678"
         assert result.success is True
 
     async def test_async_result_defaults_without_context(self) -> None:
@@ -455,7 +455,7 @@ class TestBusChatTopicPropagation:
 
         assert len(delivered) == 1
         result = delivered[0]
-        assert result.chat_id == 0
+        assert result.chat_id == ""
         assert result.topic_id is None
 
     async def test_error_result_carries_chat_and_topic_id(self) -> None:
@@ -474,15 +474,15 @@ class TestBusChatTopicPropagation:
             "sender",
             "target",
             "Hello",
-            opts=AsyncSendOptions(chat_id=99999, topic_id=42),
+            opts=AsyncSendOptions(chat_id="99999", topic_id="42"),
         )
         await asyncio.sleep(0.1)
 
         assert len(delivered) == 1
         result = delivered[0]
         assert result.success is False
-        assert result.chat_id == 99999
-        assert result.topic_id == 42
+        assert result.chat_id == "99999"
+        assert result.topic_id == "42"
 
     async def test_no_orchestrator_result_carries_context(self) -> None:
         """chat_id/topic_id are preserved when orchestrator is None."""
@@ -498,12 +498,12 @@ class TestBusChatTopicPropagation:
             "sender",
             "target",
             "Hello",
-            opts=AsyncSendOptions(chat_id=111, topic_id=222),
+            opts=AsyncSendOptions(chat_id="111", topic_id="222"),
         )
         await asyncio.sleep(0.1)
 
         assert len(delivered) == 1
         result = delivered[0]
         assert result.success is False
-        assert result.chat_id == 111
-        assert result.topic_id == 222
+        assert result.chat_id == "111"
+        assert result.topic_id == "222"

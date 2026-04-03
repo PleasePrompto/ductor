@@ -23,7 +23,7 @@ async def _handle_restart_sentinel(bot: TelegramBot) -> dict[str, object] | None
     sentinel_path = bot._orch.paths.ductor_home / "restart-sentinel.json"
     sentinel = await asyncio.to_thread(consume_restart_sentinel, sentinel_path=sentinel_path)
     if sentinel:
-        chat_id = int(sentinel.get("chat_id", 0))
+        chat_id = str(sentinel.get("chat_id", ""))
         msg = str(sentinel.get("message", t("startup.restart_default")))
         if chat_id:
             await bot.notification_service.notify(chat_id, msg)
@@ -34,7 +34,7 @@ async def _handle_recovery(bot: TelegramBot, sentinel: dict[str, object] | None)
     """Handle upgrade sentinel, startup lifecycle, and auto-recovery of interrupted work."""
     upgrade = await asyncio.to_thread(consume_upgrade_sentinel, bot._orch.paths.ductor_home)
     if upgrade:
-        uid = int(upgrade.get("chat_id", 0))
+        uid = str(upgrade.get("chat_id", ""))
         old_v = upgrade.get("old_version", "?")
         new_v = upgrade.get("new_version", get_current_version())
         if uid:
@@ -103,9 +103,9 @@ async def _run_primary_startup(bot: TelegramBot) -> None:
     bot._orch.wire_observers_to_bus(bot._bus, wake_handler=bot._handle_webhook_wake)
     bot._orchestrator.set_config_hot_reload_handler(bot._on_auth_hot_reload)
 
-    async def _validate_chat(chat_id: int) -> bool:
+    async def _validate_chat(chat_id: str) -> bool:
         try:
-            await bot.bot_instance.get_chat(chat_id)
+            await bot.bot_instance.get_chat(int(chat_id))
         except Exception:
             return False
         else:

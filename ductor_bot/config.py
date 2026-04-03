@@ -93,13 +93,21 @@ class HeartbeatTarget(BaseModel):
     """
 
     enabled: bool = True
-    chat_id: int | None = None
-    topic_id: int | None = None
+    chat_id: str | None = None
+    topic_id: str | None = None
     prompt: str | None = None
     ack_token: str | None = None
     interval_minutes: int | None = None
     quiet_start: int | None = None
     quiet_end: int | None = None
+
+    @field_validator("chat_id", "topic_id", mode="before")
+    @classmethod
+    def _coerce_ids(cls, value: object) -> object:
+        """Coerce legacy int IDs to str for backward compatibility."""
+        if isinstance(value, int):
+            return str(value)
+        return value
 
 
 class HeartbeatConfig(BaseModel):
@@ -224,7 +232,7 @@ class ApiConfig(BaseModel):
     host: str = _BIND_ALL_INTERFACES
     port: int = 8741
     token: str = ""
-    chat_id: int = 0
+    chat_id: str = ""
     allow_public: bool = False
 
 
@@ -311,9 +319,17 @@ class AgentConfig(BaseModel):
     transport: str = "telegram"  # "telegram" | "matrix"
     transports: list[str] = Field(default_factory=list)
     telegram_token: str = ""
-    allowed_user_ids: list[int] = Field(default_factory=list)
-    allowed_group_ids: list[int] = Field(default_factory=list)
+    allowed_user_ids: list[str] = Field(default_factory=list)
+    allowed_group_ids: list[str] = Field(default_factory=list)
     matrix: MatrixConfig = Field(default_factory=MatrixConfig)
+
+    @field_validator("allowed_user_ids", "allowed_group_ids", mode="before")
+    @classmethod
+    def _coerce_id_lists(cls, value: object) -> object:
+        """Coerce legacy int IDs to str for backward compatibility."""
+        if isinstance(value, list):
+            return [str(v) for v in value]
+        return value
 
     @field_validator("gemini_api_key", mode="before")
     @classmethod

@@ -84,9 +84,9 @@ def main() -> None:
     chat_id = os.environ.get("DUCTOR_CHAT_ID", "")
     topic_id = os.environ.get("DUCTOR_TOPIC_ID", "")
     if chat_id:
-        body["chat_id"] = int(chat_id)
+        body["chat_id"] = chat_id
     if topic_id:
-        body["topic_id"] = int(topic_id)
+        body["topic_id"] = topic_id
 
     result = post_json(url, body, timeout=10)
 

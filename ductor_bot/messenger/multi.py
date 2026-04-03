@@ -109,8 +109,8 @@ class MultiBotAdapter:
         task_id: str,
         question: str,
         prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
+        chat_id: str,
+        thread_id: str | None = None,
     ) -> None:
         for bot in self._all:
             await bot.on_task_question(task_id, question, prompt_preview, chat_id, thread_id)

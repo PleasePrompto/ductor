@@ -29,7 +29,7 @@ def is_task_selector_callback(data: str) -> bool:
 
 def task_selector_start(
     hub: TaskHub,
-    chat_id: int,
+    chat_id: str,
 ) -> SelectorResponse:
     """Build the initial ``/tasks`` response with inline controls."""
     return _build_page(hub, chat_id)
@@ -37,7 +37,7 @@ def task_selector_start(
 
 async def handle_task_callback(
     hub: TaskHub,
-    chat_id: int,
+    chat_id: str,
     data: str,
 ) -> SelectorResponse:
     """Route a ``tsc:*`` callback to the correct task selector action."""
@@ -73,7 +73,7 @@ async def handle_task_callback(
 
 def _build_page(
     hub: TaskHub,
-    chat_id: int,
+    chat_id: str,
     *,
     note: str = "",
 ) -> SelectorResponse:

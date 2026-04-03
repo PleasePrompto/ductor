@@ -47,8 +47,8 @@ class CronJob:
     dependency: str | None = None
 
     # Routing: deliver results to the chat/topic where the job was created
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: str = ""
+    topic_id: str | None = None
     transport: str = "tg"
 
     def __post_init__(self) -> None:
@@ -103,8 +103,8 @@ class CronJob:
             quiet_start=data.get("quiet_start"),
             quiet_end=data.get("quiet_end"),
             dependency=data.get("dependency"),
-            chat_id=data.get("chat_id", 0),
-            topic_id=data.get("topic_id"),
+            chat_id=str(data.get("chat_id", "")),
+            topic_id=str(data["topic_id"]) if data.get("topic_id") is not None else None,
             transport=data.get("transport", "tg"),
         )
 

@@ -90,7 +90,7 @@ class TestStripAckToken:
 def _make_config(*, enabled: bool = True, interval: int = 30) -> AgentConfig:
     return AgentConfig(
         heartbeat=HeartbeatConfig(enabled=enabled, interval_minutes=interval),
-        allowed_user_ids=[100, 200],
+        allowed_user_ids=["100", "200"],
     )
 
 
@@ -130,20 +130,20 @@ class TestHeartbeatObserverTick:
             await obs._tick()
 
         assert handler.call_count == 2
-        handler.assert_any_await(100, None, None, None)
-        handler.assert_any_await(200, None, None, None)
+        handler.assert_any_await("100", None, None, None)
+        handler.assert_any_await("200", None, None, None)
 
     async def test_tick_skips_busy_chat(self) -> None:
         config = _make_config()
         obs = HeartbeatObserver(config)
         handler = AsyncMock(return_value=None)
         obs.set_heartbeat_handler(handler)
-        obs.set_busy_check(lambda cid: cid == 100)
+        obs.set_busy_check(lambda cid: cid == "100")
 
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        handler.assert_awaited_once_with(200, None, None, None)
+        handler.assert_awaited_once_with("200", None, None, None)
 
     async def test_tick_delivers_alert(self) -> None:
         config = _make_config()
@@ -156,8 +156,8 @@ class TestHeartbeatObserverTick:
             await obs._tick()
 
         assert result_handler.call_count == 2
-        result_handler.assert_any_await(100, "Hey, check this out!", None)
-        result_handler.assert_any_await(200, "Hey, check this out!", None)
+        result_handler.assert_any_await("100", "Hey, check this out!", None)
+        result_handler.assert_any_await("200", "Hey, check this out!", None)
 
     async def test_tick_suppresses_none_result(self) -> None:
         config = _make_config()
@@ -241,11 +241,11 @@ class TestHeartbeatGroupTargets:
     async def test_tick_iterates_group_targets(self) -> None:
         config = AgentConfig(
             heartbeat=HeartbeatConfig(enabled=True),
-            allowed_user_ids=[100],
+            allowed_user_ids=["100"],
         )
         config.heartbeat.group_targets = [
-            HeartbeatTarget(chat_id=-1001, topic_id=42),
-            HeartbeatTarget(chat_id=-1002),
+            HeartbeatTarget(chat_id="-1001", topic_id="42"),
+            HeartbeatTarget(chat_id="-1002"),
         ]
         obs = HeartbeatObserver(config)
         handler = AsyncMock(return_value=None)
@@ -255,17 +255,17 @@ class TestHeartbeatGroupTargets:
             await obs._tick()
 
         assert handler.call_count == 3
-        handler.assert_any_await(100, None, None, None)
+        handler.assert_any_await("100", None, None, None)
         # Group targets get resolved prompt/ack from global config
-        handler.assert_any_await(-1001, 42, config.heartbeat.prompt, config.heartbeat.ack_token)
-        handler.assert_any_await(-1002, None, config.heartbeat.prompt, config.heartbeat.ack_token)
+        handler.assert_any_await("-1001", "42", config.heartbeat.prompt, config.heartbeat.ack_token)
+        handler.assert_any_await("-1002", None, config.heartbeat.prompt, config.heartbeat.ack_token)
 
     async def test_tick_group_target_delivers_alert_with_topic_id(self) -> None:
         config = AgentConfig(
             heartbeat=HeartbeatConfig(enabled=True),
             allowed_user_ids=[],
         )
-        config.heartbeat.group_targets = [HeartbeatTarget(chat_id=-1001, topic_id=7)]
+        config.heartbeat.group_targets = [HeartbeatTarget(chat_id="-1001", topic_id="7")]
         obs = HeartbeatObserver(config)
         obs.set_heartbeat_handler(AsyncMock(return_value="group alert"))
         result_handler = AsyncMock()
@@ -274,7 +274,7 @@ class TestHeartbeatGroupTargets:
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        result_handler.assert_awaited_once_with(-1001, "group alert", 7)
+        result_handler.assert_awaited_once_with("-1001", "group alert", "7")
 
     async def test_default_group_targets_with_null_chat_id_are_skipped(self) -> None:
         config = _make_config()

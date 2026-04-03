@@ -47,16 +47,16 @@ class TestHandleAbort:
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        msg = _make_message(chat_id=42)
-        result = await handle_abort(orchestrator, bot, chat_id=42, message=msg)
+        msg = _make_message(chat_id="42")
+        result = await handle_abort(orchestrator, bot, chat_id="42", message=msg)
         assert result is True
-        orchestrator.abort.assert_called_once_with(42)
+        orchestrator.abort.assert_called_once_with("42")
 
     async def test_abort_no_orchestrator(self) -> None:
         from ductor_bot.messenger.telegram.handlers import handle_abort
 
         msg = _make_message()
-        result = await handle_abort(None, MagicMock(), chat_id=1, message=msg)
+        result = await handle_abort(None, MagicMock(), chat_id="1", message=msg)
         assert result is False
 
 
@@ -72,11 +72,11 @@ class TestHandleAbortAll:
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        msg = _make_message(chat_id=42)
+        msg = _make_message(chat_id="42")
         result = await handle_abort_all(
             orchestrator,
             bot,
-            chat_id=42,
+            chat_id="42",
             message=msg,
             abort_all_callback=callback,
         )
@@ -92,11 +92,11 @@ class TestHandleAbortAll:
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        msg = _make_message(chat_id=42)
+        msg = _make_message(chat_id="42")
         result = await handle_abort_all(
             orchestrator,
             bot,
-            chat_id=42,
+            chat_id="42",
             message=msg,
             abort_all_callback=None,
         )
@@ -107,7 +107,7 @@ class TestHandleAbortAll:
         from ductor_bot.messenger.telegram.handlers import handle_abort_all
 
         msg = _make_message()
-        result = await handle_abort_all(None, MagicMock(), chat_id=1, message=msg)
+        result = await handle_abort_all(None, MagicMock(), chat_id="1", message=msg)
         assert result is False
 
     async def test_abort_all_zero_killed(self) -> None:
@@ -119,11 +119,11 @@ class TestHandleAbortAll:
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        msg = _make_message(chat_id=42)
+        msg = _make_message(chat_id="42")
         result = await handle_abort_all(
             orchestrator,
             bot,
-            chat_id=42,
+            chat_id="42",
             message=msg,
             abort_all_callback=callback,
         )
@@ -158,11 +158,11 @@ class TestHandleNewSession:
         bot = MagicMock()
         bot.send_message = AsyncMock()
 
-        msg = _make_message(chat_id=1, text="/new")
+        msg = _make_message(chat_id="1", text="/new")
         await handle_new_session(orchestrator, bot, msg)
         from ductor_bot.session.key import SessionKey
 
-        orchestrator.reset_active_provider_session.assert_called_once_with(SessionKey(chat_id=1))
+        orchestrator.reset_active_provider_session.assert_called_once_with(SessionKey(chat_id="1"))
 
 
 class TestStripMention:
@@ -195,9 +195,9 @@ class TestForumTopicPropagation:
         orchestrator.abort = AsyncMock(return_value=1)
         orchestrator.active_provider_name = "claude"
         bot = MagicMock()
-        msg = _make_message(chat_id=42, topic_thread_id=99)
+        msg = _make_message(chat_id="42", topic_thread_id=99)
 
-        await handle_abort(orchestrator, bot, chat_id=42, message=msg)
+        await handle_abort(orchestrator, bot, chat_id="42", message=msg)
         opts = mock_send.call_args[0][3]
         assert opts.thread_id == 99
 
@@ -236,8 +236,8 @@ class TestForumTopicPropagation:
         orchestrator.abort = AsyncMock(return_value=0)
         orchestrator.active_provider_name = "claude"
         bot = MagicMock()
-        msg = _make_message(chat_id=1)
+        msg = _make_message(chat_id="1")
 
-        await handle_abort(orchestrator, bot, chat_id=1, message=msg)
+        await handle_abort(orchestrator, bot, chat_id="1", message=msg)
         opts = mock_send.call_args[0][3]
         assert opts.thread_id is None

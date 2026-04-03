@@ -87,13 +87,13 @@ class BackgroundObserver:
         )
         return task_id
 
-    def active_tasks(self, chat_id: int | None = None) -> list[BackgroundTask]:
+    def active_tasks(self, chat_id: str | None = None) -> list[BackgroundTask]:
         tasks = [t for t in self._tasks.values() if t.asyncio_task and not t.asyncio_task.done()]
         if chat_id is not None:
             tasks = [t for t in tasks if t.chat_id == chat_id]
         return tasks
 
-    async def cancel_all(self, chat_id: int) -> int:
+    async def cancel_all(self, chat_id: str) -> int:
         count = 0
         cancelled: list[asyncio.Task[None]] = []
         for task in list(self._tasks.values()):

@@ -61,8 +61,8 @@ class BotProtocol(Protocol):
         task_id: str,
         question: str,
         prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
+        chat_id: str,
+        thread_id: str | None = None,
     ) -> None:
         """Handle background task question delivery."""
         ...

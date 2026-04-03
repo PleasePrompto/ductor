@@ -522,7 +522,7 @@ class TestCronObserverExecution:
         ):
             await observer._execute_job("daily", "Do work", "daily")
 
-        callback.assert_awaited_once_with("My Daily Task", "All done.", "success", 0, None, "tg")
+        callback.assert_awaited_once_with("My Daily Task", "All done.", "success", "", None, "tg")
 
     async def test_execute_job_timeout_kills_process(self, tmp_path: Path) -> None:
         """Subprocess that exceeds cli_timeout is killed and reported as timeout."""
@@ -648,7 +648,7 @@ class TestCronResultDelivery:
         assert title == "ephemeral"
         assert result_text == "Done"
         assert status == "success"
-        assert chat_id == 0
+        assert chat_id == ""
         assert topic_id is None
         assert transport == "tg"
 
@@ -709,7 +709,7 @@ class TestCronResultDelivery:
         title, result_text, _status, chat_id, topic_id, transport = callback.call_args[0]
         assert title == "Broken Job"
         assert "not found" in result_text.lower()
-        assert chat_id == 0
+        assert chat_id == ""
         assert topic_id is None
         assert transport == "tg"
 

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class RecoveryAction:
     """A single recovery action to execute on startup."""
 
-    chat_id: int
+    chat_id: str
     kind: str  # "foreground" | "named_session"
     provider: str
     model: str
@@ -62,7 +62,7 @@ class RecoveryPlanner:
         """Plan foreground turn recovery from inflight tracker."""
         interrupted = self._inflight.load_interrupted(max_age_seconds=self._max_age)
         actions: list[RecoveryAction] = []
-        seen_chats: set[int] = set()
+        seen_chats: set[str] = set()
         for turn in interrupted:
             if turn.chat_id in seen_chats:
                 continue

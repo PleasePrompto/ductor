@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 async def _inject_prompt(  # noqa: PLR0913
     orch: Orchestrator,
     prompt: str,
-    chat_id: int,
+    chat_id: str,
     process_label: str,
     *,
-    topic_id: int | None = None,
+    topic_id: str | None = None,
     transport: str = "tg",
 ) -> str:
     """Execute *prompt* in the current active session and update session state.
@@ -68,11 +68,11 @@ async def _inject_prompt(  # noqa: PLR0913
 # ---------------------------------------------------------------------------
 
 
-def _interagent_chat_id(orch: Orchestrator) -> int:
+def _interagent_chat_id(orch: Orchestrator) -> str:
     """Return the real Telegram chat_id for inter-agent sessions."""
     if not orch._config.allowed_user_ids:
-        logger.warning("No allowed_user_ids configured — inter-agent sessions use chat_id=0")
-        return 0
+        logger.warning("No allowed_user_ids configured — inter-agent sessions use chat_id=''")
+        return ""
     return orch._config.allowed_user_ids[0]
 
 
@@ -213,7 +213,7 @@ async def handle_async_interagent_result(
     orch: Orchestrator,
     result: AsyncInterAgentResult,
     *,
-    chat_id: int = 0,
+    chat_id: str = "",
 ) -> str:
     """Inject an async inter-agent result into the current active session.
 

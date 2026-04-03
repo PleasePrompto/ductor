@@ -467,7 +467,7 @@ class TestOnMessage:
 
         mock_run.assert_awaited_once()
         dispatch = mock_run.call_args.args[0]
-        assert dispatch.key.chat_id == 1
+        assert dispatch.key.chat_id == "1"
         assert dispatch.text == "Hello bot"
         assert dispatch.reply_to is msg
 
@@ -484,7 +484,7 @@ class TestOnMessage:
         from ductor_bot.session.key import SessionKey
 
         mock_stream.assert_called_once_with(
-            msg, SessionKey(chat_id=1), "Hello streaming", thread_id=None
+            msg, SessionKey(chat_id="1"), "Hello streaming", thread_id=None
         )
 
     async def test_returns_early_for_none_text(self) -> None:
@@ -513,7 +513,7 @@ class TestOnMessage:
         from ductor_bot.session.key import SessionKey
 
         mock_stream.assert_called_once_with(
-            msg, SessionKey(chat_id=1), "clean text", thread_id=None
+            msg, SessionKey(chat_id="1"), "clean text", thread_id=None
         )
 
 
@@ -619,7 +619,7 @@ class TestHandleStreaming:
 
         from ductor_bot.session.key import SessionKey
 
-        key = SessionKey(chat_id=1)
+        key = SessionKey(chat_id="1")
         with patch(
             "ductor_bot.messenger.telegram.app.run_streaming_message", new_callable=AsyncMock
         ) as mock_run:
@@ -628,7 +628,7 @@ class TestHandleStreaming:
 
         mock_run.assert_awaited_once()
         dispatch = mock_run.call_args.args[0]
-        assert dispatch.key.chat_id == 1
+        assert dispatch.key.chat_id == "1"
         assert dispatch.text == "test"
         assert dispatch.message is msg
 
@@ -643,7 +643,7 @@ class TestHandleStreaming:
 
         from ductor_bot.session.key import SessionKey
 
-        key = SessionKey(chat_id=1)
+        key = SessionKey(chat_id="1")
         with patch(
             "ductor_bot.messenger.telegram.app.run_streaming_message", new_callable=AsyncMock
         ) as mock_run:
@@ -652,7 +652,7 @@ class TestHandleStreaming:
 
         mock_run.assert_awaited_once()
         dispatch = mock_run.call_args.args[0]
-        assert dispatch.key.chat_id == 1
+        assert dispatch.key.chat_id == "1"
         assert dispatch.text == "test"
 
 
@@ -722,7 +722,7 @@ class TestCallbackQueryHandler:
 
         orch.handle_message_streaming.assert_called_once()
         call_args = orch.handle_message_streaming.call_args
-        assert call_args[0][0] == SessionKey(chat_id=1)
+        assert call_args[0][0] == SessionKey(chat_id="1")
         assert call_args[0][1] == "Approve"
 
     async def test_callback_ignores_empty_data(self) -> None:
@@ -837,7 +837,7 @@ class TestCallbackQueryHandler:
 
         mock_run.assert_awaited_once()
         dispatch = mock_run.call_args.args[0]
-        assert dispatch.key.chat_id == 1
+        assert dispatch.key.chat_id == "1"
         assert dispatch.text == "Approve"
 
     async def test_welcome_callback_resolves_to_prompt(self) -> None:
@@ -892,7 +892,7 @@ class TestHandleModelSelector:
         tg_bot._orchestrator = _make_orchestrator()
         grid = ButtonGrid(rows=[[Button(text="OPUS", callback_data="ms:m:opus")]])
         resp = SelectorResponse(text="Pick a model:", buttons=grid)
-        key = SessionKey(chat_id=1)
+        key = SessionKey(chat_id="1")
 
         with patch(
             "ductor_bot.orchestrator.selectors.model_selector.handle_model_callback",
@@ -919,7 +919,7 @@ class TestHandleModelSelector:
 
         tg_bot, bot_instance = _make_tg_bot()
         tg_bot._orchestrator = _make_orchestrator()
-        key = SessionKey(chat_id=1)
+        key = SessionKey(chat_id="1")
 
         bot_instance.edit_message_text = AsyncMock(
             side_effect=TelegramBadRequest(method=MagicMock(), message="msg not modified")
@@ -954,7 +954,7 @@ class TestHandleCronSelector:
             new_callable=AsyncMock,
             return_value=resp,
         ):
-            await tg_bot._handle_cron_selector(chat_id=1, message_id=60, data="crn:r:0")
+            await tg_bot._handle_cron_selector(chat_id="1", message_id=60, data="crn:r:0")
 
         from aiogram.enums import ParseMode
 
@@ -984,7 +984,7 @@ class TestHandleCronSelector:
             new_callable=AsyncMock,
             return_value=resp,
         ):
-            await tg_bot._handle_cron_selector(chat_id=1, message_id=60, data="crn:r:0")
+            await tg_bot._handle_cron_selector(chat_id="1", message_id=60, data="crn:r:0")
 
         # Should not raise
 
@@ -1038,7 +1038,7 @@ class TestCommandHandlers:
     async def test_on_abort_returns_handled(self, mock_abort: AsyncMock) -> None:
         tg_bot, _ = _make_tg_bot()
         tg_bot._orchestrator = _make_orchestrator()
-        msg = _make_message(chat_id=9)
+        msg = _make_message(chat_id="9")
 
         result = await tg_bot._on_abort(9, msg)
 
@@ -1080,11 +1080,11 @@ class TestWebhookWake:
         tg_bot._orchestrator = orch
 
         with patch.object(_tgt, "send_rich", new_callable=AsyncMock) as mock_send:
-            result = await tg_bot._handle_webhook_wake(1, "Wake prompt")
+            result = await tg_bot._handle_webhook_wake("1", "Wake prompt")
 
         from ductor_bot.session.key import SessionKey
 
-        orch.handle_message.assert_called_once_with(SessionKey(chat_id=1), "Wake prompt")
+        orch.handle_message.assert_called_once_with(SessionKey(chat_id="1"), "Wake prompt")
         mock_send.assert_called_once()
         assert mock_send.call_args[0][2] == "Webhook reply"
         assert result == "Webhook reply"
@@ -1096,7 +1096,7 @@ class TestWebhookWake:
         orch = _make_orchestrator()
         tg_bot._orchestrator = orch
 
-        lock = tg_bot.sequential.get_lock(1)
+        lock = tg_bot.sequential.get_lock(("1", None))
         lock_was_held = False
 
         original_handle = orch.handle_message
@@ -1109,7 +1109,7 @@ class TestWebhookWake:
         orch.handle_message = AsyncMock(side_effect=check_lock)
 
         with patch.object(_tgt, "send_rich", new_callable=AsyncMock):
-            await tg_bot._handle_webhook_wake(1, "test")
+            await tg_bot._handle_webhook_wake("1", "test")
         assert lock_was_held
 
     async def test_queues_behind_active_message(self) -> None:
@@ -1121,7 +1121,7 @@ class TestWebhookWake:
         tg_bot._orchestrator = orch
 
         order: list[str] = []
-        lock = tg_bot.sequential.get_lock(1)
+        lock = tg_bot.sequential.get_lock(("1", None))
 
         with patch.object(_tgt, "send_rich", new_callable=AsyncMock):
             async with lock:
@@ -1131,7 +1131,7 @@ class TestWebhookWake:
                     return MagicMock(text="ok")
 
                 orch.handle_message = AsyncMock(side_effect=slow_handle)
-                task = asyncio.create_task(tg_bot._handle_webhook_wake(1, "test"))
+                task = asyncio.create_task(tg_bot._handle_webhook_wake("1", "test"))
 
                 await asyncio.sleep(0.01)
                 order.append("user_done")

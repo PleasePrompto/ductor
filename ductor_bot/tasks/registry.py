@@ -135,7 +135,7 @@ class TaskRegistry:
     def get(self, task_id: str) -> TaskEntry | None:
         return self._entries.get(task_id)
 
-    def find_by_name(self, chat_id: int, name: str) -> TaskEntry | None:
+    def find_by_name(self, chat_id: str, name: str) -> TaskEntry | None:
         """Find a task by name within a chat."""
         lower = name.lower()
         for entry in self._entries.values():
@@ -143,7 +143,7 @@ class TaskRegistry:
                 return entry
         return None
 
-    def list_active(self, chat_id: int | None = None) -> list[TaskEntry]:
+    def list_active(self, chat_id: str | None = None) -> list[TaskEntry]:
         """Return tasks with status 'running'."""
         entries = [e for e in self._entries.values() if e.status == "running"]
         if chat_id is not None:
@@ -152,7 +152,7 @@ class TaskRegistry:
 
     def list_all(
         self,
-        chat_id: int | None = None,
+        chat_id: str | None = None,
         parent_agent: str | None = None,
     ) -> list[TaskEntry]:
         """Return all tasks (active + completed)."""
@@ -210,7 +210,7 @@ class TaskRegistry:
         self._remove_entries([task_id], "delete")
         return True
 
-    def cleanup_finished(self, chat_id: int | None = None) -> int:
+    def cleanup_finished(self, chat_id: str | None = None) -> int:
         """Remove all finished tasks (done/failed/cancelled) regardless of age."""
         to_remove: list[str] = []
         for task_id, entry in self._entries.items():

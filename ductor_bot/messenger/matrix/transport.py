@@ -58,8 +58,11 @@ class MatrixTransport:
     # -- Internal helpers ---------------------------------------------------
 
     def _resolve_room(self, env: Envelope) -> str | None:
-        """Resolve envelope chat_id back to Matrix room_id."""
-        return self._bot.id_map.int_to_room(env.chat_id)
+        """Resolve envelope chat_id to Matrix room_id.
+
+        After the str migration, chat_id IS the room_id string directly.
+        """
+        return env.chat_id or None
 
     def _opts(self, env: Envelope) -> MatrixSendOpts:
         orch = self._bot.orchestrator
@@ -183,7 +186,7 @@ class MatrixTransport:
         room_id = self._resolve_room(env)
         if not room_id:
             logger.warning(
-                "Cron unicast: cannot resolve chat_id=%d, falling back to broadcast",
+                "Cron unicast: cannot resolve chat_id=%s, falling back to broadcast",
                 env.chat_id,
             )
             await self._broadcast_cron(env)

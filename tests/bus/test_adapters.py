@@ -23,7 +23,7 @@ from ductor_bot.bus.envelope import DeliveryMode, LockMode, Origin
 @dataclass
 class _FakeBackgroundResult:
     task_id: str = "bg1"
-    chat_id: int = 100
+    chat_id: str = "100"
     message_id: int = 42
     thread_id: int | None = None
     prompt_preview: str = "do something"
@@ -57,14 +57,14 @@ class _FakeInterAgentResult:
     session_name: str = "ia-agent-a"
     provider_switch_notice: str = ""
     original_message: str = "full message"
-    chat_id: int = 0
-    topic_id: int | None = None
+    chat_id: str = ""
+    topic_id: str | None = None
 
 
 @dataclass
 class _FakeTaskResult:
     task_id: str = "t1"
-    chat_id: int = 100
+    chat_id: str = "100"
     parent_agent: str = "main"
     name: str = "research"
     prompt_preview: str = "find info"
@@ -86,7 +86,7 @@ class _FakeTaskResult:
 def test_from_background_result() -> None:
     env = from_background_result(_FakeBackgroundResult())
     assert env.origin == Origin.BACKGROUND
-    assert env.chat_id == 100
+    assert env.chat_id == "100"
     assert env.delivery == DeliveryMode.UNICAST
     assert env.lock_mode == LockMode.NONE
     assert not env.needs_injection
@@ -104,7 +104,7 @@ def test_from_background_result_error() -> None:
 def test_from_cron_result() -> None:
     env = from_cron_result("Daily Report", "all good", "success")
     assert env.origin == Origin.CRON
-    assert env.chat_id == 0
+    assert env.chat_id == ""
     assert env.delivery == DeliveryMode.BROADCAST
     assert env.lock_mode == LockMode.NONE
     assert env.metadata["title"] == "Daily Report"
@@ -112,22 +112,22 @@ def test_from_cron_result() -> None:
 
 
 def test_from_cron_result_with_chat_id_creates_unicast() -> None:
-    env = from_cron_result("Title", "Result", "success", chat_id=12345, topic_id=99)
-    assert env.chat_id == 12345
-    assert env.topic_id == 99
+    env = from_cron_result("Title", "Result", "success", chat_id="12345", topic_id="99")
+    assert env.chat_id == "12345"
+    assert env.topic_id == "99"
     assert env.delivery == DeliveryMode.UNICAST
 
 
 def test_from_cron_result_without_chat_id_broadcasts() -> None:
     env = from_cron_result("Title", "Result", "success")
-    assert env.chat_id == 0
+    assert env.chat_id == ""
     assert env.delivery == DeliveryMode.BROADCAST
 
 
 def test_from_heartbeat() -> None:
-    env = from_heartbeat(200, "alert text")
+    env = from_heartbeat("200", "alert text")
     assert env.origin == Origin.HEARTBEAT
-    assert env.chat_id == 200
+    assert env.chat_id == "200"
     assert env.topic_id is None
     assert env.delivery == DeliveryMode.UNICAST
     assert env.lock_mode == LockMode.NONE
@@ -135,10 +135,10 @@ def test_from_heartbeat() -> None:
 
 
 def test_from_heartbeat_with_topic_id() -> None:
-    env = from_heartbeat(-1001, "group alert", topic_id=42)
+    env = from_heartbeat("-1001", "group alert", topic_id="42")
     assert env.origin == Origin.HEARTBEAT
-    assert env.chat_id == -1001
-    assert env.topic_id == 42
+    assert env.chat_id == "-1001"
+    assert env.topic_id == "42"
     assert env.delivery == DeliveryMode.UNICAST
     assert env.result_text == "group alert"
 
@@ -152,18 +152,18 @@ def test_from_webhook_cron_result() -> None:
 
 
 def test_from_webhook_wake() -> None:
-    env = from_webhook_wake(300, "wake up")
+    env = from_webhook_wake("300", "wake up")
     assert env.origin == Origin.WEBHOOK_WAKE
-    assert env.chat_id == 300
+    assert env.chat_id == "300"
     assert env.prompt == "wake up"
     assert env.delivery == DeliveryMode.UNICAST
     assert env.lock_mode == LockMode.REQUIRED
 
 
 def test_from_interagent_success() -> None:
-    env = from_interagent_result(_FakeInterAgentResult(), chat_id=100)
+    env = from_interagent_result(_FakeInterAgentResult(), chat_id="100")
     assert env.origin == Origin.INTERAGENT
-    assert env.chat_id == 100
+    assert env.chat_id == "100"
     assert env.status == "success"
     assert env.delivery == DeliveryMode.UNICAST
     assert env.lock_mode == LockMode.REQUIRED
@@ -172,7 +172,9 @@ def test_from_interagent_success() -> None:
 
 
 def test_from_interagent_error() -> None:
-    env = from_interagent_result(_FakeInterAgentResult(success=False, error="timeout"), chat_id=100)
+    env = from_interagent_result(
+        _FakeInterAgentResult(success=False, error="timeout"), chat_id="100"
+    )
     assert env.status == "error"
     assert env.is_error
     assert env.lock_mode == LockMode.NONE
@@ -183,38 +185,38 @@ def test_from_interagent_error() -> None:
 def test_from_interagent_result_uses_result_chat_id() -> None:
     """When result carries chat_id, it overrides the fallback chat_id."""
     env = from_interagent_result(
-        _FakeInterAgentResult(chat_id=777, topic_id=42),
-        chat_id=100,
+        _FakeInterAgentResult(chat_id="777", topic_id="42"),
+        chat_id="100",
     )
-    assert env.chat_id == 777
-    assert env.topic_id == 42
+    assert env.chat_id == "777"
+    assert env.topic_id == "42"
 
 
 def test_from_interagent_result_falls_back_to_default_chat_id() -> None:
-    """When result has no chat_id (0), falls back to the provided default."""
+    """When result has no chat_id (empty), falls back to the provided default."""
     env = from_interagent_result(
-        _FakeInterAgentResult(chat_id=0, topic_id=None),
-        chat_id=100,
+        _FakeInterAgentResult(chat_id="", topic_id=None),
+        chat_id="100",
     )
-    assert env.chat_id == 100
+    assert env.chat_id == "100"
     assert env.topic_id is None
 
 
 def test_from_interagent_error_preserves_topic_id() -> None:
     """topic_id is preserved on error results too."""
     env = from_interagent_result(
-        _FakeInterAgentResult(success=False, error="fail", chat_id=555, topic_id=99),
-        chat_id=100,
+        _FakeInterAgentResult(success=False, error="fail", chat_id="555", topic_id="99"),
+        chat_id="100",
     )
-    assert env.chat_id == 555
-    assert env.topic_id == 99
+    assert env.chat_id == "555"
+    assert env.topic_id == "99"
     assert env.is_error
 
 
 def test_from_task_result_done() -> None:
     env = from_task_result(_FakeTaskResult())
     assert env.origin == Origin.TASK_RESULT
-    assert env.chat_id == 100
+    assert env.chat_id == "100"
     assert env.topic_id is None
     assert env.status == "done"
     assert env.lock_mode == LockMode.REQUIRED
@@ -229,8 +231,8 @@ def test_from_task_result_done() -> None:
 
 def test_from_task_result_with_topic() -> None:
     env = from_task_result(_FakeTaskResult(thread_id=42))
-    assert env.chat_id == 100
-    assert env.topic_id == 42
+    assert env.chat_id == "100"
+    assert env.topic_id == "42"
 
 
 def test_from_task_result_failed() -> None:
@@ -250,9 +252,9 @@ def test_from_task_result_cancelled() -> None:
 
 
 def test_from_task_question() -> None:
-    env = from_task_question("t1", "what color?", "what co...", 100)
+    env = from_task_question("t1", "what color?", "what co...", "100")
     assert env.origin == Origin.TASK_QUESTION
-    assert env.chat_id == 100
+    assert env.chat_id == "100"
     assert env.topic_id is None
     assert env.prompt == "what color?"
     assert env.lock_mode == LockMode.REQUIRED
@@ -261,18 +263,18 @@ def test_from_task_question() -> None:
 
 
 def test_from_task_question_with_topic() -> None:
-    env = from_task_question("t1", "what color?", "what co...", 100, topic_id=42)
-    assert env.chat_id == 100
-    assert env.topic_id == 42
+    env = from_task_question("t1", "what color?", "what co...", "100", topic_id="42")
+    assert env.chat_id == "100"
+    assert env.topic_id == "42"
 
 
 # -- User / API messages -------------------------------------------------------
 
 
 def test_from_user_message_default_origin() -> None:
-    env = from_user_message(100, "hello world")
+    env = from_user_message("100", "hello world")
     assert env.origin == Origin.USER
-    assert env.chat_id == 100
+    assert env.chat_id == "100"
     assert env.prompt == "hello world"
     assert env.prompt_preview == "hello world"
     assert env.delivery == DeliveryMode.UNICAST
@@ -281,26 +283,26 @@ def test_from_user_message_default_origin() -> None:
 
 
 def test_from_user_message_api_source() -> None:
-    env = from_user_message(200, "api request", source=Origin.API)
+    env = from_user_message("200", "api request", source=Origin.API)
     assert env.origin == Origin.API
-    assert env.chat_id == 200
+    assert env.chat_id == "200"
     assert env.prompt == "api request"
 
 
 def test_from_user_message_with_topic() -> None:
-    env = from_user_message(300, "topic msg", topic_id=42)
-    assert env.chat_id == 300
-    assert env.topic_id == 42
+    env = from_user_message("300", "topic msg", topic_id="42")
+    assert env.chat_id == "300"
+    assert env.topic_id == "42"
 
 
 def test_from_user_message_truncates_preview() -> None:
     long_text = "x" * 200
-    env = from_user_message(100, long_text)
+    env = from_user_message("100", long_text)
     assert len(env.prompt_preview) == 80
     assert env.prompt == long_text
 
 
 def test_from_user_message_empty_text() -> None:
-    env = from_user_message(100, "")
+    env = from_user_message("100", "")
     assert env.prompt == ""
     assert env.prompt_preview == ""

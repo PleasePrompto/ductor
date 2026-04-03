@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Callback signature: (job_title, result_text, status, chat_id, topic_id, transport)
-CronResultCallback = Callable[[str, str, str, int, int | None, str], Awaitable[None]]
+CronResultCallback = Callable[[str, str, str, str, str | None, str], Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -265,7 +265,7 @@ class CronObserver(BaseTaskObserver):
         job_title: str,
         result_text: str,
         status: str,
-        routing: tuple[int, int | None, str] = (0, None, "tg"),
+        routing: tuple[str, str | None, str] = ("", None, "tg"),
     ) -> None:
         """Send result to the external handler (e.g. Telegram).
 
@@ -302,7 +302,7 @@ class CronObserver(BaseTaskObserver):
         set_log_context(operation="cron")
         job = self._manager.get_job(job_id)
         job_title = job.title if job else job_id
-        routing = (job.chat_id, job.topic_id, job.transport) if job else (0, None, "tg")
+        routing = (job.chat_id, job.topic_id, job.transport) if job else ("", None, "tg")
 
         if job and not job.enabled:
             logger.info("Cron job %s is disabled, skipping execution", job_title)

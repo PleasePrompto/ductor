@@ -48,8 +48,8 @@ class Envelope:
 
     # -- Identity --
     origin: Origin
-    chat_id: int
-    topic_id: int | None = None
+    chat_id: str
+    topic_id: str | None = None
     transport: str = "tg"
 
     # -- Input (for injection into active session) --
@@ -85,6 +85,6 @@ class Envelope:
     session_id: str = ""
 
     @property
-    def lock_key(self) -> tuple[int, int | None]:
+    def lock_key(self) -> tuple[str, str | None]:
         """Key for per-session lock acquisition."""
         return (self.chat_id, self.topic_id)

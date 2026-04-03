@@ -154,8 +154,8 @@ class Orchestrator:
         self._observers = ObserverManager(config, paths)
 
         async def _heartbeat_handler(
-            chat_id: int,
-            topic_id: int | None = None,
+            chat_id: str,
+            topic_id: str | None = None,
             prompt: str | None = None,
             ack_token: str | None = None,
         ) -> str | None:
@@ -429,7 +429,7 @@ class Orchestrator:
         logger.info("Active provider session reset provider=%s", provider)
         return provider
 
-    async def abort(self, chat_id: int) -> int:
+    async def abort(self, chat_id: str) -> int:
         """Kill all active CLI processes and background tasks for chat_id."""
         killed = await self._process_registry.kill_all(chat_id)
         if self._observers.background:
@@ -437,7 +437,7 @@ class Orchestrator:
         self._named_sessions.end_all(chat_id)
         return killed
 
-    def interrupt(self, chat_id: int) -> int:
+    def interrupt(self, chat_id: str) -> int:
         """Send SIGINT to active CLI processes for *chat_id*.
 
         Unlike :meth:`abort` this does not kill or unregister the processes.
@@ -458,7 +458,7 @@ class Orchestrator:
         self,
         bus: MessageBus,
         *,
-        wake_handler: Callable[[int, str], Awaitable[str | None]] | None = None,
+        wake_handler: Callable[[str, str], Awaitable[str | None]] | None = None,
     ) -> None:
         """Wire all observer result callbacks to the message bus."""
         self._observers.wire_to_bus(bus, wake_handler=wake_handler)
@@ -477,7 +477,7 @@ class Orchestrator:
 
     def submit_named_session(
         self,
-        chat_id: int,
+        chat_id: str,
         prompt: str,
         request: NamedSessionRequest,
     ) -> tuple[str, str]:
@@ -511,7 +511,7 @@ class Orchestrator:
 
     def submit_named_followup_bg(
         self,
-        chat_id: int,
+        chat_id: str,
         session_name: str,
         prompt: str,
         message_id: int,
@@ -549,7 +549,7 @@ class Orchestrator:
         )
         return self._observers.background.submit(sub, exec_config)
 
-    async def end_named_session(self, chat_id: int, name: str) -> bool:
+    async def end_named_session(self, chat_id: str, name: str) -> bool:
         """Kill process and end a named session."""
         ns = self._named_sessions.get(chat_id, name)
         if ns is None:
@@ -570,26 +570,26 @@ class Orchestrator:
         """Resolve a ``@key`` directive to ``(provider, model)`` or ``None``."""
         return self._providers.resolve_session_directive(key)
 
-    def get_named_session(self, chat_id: int, name: str) -> NamedSession | None:
+    def get_named_session(self, chat_id: str, name: str) -> NamedSession | None:
         """Look up a named session."""
         return self._named_sessions.get(chat_id, name)
 
-    def list_named_sessions(self, chat_id: int) -> list[NamedSession]:
+    def list_named_sessions(self, chat_id: str) -> list[NamedSession]:
         """List active named sessions for a chat."""
         return self._named_sessions.list_active(chat_id)
 
-    async def list_topic_sessions(self, chat_id: int) -> list[SessionData]:
+    async def list_topic_sessions(self, chat_id: str) -> list[SessionData]:
         """Return fresh topic sessions for *chat_id*."""
         all_sessions = await self._sessions.list_active_for_chat(chat_id)
         return [s for s in all_sessions if s.topic_id is not None]
 
-    def active_background_tasks(self, chat_id: int | None = None) -> list[BackgroundTask]:
+    def active_background_tasks(self, chat_id: str | None = None) -> list[BackgroundTask]:
         """Return active background tasks, optionally filtered by chat_id."""
         if self._observers.background is None:
             return []
         return self._observers.background.active_tasks(chat_id)
 
-    def is_chat_busy(self, chat_id: int, topic_id: int | None = None) -> bool:
+    def is_chat_busy(self, chat_id: str, topic_id: str | None = None) -> bool:
         """Check if a chat has active CLI processes."""
         return self._process_registry.has_active(chat_id, topic_id)
 
@@ -682,7 +682,7 @@ class Orchestrator:
         self,
         result: AsyncInterAgentResult,
         *,
-        chat_id: int = 0,
+        chat_id: str = "",
     ) -> str:
         """Inject an async inter-agent result into the current active session."""
         from ductor_bot.orchestrator.injection import (
@@ -694,10 +694,10 @@ class Orchestrator:
     async def inject_prompt(
         self,
         prompt: str,
-        chat_id: int,
+        chat_id: str,
         label: str,
         *,
-        topic_id: int | None = None,
+        topic_id: str | None = None,
         transport: str = "tg",
     ) -> str:
         """Execute *prompt* in the active session (fulfils ``SessionInjector`` protocol)."""

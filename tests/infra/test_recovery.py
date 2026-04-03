@@ -10,7 +10,7 @@ from ductor_bot.infra.recovery import RecoveryAction, RecoveryPlanner
 
 
 def _make_turn(
-    chat_id: int = 100,
+    chat_id: str = "100",
     *,
     provider: str = "claude",
     model: str = "opus",
@@ -35,7 +35,7 @@ def _make_turn(
 class TestRecoveryPlannerForeground:
     def test_finds_foreground_interrupt(self, tmp_path: Path) -> None:
         tracker = InflightTracker(tmp_path / "inflight.json")
-        tracker.begin(_make_turn(chat_id=100, prompt_preview="fix the bug"))
+        tracker.begin(_make_turn(chat_id="100", prompt_preview="fix the bug"))
         planner = RecoveryPlanner(
             inflight=tracker,
             named_sessions=[],
@@ -44,25 +44,25 @@ class TestRecoveryPlannerForeground:
         actions = planner.plan()
         assert len(actions) == 1
         assert actions[0].kind == "foreground"
-        assert actions[0].chat_id == 100
+        assert actions[0].chat_id == "100"
         assert actions[0].prompt_preview == "fix the bug"
 
     def test_skips_recovery_turns(self, tmp_path: Path) -> None:
         tracker = InflightTracker(tmp_path / "inflight.json")
-        tracker.begin(_make_turn(chat_id=100, is_recovery=True))
+        tracker.begin(_make_turn(chat_id="100", is_recovery=True))
         planner = RecoveryPlanner(inflight=tracker, named_sessions=[], max_age_seconds=9999)
         assert planner.plan() == []
 
     def test_skips_old_turns(self, tmp_path: Path) -> None:
         old = (datetime.now(UTC) - timedelta(hours=5)).isoformat()
         tracker = InflightTracker(tmp_path / "inflight.json")
-        tracker.begin(_make_turn(chat_id=100, started_at=old))
+        tracker.begin(_make_turn(chat_id="100", started_at=old))
         planner = RecoveryPlanner(inflight=tracker, named_sessions=[], max_age_seconds=3600)
         assert planner.plan() == []
 
     def test_session_id_preserved(self, tmp_path: Path) -> None:
         tracker = InflightTracker(tmp_path / "inflight.json")
-        tracker.begin(_make_turn(chat_id=100, session_id="abc-123"))
+        tracker.begin(_make_turn(chat_id="100", session_id="abc-123"))
         planner = RecoveryPlanner(inflight=tracker, named_sessions=[], max_age_seconds=9999)
         actions = planner.plan()
         assert actions[0].session_id == "abc-123"
@@ -75,7 +75,7 @@ class TestRecoveryPlannerNamedSessions:
 
         ns = NamedSession(
             name="boldowl",
-            chat_id=100,
+            chat_id="100",
             provider="claude",
             model="opus",
             session_id="sess-ns-1",
@@ -101,7 +101,7 @@ class TestRecoveryPlannerNamedSessions:
 
         ns = NamedSession(
             name="ia-research",
-            chat_id=100,
+            chat_id="100",
             provider="claude",
             model="opus",
             session_id="sess-ia-1",
@@ -118,7 +118,7 @@ class TestRecoveryPlannerNamedSessions:
 
         ns = NamedSession(
             name="boldowl",
-            chat_id=100,
+            chat_id="100",
             provider="claude",
             model="opus",
             session_id="",
@@ -136,7 +136,7 @@ class TestRecoveryPlannerNamedSessions:
 
         ns = NamedSession(
             name="boldowl",
-            chat_id=100,
+            chat_id="100",
             provider="claude",
             model="opus",
             session_id="sess-1",
@@ -154,7 +154,7 @@ class TestRecoveryPlannerNamedSessions:
 
         ns = NamedSession(
             name="boldowl",
-            chat_id=100,
+            chat_id="100",
             provider="claude",
             model="opus",
             session_id="",
@@ -172,10 +172,10 @@ class TestRecoveryPlannerMixed:
         from ductor_bot.session.named import NamedSession
 
         tracker = InflightTracker(tmp_path / "inflight.json")
-        tracker.begin(_make_turn(chat_id=100, prompt_preview="fg task"))
+        tracker.begin(_make_turn(chat_id="100", prompt_preview="fg task"))
         ns = NamedSession(
             name="boldowl",
-            chat_id=200,
+            chat_id="200",
             provider="codex",
             model="gpt-4",
             session_id="sess-ns-1",
@@ -203,7 +203,7 @@ class TestRecoveryPlannerMixed:
 class TestRecoveryActionDataclass:
     def test_fields(self) -> None:
         action = RecoveryAction(
-            chat_id=100,
+            chat_id="100",
             kind="foreground",
             provider="claude",
             model="opus",
@@ -211,6 +211,6 @@ class TestRecoveryActionDataclass:
             prompt_preview="test",
             session_name="",
         )
-        assert action.chat_id == 100
+        assert action.chat_id == "100"
         assert action.kind == "foreground"
         assert action.session_name == ""

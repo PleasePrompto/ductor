@@ -44,7 +44,10 @@ def get_session_key(message: Message) -> SessionKey:
             message.message_thread_id,
             topic_id,
         )
-    return SessionKey.telegram(chat_id=message.chat.id, topic_id=topic_id)
+    return SessionKey.telegram(
+        chat_id=str(message.chat.id),
+        topic_id=str(topic_id) if topic_id is not None else None,
+    )
 
 
 def get_topic_name_from_message(message: Message) -> str | None:
@@ -66,21 +69,21 @@ class TopicNameCache:
     """
 
     def __init__(self) -> None:
-        self._names: dict[tuple[int, int], str] = {}
+        self._names: dict[tuple[str, str], str] = {}
 
-    def set(self, chat_id: int, topic_id: int, name: str) -> None:
+    def set(self, chat_id: str, topic_id: str, name: str) -> None:
         """Store or update a topic name."""
         self._names[(chat_id, topic_id)] = name
 
-    def get(self, chat_id: int, topic_id: int) -> str | None:
+    def get(self, chat_id: str, topic_id: str) -> str | None:
         """Look up a cached topic name (or ``None``)."""
         return self._names.get((chat_id, topic_id))
 
-    def resolve(self, chat_id: int, topic_id: int) -> str:
+    def resolve(self, chat_id: str, topic_id: str) -> str:
         """Return the cached name or a fallback ``"Topic #N"``."""
         return self._names.get((chat_id, topic_id)) or f"Topic #{topic_id}"
 
-    def find_by_name(self, chat_id: int, name: str) -> int | None:
+    def find_by_name(self, chat_id: str, name: str) -> str | None:
         """Reverse lookup: return topic_id for *name* (case-insensitive) or ``None``."""
         lower = name.lower()
         for (cid, tid), cached_name in self._names.items():

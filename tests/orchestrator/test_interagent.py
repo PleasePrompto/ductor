@@ -21,7 +21,7 @@ from ductor_bot.workspace.paths import DuctorPaths
 def orch_ia(workspace: tuple[DuctorPaths, AgentConfig]) -> Orchestrator:
     """Orchestrator with mocked CLIService for inter-agent tests."""
     paths, config = workspace
-    config.allowed_user_ids = [12345]
+    config.allowed_user_ids = ["12345"]
     o = Orchestrator(config, paths, agent_name="codex")
     mock_cli = MagicMock()
     mock_cli._config = MagicMock()
@@ -36,13 +36,13 @@ class TestInteragentChatId:
     """Test _interagent_chat_id helper."""
 
     def test_returns_first_allowed_user(self, orch_ia: Orchestrator) -> None:
-        assert _interagent_chat_id(orch_ia) == 12345
+        assert _interagent_chat_id(orch_ia) == "12345"
 
     def test_returns_zero_when_no_users(self, workspace: tuple[DuctorPaths, AgentConfig]) -> None:
         paths, config = workspace
         config.allowed_user_ids = []
         o = Orchestrator(config, paths)
-        assert _interagent_chat_id(o) == 0
+        assert _interagent_chat_id(o) == ""
 
 
 class TestGetOrCreateInteragentSession:
@@ -53,7 +53,7 @@ class TestGetOrCreateInteragentSession:
         assert is_new is True
         assert notice == ""
         assert ns.name == "ia-main"
-        assert ns.chat_id == 12345
+        assert ns.chat_id == "12345"
         assert ns.status == "running"
 
     def test_reuses_existing_session(self, orch_ia: Orchestrator) -> None:
@@ -128,7 +128,7 @@ class TestHandleInteragentMessage:
 
     async def test_creates_named_session(self, orch_ia: Orchestrator) -> None:
         await orch_ia.handle_interagent_message("main", "Task 1")
-        ns = orch_ia._named_sessions.get(12345, "ia-main")
+        ns = orch_ia._named_sessions.get("12345", "ia-main")
         assert ns is not None
         assert ns.session_id == "sess-001"
         assert ns.status == "idle"
@@ -204,7 +204,7 @@ class TestHandleInteragentMessage:
     async def test_session_idle_after_error(self, orch_ia: Orchestrator) -> None:
         orch_ia._cli_service.execute = AsyncMock(side_effect=RuntimeError("crash"))
         await orch_ia.handle_interagent_message("main", "Crash")
-        ns = orch_ia._named_sessions.get(12345, "ia-main")
+        ns = orch_ia._named_sessions.get("12345", "ia-main")
         assert ns is not None
         assert ns.status == "idle"
 
@@ -234,14 +234,14 @@ class TestHandleAsyncInteragentResult:
     async def test_basic_result_processing(self, orch_ia: Orchestrator) -> None:
         result = await orch_ia.handle_async_interagent_result(
             self._make_result("Task completed successfully"),
-            chat_id=12345,
+            chat_id="12345",
         )
         assert result == "done"
 
     async def test_prompt_contains_session_hint(self, orch_ia: Orchestrator) -> None:
         await orch_ia.handle_async_interagent_result(
             self._make_result(session_name="ia-codex"),
-            chat_id=12345,
+            chat_id="12345",
         )
         call_args = orch_ia._cli_service.execute.call_args
         request = call_args[0][0]
@@ -251,7 +251,7 @@ class TestHandleAsyncInteragentResult:
     async def test_prompt_without_session_name(self, orch_ia: Orchestrator) -> None:
         await orch_ia.handle_async_interagent_result(
             self._make_result(session_name=""),
-            chat_id=12345,
+            chat_id="12345",
         )
         call_args = orch_ia._cli_service.execute.call_args
         request = call_args[0][0]
@@ -267,7 +267,7 @@ class TestHandleAsyncInteragentResult:
     async def test_prompt_contains_original_message(self, orch_ia: Orchestrator) -> None:
         await orch_ia.handle_async_interagent_result(
             self._make_result(original_message="Check the system specs"),
-            chat_id=12345,
+            chat_id="12345",
         )
         call_args = orch_ia._cli_service.execute.call_args
         request = call_args[0][0]
@@ -287,7 +287,7 @@ class TestHandleAsyncInteragentResult:
 
         await orch_ia.handle_async_interagent_result(
             self._make_result(),
-            chat_id=12345,
+            chat_id="12345",
         )
         call_args = orch_ia._cli_service.execute.call_args
         request = call_args[0][0]

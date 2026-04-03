@@ -14,7 +14,7 @@ from contextvars import ContextVar
 
 # Cross-cutting context propagated through asyncio tasks.
 ctx_agent_name: ContextVar[str | None] = ContextVar("ctx_agent_name", default=None)
-ctx_chat_id: ContextVar[int | None] = ContextVar("ctx_chat_id", default=None)
+ctx_chat_id: ContextVar[str | None] = ContextVar("ctx_chat_id", default=None)
 ctx_topic: ContextVar[str | None] = ContextVar("ctx_topic", default=None)
 ctx_session_id: ContextVar[str | None] = ContextVar("ctx_session_id", default=None)
 ctx_operation: ContextVar[str | None] = ContextVar("ctx_operation", default=None)
@@ -48,7 +48,7 @@ def set_log_context(
     *,
     agent_name: str | None = None,
     operation: str | None = None,
-    chat_id: int | None = None,
+    chat_id: str | None = None,
     topic: str | None = None,
     session_id: str | None = None,
 ) -> None:

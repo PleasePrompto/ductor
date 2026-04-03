@@ -319,9 +319,9 @@ def main() -> None:
     topic_id = os.environ.get("DUCTOR_TOPIC_ID", "")
     transport = os.environ.get("DUCTOR_TRANSPORT", "tg")
     if chat_id:
-        job["chat_id"] = int(chat_id)
+        job["chat_id"] = chat_id
     if topic_id:
-        job["topic_id"] = int(topic_id)
+        job["topic_id"] = topic_id
     job["transport"] = transport
     data["jobs"].append(job)
     save_jobs(JOBS_PATH, data)
