@@ -51,6 +51,7 @@ test = [
     "pytest-aiohttp>=1.1.0",
     "pytest-cov>=7.0.0",
     "time-machine>=3.2.0",
+    "pytest-xdist>=3.8.0",
 ]
 lint = [
     "ruff>=0.15.0",
