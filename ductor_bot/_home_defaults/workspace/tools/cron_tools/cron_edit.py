@@ -43,9 +43,17 @@ CHANGES:
   --description "<text>"     Update metadata description
   --schedule "<cron-expr>"   Update execution schedule
   --timezone "<iana>"        Set per-job timezone override (e.g. 'Europe/Berlin')
+  --provider "<name>"        Set provider override ('claude', 'codex', 'gemini')
+  --model "<model-id>"       Set model override (e.g. 'opus', 'gpt-5.4')
+  --reasoning-effort <lvl>   Set Codex thinking level (low, medium, high, xhigh)
+  --cli-parameters "<json>"  Set extra CLI flags as JSON array
   --quiet-start <hour>       Start of quiet hours (0-23, job won't run during this time)
   --quiet-end <hour>         End of quiet hours (0-23, exclusive)
   --dependency "<name>"      Resource dependency for sequential execution (e.g. 'chrome_browser')
+  --clear-provider           Remove provider override (use global config)
+  --clear-model              Remove model override (use global config)
+  --clear-reasoning-effort   Remove reasoning override (use global config/model default)
+  --clear-cli-parameters     Remove job-specific CLI parameters
   --clear-quiet-hours        Remove quiet hour settings (use global config)
   --clear-dependency         Remove dependency (allow parallel execution)
   --enable                   Set enabled=true
@@ -56,6 +64,9 @@ EXAMPLES:
   python tools/cron_tools/cron_edit.py "weather-check" --title "Weather 08:30"
   python tools/cron_tools/cron_edit.py "weather-check" --name "weather-morning"
   python tools/cron_tools/cron_edit.py "weather-check" --disable
+  python tools/cron_tools/cron_edit.py "analysis-job" --provider codex --model gpt-5.4
+  python tools/cron_tools/cron_edit.py "analysis-job" --reasoning-effort xhigh
+  python tools/cron_tools/cron_edit.py "analysis-job" --cli-parameters '["--search"]'
   python tools/cron_tools/cron_edit.py "web-scraper" --quiet-start 22 --quiet-end 7
   python tools/cron_tools/cron_edit.py "web-scraper" --dependency chrome_browser
   python tools/cron_tools/cron_edit.py "web-scraper" --clear-quiet-hours
@@ -74,6 +85,24 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--description", help="New description text")
     parser.add_argument("--schedule", help="New cron expression")
     parser.add_argument("--timezone", help="IANA timezone for this job (e.g. 'Europe/Berlin')")
+    parser.add_argument(
+        "--provider",
+        choices=["claude", "codex", "gemini"],
+        help="Provider override for this job.",
+    )
+    parser.add_argument(
+        "--model",
+        help="Model override for this job (e.g. 'opus', 'gpt-5.4').",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=["low", "medium", "high", "xhigh"],
+        help="Codex thinking level override.",
+    )
+    parser.add_argument(
+        "--cli-parameters",
+        help="Additional CLI flags as JSON array (e.g. '[\"--search\"]').",
+    )
     parser.add_argument(
         "--quiet-start",
         type=int,
@@ -96,6 +125,26 @@ def _parse_args() -> argparse.Namespace:
         "--clear-quiet-hours",
         action="store_true",
         help="Remove quiet hour settings (use global config).",
+    )
+    parser.add_argument(
+        "--clear-provider",
+        action="store_true",
+        help="Remove provider override (use global config).",
+    )
+    parser.add_argument(
+        "--clear-model",
+        action="store_true",
+        help="Remove model override (use global config).",
+    )
+    parser.add_argument(
+        "--clear-reasoning-effort",
+        action="store_true",
+        help="Remove reasoning effort override (use global config/model default).",
+    )
+    parser.add_argument(
+        "--clear-cli-parameters",
+        action="store_true",
+        help="Remove job-specific CLI parameters.",
     )
     parser.add_argument(
         "--clear-dependency",
@@ -186,6 +235,36 @@ def _apply_updates(args: argparse.Namespace, job: dict[str, Any]) -> tuple[list[
             job["timezone"] = tz_val
             updated_fields.append("timezone")
 
+    if args.provider is not None and job.get("provider") != args.provider:
+        job["provider"] = args.provider
+        updated_fields.append("provider")
+
+    if args.model is not None:
+        model = args.model.strip()
+        if not model:
+            msg = "Model must not be empty"
+            raise ValueError(msg)
+        if job.get("model") != model:
+            job["model"] = model
+            updated_fields.append("model")
+
+    if args.reasoning_effort is not None and job.get("reasoning_effort") != args.reasoning_effort:
+        job["reasoning_effort"] = args.reasoning_effort
+        updated_fields.append("reasoning_effort")
+
+    if args.cli_parameters is not None:
+        try:
+            cli_params = json.loads(args.cli_parameters)
+        except json.JSONDecodeError as exc:
+            msg = f"Invalid --cli-parameters JSON: {exc}"
+            raise ValueError(msg) from exc
+        if not isinstance(cli_params, list):
+            msg = "--cli-parameters must be a JSON array"
+            raise ValueError(msg)
+        if job.get("cli_parameters") != cli_params:
+            job["cli_parameters"] = cli_params
+            updated_fields.append("cli_parameters")
+
     if args.quiet_start is not None:
         if job.get("quiet_start") != args.quiet_start:
             job["quiet_start"] = args.quiet_start
@@ -207,6 +286,22 @@ def _apply_updates(args: argparse.Namespace, job: dict[str, Any]) -> tuple[list[
             job.pop("quiet_start", None)
             job.pop("quiet_end", None)
             updated_fields.append("quiet_hours (cleared)")
+
+    if args.clear_provider and "provider" in job:
+        job.pop("provider", None)
+        updated_fields.append("provider (cleared)")
+
+    if args.clear_model and "model" in job:
+        job.pop("model", None)
+        updated_fields.append("model (cleared)")
+
+    if args.clear_reasoning_effort and "reasoning_effort" in job:
+        job.pop("reasoning_effort", None)
+        updated_fields.append("reasoning_effort (cleared)")
+
+    if args.clear_cli_parameters and "cli_parameters" in job:
+        job.pop("cli_parameters", None)
+        updated_fields.append("cli_parameters (cleared)")
 
     if args.clear_dependency:
         if "dependency" in job:
@@ -241,10 +336,18 @@ def main() -> None:
             args.description is not None,
             args.schedule is not None,
             args.timezone is not None,
+            args.provider is not None,
+            args.model is not None,
+            args.reasoning_effort is not None,
+            args.cli_parameters is not None,
             args.quiet_start is not None,
             args.quiet_end is not None,
             args.dependency is not None,
             args.clear_quiet_hours,
+            args.clear_provider,
+            args.clear_model,
+            args.clear_reasoning_effort,
+            args.clear_cli_parameters,
             args.clear_dependency,
             args.enable,
             args.disable,
