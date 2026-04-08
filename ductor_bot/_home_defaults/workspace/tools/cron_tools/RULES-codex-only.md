@@ -7,18 +7,17 @@ Scripts for creating, editing, listing, and removing scheduled jobs.
 **When the user requests a new cron job, you MUST ask:**
 
 1. **Which model?**
-   - `gpt-5.2-codex` - Frontier agentic coding model (recommended)
-   - `gpt-5.3-codex` - Latest frontier agentic coding model
-   - `gpt-5.1-codex-max` - Optimized for deep and fast reasoning
-   - `gpt-5.2` - Latest frontier model
-   - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+   - `gpt-5.4` - Latest frontier agentic coding model (recommended)
+   - `gpt-5.4-mini` - Smaller, faster frontier coding model
+   - `gpt-5.3-codex` - Frontier Codex-optimized coding model
+   - `gpt-5.2` - Optimized for long-running agent work
 
 2. **Which thinking level?**
    - `low` - Fast, surface-level reasoning
    - `medium` - Balanced (default)
    - `high` - Extended thinking
    - `xhigh` - Maximum reasoning depth
-   - Note: `gpt-5.1-codex-mini` only supports `medium` and `high`
+   - Most current Codex models support `low`, `medium`, `high`, `xhigh`
 
 3. **Should this job respect quiet hours?**
    - Ask: "Should this job skip execution during specific hours (e.g., at night)?"
@@ -66,7 +65,7 @@ python3 tools/cron_tools/cron_add.py \
   --title "Job Title" \
   --description "What this job does" \
   --schedule "0 9 * * *" \
-  --model gpt-5.2-codex \
+  --model gpt-5.4 \
   --reasoning-effort high
 ```
 
@@ -86,7 +85,7 @@ python3 tools/cron_tools/cron_list.py
 ```bash
 python3 tools/cron_tools/cron_edit.py "exact-job-id" --schedule "30 8 * * *"
 python3 tools/cron_tools/cron_edit.py "exact-job-id" --timezone "Europe/Berlin"
-python3 tools/cron_tools/cron_edit.py "exact-job-id" --model gpt-5.3-codex
+python3 tools/cron_tools/cron_edit.py "exact-job-id" --model gpt-5.4
 python3 tools/cron_tools/cron_edit.py "exact-job-id" --reasoning-effort xhigh
 python3 tools/cron_tools/cron_edit.py "exact-job-id" --enable
 python3 tools/cron_tools/cron_edit.py "exact-job-id" --disable

@@ -8,12 +8,11 @@ For cron tool commands (add/edit/remove/list), see `tools/cron_tools/CLAUDE.md`.
 **CRITICAL: When creating a new cron job, you MUST ALWAYS ask the user these questions:**
 
 1. **Which model?** (`--model <name>`)
-   - Options: `gpt-5.2-codex` (recommended), `gpt-5.3-codex`, `gpt-5.1-codex-max`, `gpt-5.2`, `gpt-5.1-codex-mini`
+   - Options: `gpt-5.4` (recommended), `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.2`
    - Default if user doesn't specify: Use global config model
 
 2. **Which thinking level?** (`--reasoning-effort <level>`)
    - Options: `low`, `medium` (default), `high`, `xhigh`
-   - Note: `gpt-5.1-codex-mini` only supports `medium` and `high`
    - Default if user doesn't specify: `medium` (model default)
 
 **YOU MUST present these options to the user and wait for their answers BEFORE calling cron_add.py!**
@@ -29,11 +28,10 @@ User: "Create a cron job to analyze data every hour"
 You: "I'll create a cron job to analyze data every hour. Let me configure the execution:
 
 1. **Model**: Which Codex model?
-   - `gpt-5.2-codex` (recommended, balanced performance)
-   - `gpt-5.3-codex` (latest, most capable)
-   - `gpt-5.1-codex-max` (optimized for deep reasoning)
-   - `gpt-5.2` (latest frontier model)
-   - `gpt-5.1-codex-mini` (faster, cheaper, limited reasoning)
+   - `gpt-5.4` (recommended, most capable)
+   - `gpt-5.4-mini` (faster, cheaper)
+   - `gpt-5.3-codex` (Codex-optimized)
+   - `gpt-5.2` (good for long-running agent work)
 
 2. **Thinking level**: How deeply should it reason?
    - `low` (fast, surface-level)
@@ -78,14 +76,12 @@ Each cron task can override global config settings in `cron_jobs.json`:
 
 - `model`: Model name (optional, defaults to global config)
   - Available models:
-    - `"gpt-5.2-codex"` - Frontier agentic coding model
-    - `"gpt-5.3-codex"` - Latest frontier agentic coding model
-    - `"gpt-5.1-codex-max"` - Codex-optimized for deep and fast reasoning
-    - `"gpt-5.2"` - Latest frontier model
-    - `"gpt-5.1-codex-mini"` - Cheaper, faster (limited reasoning)
+    - `"gpt-5.4"` - Latest frontier agentic coding model
+    - `"gpt-5.4-mini"` - Smaller, faster frontier coding model
+    - `"gpt-5.3-codex"` - Frontier Codex-optimized coding model
+    - `"gpt-5.2"` - Optimized for long-running agent work
 - `reasoning_effort`: Thinking level (optional, defaults to `"medium"`)
-  - Most models: `"low"`, `"medium"`, `"high"`, `"xhigh"`
-  - `gpt-5.1-codex-mini`: `"medium"`, `"high"` only
+  - Typical values: `"low"`, `"medium"`, `"high"`, `"xhigh"`
 - `cli_parameters`: List of additional CLI flags (optional, advanced users only)
 
 **Fallback behavior:**
@@ -100,12 +96,12 @@ Each cron task can override global config settings in `cron_jobs.json`:
   "schedule": "0 8 * * *",
   "task_folder": "analyzer",
   "agent_instruction": "Analyze daily data with extended thinking",
-  "model": "gpt-5.2-codex",
+  "model": "gpt-5.4",
   "reasoning_effort": "high"
 }
 ```
 
 **Use cases:**
 - High-reasoning analysis: `"reasoning_effort": "high"`
-- Fast iteration with mini: `"model": "gpt-5.1-codex-mini"`, `"reasoning_effort": "medium"`
+- Fast iteration with mini: `"model": "gpt-5.4-mini"`, `"reasoning_effort": "medium"`
 - Advanced CLI flags: `"cli_parameters": [...]` (only if user explicitly requests)
