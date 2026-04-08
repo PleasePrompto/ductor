@@ -131,6 +131,92 @@ def test_cron_edit_disable_then_enable(tmp_path: Path) -> None:
     assert _job(tmp_path, "toggle-job")["enabled"] is True
 
 
+def test_cron_edit_updates_provider_model_effort_and_cli_parameters(tmp_path: Path) -> None:
+    _add_job(tmp_path, "codex-job")
+
+    result = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "codex-job",
+            "--provider",
+            "codex",
+            "--model",
+            "gpt-5.4",
+            "--reasoning-effort",
+            "xhigh",
+            "--cli-parameters",
+            '["--search","--skip-git-repo-check"]',
+        ],
+    )
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["updated"] is True
+    assert "provider" in output["updated_fields"]
+    assert "model" in output["updated_fields"]
+    assert "reasoning_effort" in output["updated_fields"]
+    assert "cli_parameters" in output["updated_fields"]
+
+    job = _job(tmp_path, "codex-job")
+    assert job["provider"] == "codex"
+    assert job["model"] == "gpt-5.4"
+    assert job["reasoning_effort"] == "xhigh"
+    assert job["cli_parameters"] == ["--search", "--skip-git-repo-check"]
+
+
+def test_cron_edit_can_clear_execution_overrides(tmp_path: Path) -> None:
+    _add_job(tmp_path, "clear-job")
+    seeded = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "clear-job",
+            "--provider",
+            "codex",
+            "--model",
+            "gpt-5.4",
+            "--reasoning-effort",
+            "high",
+            "--cli-parameters",
+            '["--search"]',
+        ],
+    )
+    assert seeded.returncode == 0
+
+    cleared = _run(
+        tmp_path,
+        TOOL_EDIT,
+        [
+            "clear-job",
+            "--clear-provider",
+            "--clear-model",
+            "--clear-reasoning-effort",
+            "--clear-cli-parameters",
+        ],
+    )
+    assert cleared.returncode == 0
+    output = json.loads(cleared.stdout)
+    assert "provider (cleared)" in output["updated_fields"]
+    assert "model (cleared)" in output["updated_fields"]
+    assert "reasoning_effort (cleared)" in output["updated_fields"]
+    assert "cli_parameters (cleared)" in output["updated_fields"]
+
+    job = _job(tmp_path, "clear-job")
+    assert "provider" not in job
+    assert "model" not in job
+    assert "reasoning_effort" not in job
+    assert "cli_parameters" not in job
+
+
+def test_cron_edit_rejects_invalid_cli_parameters_json(tmp_path: Path) -> None:
+    _add_job(tmp_path, "bad-json")
+
+    result = _run(tmp_path, TOOL_EDIT, ["bad-json", "--cli-parameters", '{"oops":true}'])
+    assert result.returncode == 1
+    output = json.loads(result.stdout)
+    assert "JSON array" in output["error"]
+
+
 def test_cron_edit_no_change_flags_exits_1(tmp_path: Path) -> None:
     _add_job(tmp_path, "no-change")
     result = _run(tmp_path, TOOL_EDIT, ["no-change"])
