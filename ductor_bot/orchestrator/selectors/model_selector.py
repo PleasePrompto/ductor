@@ -162,12 +162,12 @@ async def model_selector_start(
         return await _build_model_step(provider, header, codex_cache)
 
     buttons: list[Button] = []
-    if "claude" in authed:
-        buttons.append(Button(text="CLAUDE", callback_data="ms:p:claude"))
     if "codex" in authed:
         buttons.append(Button(text="CODEX", callback_data="ms:p:codex"))
     if "gemini" in authed:
         buttons.append(Button(text="GEMINI", callback_data="ms:p:gemini"))
+    if "opencode" in authed:
+        buttons.append(Button(text="OPENCODE", callback_data="ms:p:opencode"))
 
     keyboard = ButtonGrid(rows=[buttons])
     return SelectorResponse(text=f"{header}\n\n{t('model.pick_provider')}", buttons=keyboard)

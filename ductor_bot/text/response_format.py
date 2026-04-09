@@ -67,7 +67,7 @@ def timeout_error_text(model: str, timeout_seconds: float) -> str:
 
 def new_session_text(provider: str) -> str:
     """Build /new response for provider-local reset."""
-    provider_label = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}.get(
+    provider_label = {"codex": "Codex", "gemini": "Gemini", "opencode": "OpenCode"}.get(
         provider.lower(), provider
     )
     return fmt(

@@ -887,22 +887,21 @@ class TelegramBot:
 
         if len(providers) == 1:
             p = next(iter(providers))
-            if p == "claude":
-                lines.append(t("session_help.claude_single"))
-                lines.append(t("session_help.claude_model"))
-            elif p == "codex":
+            if p == "codex":
                 lines.append(t("session_help.codex_single"))
-            else:
+            elif p == "gemini":
                 lines.append(t("session_help.gemini_single"))
                 lines.append(t("session_help.gemini_model"))
+            elif p == "opencode":
+                lines.append(t("session_help.opencode_single"))
         else:
             lines.append(t("session_help.default_provider"))
-            if "claude" in providers:
-                lines.append(t("session_help.claude_multi"))
             if "codex" in providers:
                 lines.append(t("session_help.codex_multi"))
             if "gemini" in providers:
                 lines.append(t("session_help.gemini_multi"))
+            if "opencode" in providers:
+                lines.append(t("session_help.opencode_multi"))
             lines.append(t("session_help.explicit"))
 
         lines += [
@@ -997,7 +996,7 @@ class TelegramBot:
                 ns = self._orch.get_named_session(chat_id, session_name)
                 provider = ns.provider if ns else (provider_override or self._orch.config.provider)
                 model = ns.model if ns else ""
-                provider_label = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini"}.get(
+                provider_label = {"codex": "Codex", "gemini": "Gemini", "opencode": "OpenCode"}.get(
                     provider, provider
                 )
                 model_info = f" ({model})" if model else ""

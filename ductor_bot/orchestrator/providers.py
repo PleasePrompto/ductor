@@ -69,10 +69,10 @@ class ProviderManager:
     def active_provider_name(self) -> str:
         """Human-readable name for the active CLI provider."""
         _model, provider = self.resolve_runtime_target(self._config.model)
-        if provider == "claude":
-            return "Claude Code"
         if provider == "gemini":
             return "Gemini"
+        if provider == "opencode":
+            return "OpenCode"
         return "Codex"
 
     # -- Auth / init ----------------------------------------------------------
