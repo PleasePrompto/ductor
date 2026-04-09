@@ -195,9 +195,6 @@ def _gemini_models_js_from_node_modules_root(node_modules_root: Path) -> Path:
 def _gemini_models_js_candidates_from_cli_path(cli_path: Path) -> tuple[Path, ...]:
     candidates: list[Path] = []
 
-    # When cli_path is a resolved symlink (e.g.
-    # .../gemini-cli/dist/index.js), walk up to the gemini-cli package root
-    # and look for models.js in its node_modules.
     gemini_cli_root = _find_gemini_cli_package_root(cli_path)
     if gemini_cli_root is not None:
         candidates.append(
@@ -211,9 +208,6 @@ def _gemini_models_js_candidates_from_cli_path(cli_path: Path) -> tuple[Path, ..
             / "models.js"
         )
 
-    # NVM layout: .../bin/gemini -> two parents up is the node version dir.
-    # Only useful when cli_path is the unresolved bin-stub, not the resolved
-    # dist/index.js path.
     node_version_dir = cli_path.parent.parent
     candidates.append(
         node_version_dir
@@ -230,7 +224,6 @@ def _gemini_models_js_candidates_from_cli_path(cli_path: Path) -> tuple[Path, ..
         / "models.js"
     )
 
-    # npm global Windows/flat layout
     candidates.append(
         cli_path.parent
         / "node_modules"
@@ -245,7 +238,14 @@ def _gemini_models_js_candidates_from_cli_path(cli_path: Path) -> tuple[Path, ..
         / "models.js"
     )
 
-    # Deduplicate while preserving order.
+    if gemini_cli_root is not None:
+        candidates.extend(_gemini_cellar_candidates(gemini_cli_root))
+
+    resolved = cli_path.resolve()
+    for c in _gemini_cellar_candidates(resolved.parent):
+        if c not in candidates:
+            candidates.append(c)
+
     seen: set[Path] = set()
     deduped: list[Path] = []
     for c in candidates:
@@ -253,6 +253,45 @@ def _gemini_models_js_candidates_from_cli_path(cli_path: Path) -> tuple[Path, ..
             seen.add(c)
             deduped.append(c)
     return tuple(deduped)
+
+
+def _gemini_cellar_candidates(start: Path) -> list[Path]:
+    """Walk up from *start* to find Homebrew Cellar and return gemini-cli-core models.js paths."""
+    found: list[Path] = []
+    current = start
+    for _ in range(20):
+        cellar_root = current / "Cellar" / "gemini-cli"
+        if cellar_root.is_dir():
+            try:
+                versions = sorted(cellar_root.iterdir(), reverse=True)
+            except OSError:
+                break
+            for version_dir in versions:
+                if not version_dir.is_dir():
+                    continue
+                candidate = (
+                    version_dir
+                    / "libexec"
+                    / "lib"
+                    / "node_modules"
+                    / "@google"
+                    / "gemini-cli"
+                    / "node_modules"
+                    / "@google"
+                    / "gemini-cli-core"
+                    / "dist"
+                    / "src"
+                    / "config"
+                    / "models.js"
+                )
+                if candidate.is_file():
+                    found.append(candidate)
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return found
 
 
 def _find_gemini_cli_package_root(path: Path) -> Path | None:
