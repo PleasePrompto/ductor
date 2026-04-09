@@ -33,6 +33,68 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT = 600.0
 
 
+class _OpenCodeServer:
+    """Singleton that manages the opencode serve daemon lifecycle."""
+
+    __slots__ = ("_lock", "_process", "_url")
+
+    def __init__(self) -> None:
+        self._url: str | None = None
+        self._process: asyncio.subprocess.Process | None = None
+        self._lock: asyncio.Lock = asyncio.Lock()
+
+    async def ensure_running(self, *, port: int = 4096) -> str:
+        """Start opencode serve daemon if not running, return the server URL."""
+        if self._url is not None:
+            return self._url
+
+        async with self._lock:
+            cli_path = find_opencode_cli()
+            process = await asyncio.create_subprocess_exec(
+                cli_path,
+                "serve",
+                "--port",
+                str(port),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=_CREATION_FLAGS,
+            )
+            self._process = process
+
+            try:
+                async with asyncio.timeout(10.0):
+                    if process.stdout is None:
+                        raise RuntimeError("opencode serve created without stdout pipe")
+                    line = await process.stdout.readline()
+                    if not line:
+                        if process.stderr is None:
+                            raise RuntimeError("opencode serve created without stderr pipe")
+                        stderr_b = await process.stderr.read()
+                        raise RuntimeError(
+                            f"opencode serve failed to start: {stderr_b.decode(errors='replace')[:500]}"
+                        ) from None
+                    decoded = line.decode(errors="replace").strip()
+                    logger.info("opencode serve: %s", decoded)
+                    if "http://" in decoded or "https://" in decoded:
+                        self._url = decoded.split("listening on ")[-1].strip()
+                    else:
+                        self._url = f"http://127.0.0.1:{port}"
+            except TimeoutError:
+                process.kill()
+                raise RuntimeError("opencode serve timed out during startup") from None
+
+            logger.info("opencode server started at %s", self._url)
+            return self._url
+
+
+_server = _OpenCodeServer()
+
+
+async def _ensure_opencode_server(*, port: int = 4096) -> str:
+    """Start opencode serve daemon if not running, return the server URL."""
+    return await _server.ensure_running(port=port)
+
+
 def find_opencode_cli() -> str:
     """Find the opencode binary."""
     path = shutil.which("opencode")
@@ -71,6 +133,7 @@ class OpenCodeCLI(BaseCLI):
         *,
         resume_session: str | None = None,
         continue_session: bool = False,
+        server_url: str | None = None,
     ) -> list[str]:
         """Build the CLI command list."""
         cfg = self._config
@@ -86,6 +149,9 @@ class OpenCodeCLI(BaseCLI):
             cmd += ["-s", resume_session]
         elif continue_session:
             cmd.append("-c")
+
+        if server_url:
+            cmd += ["--attach", server_url]
 
         cmd.extend(["--format", "json"])
 
@@ -103,10 +169,15 @@ class OpenCodeCLI(BaseCLI):
         timeout_controller: TimeoutController | None = None,
     ) -> CLIResponse:
         """Execute a non-streaming OpenCode CLI call."""
-        cmd = self._build_command(resume_session=resume_session, continue_session=continue_session)
+        server_url = await _ensure_opencode_server()
+        cmd = self._build_command(
+            resume_session=resume_session,
+            continue_session=continue_session,
+            server_url=server_url,
+        )
         return await self._execute_oneshot(cmd, prompt, timeout_seconds, timeout_controller)
 
-    def send_streaming(
+    async def send_streaming(
         self,
         prompt: str,
         resume_session: str | None = None,
@@ -115,8 +186,14 @@ class OpenCodeCLI(BaseCLI):
         timeout_controller: TimeoutController | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Stream events from OpenCode CLI."""
-        cmd = self._build_command(resume_session=resume_session, continue_session=continue_session)
-        return self._stream_events(cmd, prompt, timeout_seconds, timeout_controller)
+        server_url = await _ensure_opencode_server()
+        cmd = self._build_command(
+            resume_session=resume_session,
+            continue_session=continue_session,
+            server_url=server_url,
+        )
+        async for event in self._stream_events(cmd, prompt, timeout_seconds, timeout_controller):
+            yield event
 
     async def _execute_oneshot(
         self,
