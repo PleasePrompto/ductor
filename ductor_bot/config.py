@@ -454,6 +454,8 @@ class ModelRegistry:
             or model_id.startswith(("gemini-", "auto-gemini-"))
         ):
             return "gemini"
+        if model_id.startswith(("minimax/", "kimi-for-coding/", "opencode/")):
+            return "opencode"
         return "codex"
 
 
