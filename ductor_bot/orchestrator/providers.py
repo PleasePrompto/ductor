@@ -148,6 +148,8 @@ class ProviderManager:
             return ""
         if provider == "gemini":
             return ""
+        if provider == "opencode":
+            return "minimax/MiniMax-M2.7"
         return ""
 
     def resolve_session_directive(self, key: str) -> tuple[str, str] | None:
@@ -158,7 +160,7 @@ class ProviderManager:
         - known model   (``@opus``)  -> (inferred_provider, model)
         - unknown                    -> None
         """
-        if key in ("claude", "codex", "gemini"):
+        if key in ("claude", "codex", "gemini", "opencode"):
             return key, self.default_model_for_provider(key)
         if self.is_known_model(key):
             provider = self._models.provider_for(key)

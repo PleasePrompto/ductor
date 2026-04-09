@@ -159,7 +159,7 @@ async def model_selector_start(
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
         )
-        return await _build_model_step(provider, header, codex_cache)
+        return await _build_model_step(orch, key, provider, header, codex_cache)
 
     buttons: list[Button] = []
     if "claude" in authed:
@@ -193,7 +193,9 @@ async def handle_model_callback(
     )
 
     if action == "p":
-        return await _build_model_step(payload, await _status_line(orch, key), codex_cache)
+        return await _build_model_step(
+            orch, key, payload, await _status_line(orch, key), codex_cache
+        )
 
     if action == "m":
         return await _handle_model_selected(orch, key, payload, codex_cache)
@@ -204,7 +206,9 @@ async def handle_model_callback(
     if action == "b":
         if payload == "root":
             return await model_selector_start(orch, key)
-        return await _build_model_step(payload, await _status_line(orch, key), codex_cache)
+        return await _build_model_step(
+            orch, key, payload, await _status_line(orch, key), codex_cache
+        )
 
     logger.warning("Unknown model selector callback: %s", data)
     return SelectorResponse(text=t("model.unknown_action"))
@@ -330,6 +334,8 @@ async def _status_line(orch: Orchestrator, key: SessionKey) -> str:
 
 
 async def _build_model_step(
+    orch: Orchestrator,
+    key: SessionKey,
     provider: str,
     header: str,
     codex_cache: CodexModelCache | None = None,
@@ -363,6 +369,11 @@ async def _build_model_step(
         keyboard = ButtonGrid(rows=gemini_rows)
         return SelectorResponse(text=f"{header}\n\n{t('model.select_gemini')}", buttons=keyboard)
 
+    if provider == "opencode":
+        default = orch.default_model_for_provider("opencode")
+        result = await switch_model(orch, key, default)
+        return SelectorResponse(text=result)
+
     # Use cache instead of live discovery
     codex_models = codex_cache.models if codex_cache else []
     if not codex_models:
@@ -391,7 +402,7 @@ async def _handle_model_selected(
     """Handle a model button press. Claude/Gemini: switch immediately. Codex: show reasoning."""
     provider = orch.models.provider_for(model_id)
 
-    if provider in ("claude", "gemini"):
+    if provider in ("claude", "gemini", "opencode"):
         result = await switch_model(orch, key, model_id)
         return SelectorResponse(text=result)
 
