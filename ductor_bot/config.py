@@ -156,6 +156,7 @@ class CLIParametersConfig(BaseModel):
     claude: list[str] = Field(default_factory=list)
     codex: list[str] = Field(default_factory=list)
     gemini: list[str] = Field(default_factory=list)
+    opencode: list[str] = Field(default_factory=list)
 
 
 class MatrixConfig(BaseModel):

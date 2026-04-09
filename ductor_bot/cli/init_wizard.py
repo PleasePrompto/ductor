@@ -17,7 +17,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from ductor_bot.cli.auth import AuthStatus, check_claude_auth, check_codex_auth, check_gemini_auth
+from ductor_bot.cli.auth import (
+    AuthStatus,
+    check_claude_auth,
+    check_codex_auth,
+    check_gemini_auth,
+    check_opencode_auth,
+)
 from ductor_bot.config import DEFAULT_EMPTY_GEMINI_API_KEY, AgentConfig, deep_merge_config
 from ductor_bot.i18n import t_rich
 from ductor_bot.workspace.init import init_workspace
@@ -101,15 +107,22 @@ def _check_clis(console: Console) -> None:
     claude = check_claude_auth()
     codex = check_codex_auth()
     gemini = check_gemini_auth()
+    opencode = check_opencode_auth()
 
     lines = [
         t_rich("wizard.cli_backends.header"),
         t_rich("wizard.cli_backends.claude", status=_STATUS_ICON[claude.status]),
         t_rich("wizard.cli_backends.codex", status=_STATUS_ICON[codex.status]),
         t_rich("wizard.cli_backends.gemini", status=_STATUS_ICON[gemini.status]),
+        t_rich("wizard.cli_backends.opencode", status=_STATUS_ICON[opencode.status]),
     ]
 
-    has_auth = claude.is_authenticated or codex.is_authenticated or gemini.is_authenticated
+    has_auth = (
+        claude.is_authenticated
+        or codex.is_authenticated
+        or gemini.is_authenticated
+        or opencode.is_authenticated
+    )
 
     if has_auth:
         border = "green"
