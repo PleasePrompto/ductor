@@ -10,6 +10,7 @@ header = "[bold]Detected AI Backends:[/bold]\n"
 claude = "  Claude Code CLI   {status}"
 codex = "  OpenAI Codex CLI  {status}"
 gemini = "  Google Gemini CLI {status}"
+opencode = "  OpenCode CLI      {status}"
 no_auth = """\
 \n[bold red]At least one CLI must be installed and authenticated.[/bold red]\n
   Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]

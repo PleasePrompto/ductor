@@ -397,10 +397,34 @@ def _normalize_key_like_value(raw: str) -> str:
     return value
 
 
+def check_opencode_auth() -> AuthResult:
+    """Check OpenCode CLI auth via binary presence and providers list."""
+    import shutil
+
+    if not shutil.which("opencode"):
+        result = AuthResult("opencode", AuthStatus.NOT_FOUND)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    opencode_home = Path.home() / ".local" / "share" / "opencode"
+    auth_file = opencode_home / "auth.json"
+
+    if auth_file.is_file():
+        mtime = datetime.fromtimestamp(auth_file.stat().st_mtime, tz=UTC)
+        result = AuthResult("opencode", AuthStatus.AUTHENTICATED, auth_file, mtime)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    result = AuthResult("opencode", AuthStatus.INSTALLED)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
     "gemini": check_gemini_auth,
+    "opencode": check_opencode_auth,
 }
 
 

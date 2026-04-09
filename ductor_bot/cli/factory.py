@@ -22,6 +22,11 @@ def create_cli(config: CLIConfig) -> BaseCLI:
 
         return CodexCLI(config)
 
+    if config.provider == "opencode":
+        from ductor_bot.cli.opencode_provider import OpenCodeCLI
+
+        return OpenCodeCLI(config)
+
     from ductor_bot.cli.claude_provider import ClaudeCodeCLI
 
     return ClaudeCodeCLI(config)
