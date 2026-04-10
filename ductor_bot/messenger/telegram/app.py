@@ -203,8 +203,10 @@ class TelegramBot:
 
         allowed = set(config.allowed_user_ids)
         allowed_groups = set(config.allowed_group_ids)
+        allowed_channels = set(config.allowed_channel_ids)
         self._allowed_users = allowed
         self._allowed_groups = allowed_groups
+        self._allowed_channels = allowed_channels
         self._chat_tracker: ChatTracker | None = None  # set in _on_startup
         self._topic_names = TopicNameCache()
         self._lock_pool = lock_pool or LockPool()
@@ -367,6 +369,10 @@ class TelegramBot:
             self._allowed_groups.update(config.allowed_group_ids)
             logger.info("Auth hot-reloaded: allowed_group_ids (%d)", len(self._allowed_groups))
             self._group_audit_task = asyncio.create_task(self._fire_audit())
+        if "allowed_channel_ids" in hot:
+            self._allowed_channels.clear()
+            self._allowed_channels.update(config.allowed_channel_ids)
+            logger.info("Auth hot-reloaded: allowed_channel_ids (%d)", len(self._allowed_channels))
         if "language" in hot:
             _rebuild_commands()
             self._lang_sync_task = asyncio.create_task(self._sync_commands())
@@ -380,9 +386,17 @@ class TelegramBot:
             self._chat_tracker.record_rejected(chat_id, chat_type, title)
 
     async def _on_bot_added(self, event: ChatMemberUpdated) -> None:
-        """Bot was added to a group."""
+        """Bot was added to a group or channel."""
         chat = event.chat
-        allowed = chat.id in self._allowed_groups
+        is_channel = chat.type == "channel"
+        if is_channel:
+            allowed = chat.id in self._allowed_channels
+            reject_key = "telegram.channel_not_whitelisted"
+            chat_kind = "channel"
+        else:
+            allowed = chat.id in self._allowed_groups
+            reject_key = "telegram.group_rejected"
+            chat_kind = "group"
         if self._chat_tracker:
             self._chat_tracker.record_join(
                 chat.id,
@@ -394,13 +408,18 @@ class TelegramBot:
             with contextlib.suppress(TelegramAPIError):
                 await self._bot.send_message(
                     chat.id,
-                    t("telegram.group_rejected"),
+                    t(reject_key),
                 )
             with contextlib.suppress(TelegramAPIError):
                 await self._bot.leave_chat(chat.id)
             if self._chat_tracker:
                 self._chat_tracker.record_leave(chat.id, "auto_left")
-            logger.info("Auto-left unauthorized group chat_id=%d title=%s", chat.id, chat.title)
+            logger.info(
+                "Auto-left unauthorized %s chat_id=%d title=%s",
+                chat_kind,
+                chat.id,
+                chat.title,
+            )
             return
         await self._send_join_notification(chat.id)
 
@@ -459,7 +478,10 @@ class TelegramBot:
         for rec in self._chat_tracker.get_all():
             if rec.status != "active":
                 continue
-            if rec.chat_id in self._allowed_groups:
+            if rec.chat_type == "channel":
+                if rec.chat_id in self._allowed_channels:
+                    continue
+            elif rec.chat_id in self._allowed_groups:
                 continue
             # Not allowed — try to leave.
             try:
