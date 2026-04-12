@@ -136,6 +136,11 @@ class MatrixBot:
         # Keep references to fire-and-forget tasks so they aren't GC'd
         self._background_tasks: set[asyncio.Task[None]] = set()
 
+        # Message queue: dedup, pending task tracking, drain-on-stop
+        from ductor_bot.messenger.matrix.message_queue import MatrixMessageQueue
+
+        self._message_queue = MatrixMessageQueue()
+
         # Block message processing until initial sync completes
         self._ready = False
 
@@ -260,11 +265,12 @@ class MatrixBot:
 
     # --- Task management ---
 
-    def _spawn_task(self, coro: Coroutine[object, object, None], *, name: str) -> None:
+    def _spawn_task(self, coro: Coroutine[object, object, None], *, name: str) -> asyncio.Task[None]:
         """Create a tracked background task (prevents GC of fire-and-forget tasks)."""
         task: asyncio.Task[None] = asyncio.create_task(coro, name=name)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+        return task
 
     # --- Message handling ---
 
@@ -298,6 +304,10 @@ class MatrixBot:
         if not self._should_process_event(room, event, event.sender):
             return
 
+        # Dedup: skip if this event was already processed (sync replay)
+        if self._message_queue.is_duplicate(event.event_id):
+            return
+
         text = event.body.strip()
         if not text:
             return
@@ -329,10 +339,12 @@ class MatrixBot:
             return
 
         key = SessionKey.matrix(chat_id)
-        self._spawn_task(
+        task = self._spawn_task(
             self._dispatch_with_lock(key, text, room_id, event),
             name=f"mx-msg-{room_id[:8]}",
         )
+        if task is not None:
+            self._message_queue.track(chat_id=chat_id, task=task)
 
     async def _on_media(self, room: MatrixRoom | object, event: RoomMessageMedia | object) -> None:
         """Handle incoming media messages (images, audio, video, files)."""
@@ -345,6 +357,10 @@ class MatrixBot:
             return
 
         if not self._should_process_event(room, event, event.sender):
+            return
+
+        # Dedup: skip if this event was already processed (sync replay)
+        if self._message_queue.is_duplicate(event.event_id):
             return
 
         # Group mention-only filter: in group rooms, only process if addressed
@@ -383,10 +399,12 @@ class MatrixBot:
             return
 
         key = SessionKey.matrix(chat_id)
-        self._spawn_task(
+        task = self._spawn_task(
             self._dispatch_with_lock(key, text, room_id, event),
             name=f"mx-media-{room_id[:8]}",
         )
+        if task is not None:
+            self._message_queue.track(chat_id=chat_id, task=task)
 
     async def _handle_command(self, text: str, room_id: str, chat_id: int, event: object) -> None:
         """Handle commands in Matrix. Supports both !cmd and /cmd prefixes."""
@@ -432,13 +450,16 @@ class MatrixBot:
     # -- Individual command handlers ----------------------------------------
 
     async def _cmd_stop(self, *, text: str, room_id: str, key: SessionKey, event: object) -> None:
-        """Stop running processes for this chat."""
+        """Stop running processes for this chat and drain queued messages."""
+        # Drain queued message tasks first so they don't re-trigger after abort
+        drained = self._message_queue.drain(chat_id=key.chat_id)
         orch = self._orchestrator
         if orch:
             killed = await orch.abort(key.chat_id)
+            killed += drained
             msg = t("abort_all.done", count=killed) if killed else t("abort_all.nothing")
         else:
-            msg = t("abort_all.nothing")
+            msg = t("abort_all.done", count=drained) if drained else t("abort_all.nothing")
         await self._send_rich(room_id, msg)
 
     async def _cmd_interrupt(
@@ -455,10 +476,12 @@ class MatrixBot:
         self, *, text: str, room_id: str, key: SessionKey, event: object
     ) -> None:
         """Stop all running processes across all chats and agents."""
+        # Drain all queued message tasks
+        drained = self._message_queue.drain(chat_id=key.chat_id)
         orch = self._orchestrator
-        killed = 0
+        killed = drained
         if orch:
-            killed = await orch.abort_all()
+            killed += await orch.abort_all()
         if self._abort_all_callback:
             killed += await self._abort_all_callback()
         msg = t("abort_all.done", count=killed) if killed else t("abort_all.nothing")
