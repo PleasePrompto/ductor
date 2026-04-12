@@ -149,7 +149,7 @@ class ProviderManager:
         if provider == "gemini":
             return ""
         if provider == "opencode":
-            return "minimax/MiniMax-M2.7"
+            return self._config.model if self._config.provider == "opencode" else "opencode/kimi-k2.5"
         return ""
 
     def resolve_session_directive(self, key: str) -> tuple[str, str] | None:
