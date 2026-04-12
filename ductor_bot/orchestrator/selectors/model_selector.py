@@ -168,6 +168,8 @@ async def model_selector_start(
         buttons.append(Button(text="CODEX", callback_data="ms:p:codex"))
     if "gemini" in authed:
         buttons.append(Button(text="GEMINI", callback_data="ms:p:gemini"))
+    if "opencode" in authed:
+        buttons.append(Button(text="OPENCODE", callback_data="ms:p:opencode"))
 
     keyboard = ButtonGrid(rows=[buttons])
     return SelectorResponse(text=f"{header}\n\n{t('model.pick_provider')}", buttons=keyboard)
