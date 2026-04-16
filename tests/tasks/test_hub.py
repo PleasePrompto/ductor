@@ -26,6 +26,10 @@ def _make_config(**overrides: object) -> MagicMock:
     config.enabled = True
     config.max_parallel = 5
     config.timeout_seconds = 60.0
+    config.capacity_retry_attempts = 2
+    config.capacity_retry_base_delay_seconds = 0.01
+    config.capacity_retry_jitter_seconds = 0.0
+    config.capacity_retry_max_delay_seconds = 0.02
     for k, v in overrides.items():
         setattr(config, k, v)
     return config
@@ -160,6 +164,82 @@ class TestRunAndDeliver:
         assert len(delivered) == 1
         assert delivered[0].status == "failed"
         assert "rate limit" in delivered[0].error.lower()
+
+        await hub.shutdown()
+
+    async def test_retries_capacity_then_succeeds(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        cli = _make_cli_service()
+        capacity = MagicMock(
+            result='{"type":"turn.failed","error":{"message":"Selected model is at capacity. Please try a different model."}}',
+            session_id="sess-cap",
+            is_error=True,
+            timed_out=False,
+            num_turns=0,
+        )
+        success = MagicMock(
+            result="task output",
+            session_id="sess-ok",
+            is_error=False,
+            timed_out=False,
+            num_turns=2,
+        )
+        cli.execute = AsyncMock(side_effect=[capacity, success])
+
+        delivered: list[TaskResult] = []
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.2)
+
+        assert cli.execute.await_count == 2
+        assert len(delivered) == 1
+        assert delivered[0].status == "done"
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "done"
+        assert entry.session_id == "sess-ok"
+
+        await hub.shutdown()
+
+    async def test_capacity_retry_exhaustion_fails_cleanly(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        cli = _make_cli_service()
+        cli.execute = AsyncMock(
+            return_value=MagicMock(
+                result='{"type":"turn.failed","error":{"message":"Selected model is at capacity. Please try a different model."}}',
+                session_id="sess-cap",
+                is_error=True,
+                timed_out=False,
+                num_turns=0,
+            )
+        )
+
+        delivered: list[TaskResult] = []
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(capacity_retry_attempts=2),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        hub.submit(_submit())
+        await asyncio.sleep(0.2)
+
+        assert cli.execute.await_count == 3
+        assert len(delivered) == 1
+        assert delivered[0].status == "failed"
+        assert "provider capacity persisted after 3 attempt" in delivered[0].error.lower()
 
         await hub.shutdown()
 

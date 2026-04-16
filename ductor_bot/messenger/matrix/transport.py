@@ -215,9 +215,16 @@ class MatrixTransport:
 
     async def _broadcast_webhook_cron(self, env: Envelope) -> None:
         title = env.metadata.get("hook_title", "?")
+        clean_result = sanitize_cron_result_text(env.result_text)
+        if env.result_text and not clean_result and env.status == "success":
+            logger.debug(
+                "Webhook cron result only had transport confirmations; skipping broadcast hook=%s",
+                title,
+            )
+            return
         text = (
-            f"**WEBHOOK (CRON TASK): {title}**\n\n{env.result_text}"
-            if env.result_text
+            f"**WEBHOOK (CRON TASK): {title}**\n\n{clean_result}"
+            if clean_result
             else f"**WEBHOOK (CRON TASK): {title}**\n\n_{env.status}_"
         )
         await self._broadcast(text)

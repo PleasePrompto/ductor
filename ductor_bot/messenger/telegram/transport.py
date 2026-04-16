@@ -299,8 +299,15 @@ class TelegramTransport:
 
     async def _broadcast_webhook_cron(self, env: Envelope) -> None:
         title = env.metadata.get("hook_title", "?")
+        clean_result = sanitize_cron_result_text(env.result_text)
+        if env.result_text and not clean_result and env.status == "success":
+            logger.debug(
+                "Webhook cron result only had transport confirmations; skipping broadcast hook=%s",
+                title,
+            )
+            return
         if env.result_text:
-            text = f"**WEBHOOK (CRON TASK): {title}**\n\n{env.result_text}"
+            text = f"**WEBHOOK (CRON TASK): {title}**\n\n{clean_result}"
         else:
             text = f"**WEBHOOK (CRON TASK): {title}**\n\n_{env.status}_"
         await self._bot.broadcast(text, SendRichOpts(allowed_roots=self._roots()))

@@ -177,6 +177,10 @@ class TasksConfig(BaseModel):
     enabled: bool = True
     max_parallel: int = 5
     timeout_seconds: float = 3600.0
+    capacity_retry_attempts: int = 6
+    capacity_retry_base_delay_seconds: float = 5.0
+    capacity_retry_jitter_seconds: float = 3.0
+    capacity_retry_max_delay_seconds: float = 120.0
 
 
 class TimeoutConfig(BaseModel):

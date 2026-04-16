@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import random
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import is_dataclass, replace
 from typing import TYPE_CHECKING
 
 from ductor_bot.tasks.models import TaskEntry, TaskInFlight, TaskResult, TaskSubmit
@@ -24,6 +26,11 @@ logger = logging.getLogger(__name__)
 _FINISHED = frozenset({"done", "failed", "cancelled"})
 _RESUMABLE = frozenset({"done", "failed", "cancelled", "waiting"})
 _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
+_CAPACITY_ERROR_PATTERNS = (
+    "selected model is at capacity",
+    "model is at capacity",
+    "at capacity. please try a different model",
+)
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, int, int | None], Awaitable[None]]
@@ -377,6 +384,7 @@ class TaskHub:
         try:
             timeout = self._config.timeout_seconds
 
+            # Pre-resolve effective provider/model so the entry is never empty
             request = AgentRequest(
                 prompt=prompt,
                 model_override=entry.model or None,
@@ -386,8 +394,6 @@ class TaskHub:
                 timeout_seconds=timeout,
                 resume_session=resume_session,
             )
-
-            # Pre-resolve effective provider/model so the entry is never empty
             eff_provider, eff_model = cli.resolve_provider(request)
             if eff_provider and not entry.provider:
                 self._registry.update_status(
@@ -396,9 +402,16 @@ class TaskHub:
                 entry.provider = eff_provider
                 entry.model = eff_model
 
-            response = await cli.execute(request)
+            response = await self._execute_with_capacity_retries(
+                cli,
+                entry,
+                prompt=prompt,
+                timeout=timeout,
+                resume_session=resume_session,
+            )
 
             elapsed = time.monotonic() - t0
+            session_id = response.session_id or resume_session or ""
             if response.timed_out:
                 status = "failed"
                 error = f"Timeout after {timeout:.0f}s"
@@ -417,7 +430,7 @@ class TaskHub:
             self._registry.update_status(
                 entry.task_id,
                 status,
-                session_id=response.session_id or "",
+                session_id=session_id,
                 completed_at=time.time(),
                 elapsed_seconds=elapsed,
                 error=error,
@@ -426,7 +439,6 @@ class TaskHub:
             )
 
             result_text = response.result or ""
-            session_id = response.session_id or ""
 
             # Append TASKMEMORY.md content so the parent gets the full picture
             if status == "done":
@@ -536,9 +548,131 @@ class TaskHub:
                 result.parent_agent,
             )
 
+    async def _execute_with_capacity_retries(
+        self,
+        cli: object,
+        entry: TaskEntry,
+        *,
+        prompt: str,
+        timeout: float,
+        resume_session: str | None,
+    ) -> object:
+        """Execute a task request, retrying bounded provider-capacity failures."""
+        from ductor_bot.cli.types import AgentRequest
+
+        retry_attempts = _task_capacity_retry_attempts(self._config)
+        base_delay_s = _task_capacity_retry_base_delay_seconds(self._config)
+        jitter_s = _task_capacity_retry_jitter_seconds(self._config)
+        max_delay_s = _task_capacity_retry_max_delay_seconds(self._config)
+
+        current_resume_session = resume_session
+        attempt = 1
+
+        while True:
+            request = AgentRequest(
+                prompt=prompt,
+                model_override=entry.model or None,
+                provider_override=entry.provider or None,
+                chat_id=entry.chat_id,
+                process_label=f"task:{entry.task_id}",
+                timeout_seconds=timeout,
+                resume_session=current_resume_session,
+            )
+            response = await cli.execute(request)
+
+            if response.session_id:
+                current_resume_session = response.session_id
+
+            if (
+                response.is_error
+                and _is_capacity_retryable(response.result or "")
+                and attempt <= retry_attempts
+            ):
+                delay_s = _capacity_retry_delay_seconds(
+                    retry_number=attempt,
+                    base_delay_s=base_delay_s,
+                    jitter_s=jitter_s,
+                    max_delay_s=max_delay_s,
+                )
+                retry_msg = (
+                    "Provider capacity error on task "
+                    f"{entry.task_id} attempt {attempt}/{retry_attempts}; "
+                    f"retrying in {delay_s:.1f}s"
+                )
+                logger.warning("%s: %s", retry_msg, _single_line(response.result or "")[:300])
+                self._registry.update_status(
+                    entry.task_id,
+                    "running",
+                    session_id=current_resume_session or "",
+                    error=retry_msg,
+                    result_preview=(response.result or "")[:_RESULT_PREVIEW_LEN],
+                )
+                await asyncio.sleep(delay_s)
+                attempt += 1
+                continue
+
+            if response.is_error and _is_capacity_retryable(response.result or "") and retry_attempts:
+                response = _response_with_updates(
+                    response,
+                    result=(
+                        "Provider capacity persisted after "
+                        f"{attempt} attempt(s) "
+                        f"({retry_attempts} configured retries): "
+                        f"{response.result or 'CLI error'}"
+                    ),
+                )
+
+            if current_resume_session and not response.session_id:
+                response = _response_with_updates(response, session_id=current_resume_session)
+            return response
+
 
 _RESULT_PREVIEW_LEN = 200
 _TASKMEMORY_MAX_LEN = 4000
+
+
+def _is_capacity_retryable(error_text: str) -> bool:
+    normalized = _single_line(error_text).lower()
+    return any(pattern in normalized for pattern in _CAPACITY_ERROR_PATTERNS)
+
+
+def _capacity_retry_delay_seconds(
+    *,
+    retry_number: int,
+    base_delay_s: float,
+    jitter_s: float,
+    max_delay_s: float,
+) -> float:
+    exponential_delay = min(max_delay_s, base_delay_s * (2 ** max(0, retry_number - 1)))
+    return exponential_delay + random.uniform(0.0, max(0.0, jitter_s))
+
+
+def _task_capacity_retry_attempts(config: object) -> int:
+    return max(0, int(getattr(config, "capacity_retry_attempts", 6)))
+
+
+def _task_capacity_retry_base_delay_seconds(config: object) -> float:
+    return max(0.0, float(getattr(config, "capacity_retry_base_delay_seconds", 5.0)))
+
+
+def _task_capacity_retry_jitter_seconds(config: object) -> float:
+    return max(0.0, float(getattr(config, "capacity_retry_jitter_seconds", 3.0)))
+
+
+def _task_capacity_retry_max_delay_seconds(config: object) -> float:
+    return max(0.0, float(getattr(config, "capacity_retry_max_delay_seconds", 120.0)))
+
+
+def _single_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _response_with_updates(response: object, **updates: object) -> object:
+    if is_dataclass(response):
+        return replace(response, **updates)
+    for key, value in updates.items():
+        setattr(response, key, value)
+    return response
 
 
 def _append_taskmemory(result_text: str, taskmemory_path: Path) -> str:
