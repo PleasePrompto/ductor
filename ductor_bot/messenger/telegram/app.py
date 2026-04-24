@@ -405,7 +405,7 @@ class TelegramBot:
         r.message(Command("tasks", ignore_case=True))(self._on_tasks)
         r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
-        base_cmds = ["status", "memory", "model", "effort", "cron", "diagnose", "upgrade", "reset"]
+        base_cmds = ["status", "memory", "model", "effort", "cron", "diagnose", "upgrade", "reset", "plan", "implement"]
         if self._agent_name == "main":
             base_cmds += ["agents", "agent_start", "agent_stop", "agent_restart"]
         for cmd in base_cmds:
@@ -1427,6 +1427,9 @@ class TelegramBot:
                 return None
             return prepend_reply_to_media(message, media_prompt)
         if not message.text:
+            return None
+        if self._is_bot_command_message(message):
+            logger.debug("Ignoring bot command in generic message handler text=%s", message.text[:80])
             return None
         text = strip_mention(message.text, self._bot_username)
         return build_reply_prompt(message, text)

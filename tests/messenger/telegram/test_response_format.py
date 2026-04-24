@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from ductor_bot.text.response_format import classify_cli_error, new_session_text, session_error_text
+from ductor_bot.text.response_format import (
+    classify_cli_error,
+    format_action_footer,
+    new_session_text,
+    session_error_text,
+    system_status_summary,
+    system_status_text,
+    tool_activity_summary,
+    tool_activity_text,
+)
 
 
 class TestClassifyCliError:
@@ -99,3 +108,25 @@ class TestNewSessionText:
     def test_unknown_provider_passthrough(self) -> None:
         text = new_session_text("custom")
         assert "custom" in text
+
+
+class TestActionLabels:
+    def test_tool_activity_text_humanizes_shell(self) -> None:
+        assert tool_activity_text("Bash") == "Running shell"
+
+    def test_tool_activity_summary_humanizes_edit(self) -> None:
+        assert tool_activity_summary("Write") == "editing files"
+
+    def test_tool_activity_summary_falls_back_to_pretty_name(self) -> None:
+        assert tool_activity_summary("SearchTool") == "using search tool"
+
+    def test_system_status_text_humanizes_recovering(self) -> None:
+        assert system_status_text("recovering") == "Recovering session"
+
+    def test_system_status_summary_omits_thinking(self) -> None:
+        assert system_status_summary("thinking") is None
+
+    def test_format_action_footer_renders_counts(self) -> None:
+        result = format_action_footer([("running shell", 3), ("editing files", 1)])
+        assert result.startswith("\n---\n")
+        assert "Actions: running shell x3, editing files" in result

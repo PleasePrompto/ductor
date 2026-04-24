@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from ductor_bot.background.models import BackgroundResult, BackgroundSubmit, BackgroundTask
 from ductor_bot.i18n import t
 from ductor_bot.infra.task_runner import TaskRunOptions, run_oneshot_task
+from ductor_bot.orchestrator.planner import planner_append_prompt
 from ductor_bot.workspace.loader import build_appended_files_block
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ def _make_result(  # noqa: PLR0913  -- result fields have natural multi-arity
     status: str,
     session_name: str = "",
     session_id: str = "",
+    session_update: str = "",
 ) -> BackgroundResult:
     """Build a :class:`BackgroundResult` carrying the task's routing fields."""
     return BackgroundResult(
@@ -52,6 +54,7 @@ def _make_result(  # noqa: PLR0913  -- result fields have natural multi-arity
         model=bg_task.model,
         session_name=session_name,
         session_id=session_id,
+        session_update=session_update,
     )
 
 
@@ -211,7 +214,12 @@ class BackgroundObserver:
             )
             request = AgentRequest(
                 prompt=bg_task.prompt,
-                append_system_prompt=files_block,
+                append_system_prompt="\n\n".join(
+                    part
+                    for part in (files_block, planner_append_prompt(bg_task.provider) if bg_task.planner_mode else None)
+                    if part
+                )
+                or None,
                 model_override=bg_task.model or None,
                 provider_override=bg_task.provider or None,
                 effort_override=bg_task.reasoning_effort or None,

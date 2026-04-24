@@ -75,10 +75,15 @@ class TelegramTransport:
         elapsed = f"{env.elapsed_seconds:.0f}s"
 
         if env.session_name:
-            # Update named session registry
-            self._bot._orch.named_sessions.update_after_response(
-                env.chat_id, env.session_name, env.session_id
-            )
+            session_update = str(env.metadata.get("session_update", "") or "")
+            if session_update == "end":
+                self._bot._orch.named_sessions.end_session(env.chat_id, env.session_name)
+            elif env.is_error or env.status == "aborted":
+                self._bot._orch.named_sessions.set_status(env.chat_id, env.session_name, "idle")
+            else:
+                self._bot._orch.named_sessions.update_after_response(
+                    env.chat_id, env.session_name, env.session_id
+                )
             text = self._format_named_session(env, elapsed)
             from ductor_bot.messenger.telegram.buttons import extract_buttons_for_session
 

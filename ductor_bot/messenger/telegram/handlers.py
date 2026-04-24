@@ -26,6 +26,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_BARE_COMMAND_ALIASES = {
+    "sessions": "/sessions",
+    "tasks": "/tasks",
+}
+
+
+def _normalize_command_text(text: str) -> str:
+    """Map a small set of exact bare aliases to slash commands."""
+    stripped = text.strip()
+    return _BARE_COMMAND_ALIASES.get(stripped.lower(), stripped)
+
 
 async def handle_interrupt(
     orchestrator: Orchestrator | None,
@@ -117,12 +128,13 @@ async def handle_command(orchestrator: Orchestrator, bot: Bot, message: Message)
     """Route an orchestrator command (e.g. /status, /model)."""
     if not message.text:
         return
+    command_text = _normalize_command_text(message.text)
     key = get_session_key(message)
     chat_id = key.chat_id
     thread_id = get_thread_id(message)
-    logger.info("Command dispatched cmd=%s", message.text.strip()[:40])
+    logger.info("Command dispatched cmd=%s", command_text[:40])
     async with TypingContext(bot, chat_id, thread_id=thread_id):
-        result = await orchestrator.handle_message(key, message.text.strip())
+        result = await orchestrator.handle_message(key, command_text)
     markup = button_grid_to_markup(result.buttons) if result.buttons else None
     await send_rich(
         bot,

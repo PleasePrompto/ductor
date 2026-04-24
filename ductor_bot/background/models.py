@@ -20,6 +20,9 @@ class BackgroundSubmit:
     provider_override: str = ""
     model_override: str = ""
     reasoning_effort_override: str = ""
+    working_dir: str = ""
+    source_kind: str = "ductor"
+    planner_mode: bool = False
 
 
 @dataclass(slots=True)

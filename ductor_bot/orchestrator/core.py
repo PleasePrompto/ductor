@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -32,8 +33,10 @@ from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_implement,
     cmd_memory,
     cmd_model,
+    cmd_plan,
     cmd_reset,
     cmd_reset_current,
     cmd_sessions,
@@ -64,7 +67,7 @@ from ductor_bot.orchestrator.registry import CommandRegistry, OrchestratorResult
 from ductor_bot.security import detect_suspicious_patterns
 from ductor_bot.session import SessionKey, SessionManager
 from ductor_bot.session.manager import SessionData
-from ductor_bot.session.named import NamedSessionRegistry
+from ductor_bot.session.named import NamedSession, NamedSessionRegistry, suggest_name
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
 from ductor_bot.workspace.project_roots import resolve_project_root
@@ -448,6 +451,10 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/plan", cmd_plan)
+        reg.register_async("/plan ", cmd_plan)
+        reg.register_async("/implement", cmd_implement)
+        reg.register_async("/implement ", cmd_implement)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
@@ -628,6 +635,9 @@ class Orchestrator:
             provider_override=provider_name,
             model_override=model_name,
             reasoning_effort_override=effort,
+            working_dir=ns.working_dir,
+            source_kind=ns.source_kind,
+            planner_mode=ns.planner_mode,
         )
         task_id = self._observers.background.submit(sub, exec_config)
         return task_id, ns.name
@@ -688,6 +698,9 @@ class Orchestrator:
             provider_override=ns.provider,
             model_override=ns.model,
             reasoning_effort_override=followup_effort,
+            working_dir=ns.working_dir,
+            source_kind=ns.source_kind,
+            planner_mode=ns.planner_mode,
         )
         return self._observers.background.submit(sub, exec_config)
 
@@ -719,6 +732,63 @@ class Orchestrator:
     def list_named_sessions(self, chat_id: int) -> list[NamedSession]:
         """List active named sessions for a chat."""
         return self._named_sessions.list_active(chat_id)
+
+    async def set_main_planner_state(
+        self, key: SessionKey, *, provider: str, model: str,
+        enabled: bool | None = None, waiting: bool | None = None,
+    ) -> SessionData:
+        """Persist planner state on the active foreground provider bucket."""
+        return await self._sessions.set_planner_state(
+            key, provider=provider, model=model, enabled=enabled, waiting=waiting
+        )
+
+    def codex_import_uses_docker(self) -> bool:
+        return self._config.docker.enabled
+
+    def codex_import_model(self) -> str:
+        model = self.default_model_for_provider("codex")
+        if model:
+            return model
+        current_model, current_provider = self.resolve_runtime_target(self._config.model)
+        return current_model if current_provider == "codex" else "codex"
+
+    async def attach_codex_import(self, key: SessionKey, *, session_id: str, working_dir: str) -> SessionData:
+        return await self._sessions.set_provider_session_state(
+            key, provider="codex", model=self.codex_import_model(), session_id=session_id,
+            working_dir=working_dir, source_kind="codex_import",
+        )
+
+    async def start_fresh_codex_session(self, key: SessionKey, *, working_dir: str) -> SessionData:
+        return await self._sessions.set_provider_session_state(
+            key, provider="codex", model=self.codex_import_model(), session_id="",
+            working_dir=working_dir, source_kind="ductor",
+        )
+
+    async def mark_codex_import_unavailable(self, key: SessionKey) -> SessionData:
+        active = await self._sessions.get_active(key)
+        model_name, working_dir = self.codex_import_model(), ""
+        if active is not None and "codex" in active.provider_sessions:
+            bucket = active.provider_sessions["codex"]
+            model_name, working_dir = bucket.model, bucket.working_dir
+        return await self._sessions.set_provider_session_state(
+            key, provider="codex", model=model_name, session_id="", working_dir=working_dir,
+            source_kind="codex_import",
+        )
+
+    def import_codex_named_session(
+        self, chat_id: int, *, session_id: str, working_dir: str, thread_name: str, prompt_preview: str,
+    ) -> NamedSession:
+        name = suggest_name(
+            thread_name.strip() or prompt_preview.strip() or "codex",
+            self._named_sessions.active_names(chat_id),
+        )
+        session = NamedSession(
+            name=name, chat_id=chat_id, provider="codex", model=self.codex_import_model(),
+            session_id=session_id, prompt_preview=prompt_preview[:60], status="idle", created_at=time.time(),
+            working_dir=working_dir, source_kind="codex_import",
+        )
+        self._named_sessions.add(session)
+        return session
 
     async def list_topic_sessions(self, chat_id: int) -> list[SessionData]:
         """Return fresh topic sessions for *chat_id*."""

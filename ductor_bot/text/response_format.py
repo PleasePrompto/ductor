@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
+
 from ductor_bot.i18n import t
 
 SEP = "\u2500\u2500\u2500"
@@ -21,6 +24,78 @@ def normalize_tool_name(name: str) -> str:
     if lower in _SHELL_TOOLS:
         return "Shell"
     return _TOOL_LABELS.get(lower, name)
+
+
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _sentence_case(text: str) -> str:
+    return text[:1].upper() + text[1:] if text else ""
+
+
+def _prettify_identifier(value: str) -> str:
+    spaced = _CAMEL_BOUNDARY_RE.sub(" ", value.replace("_", " ").replace("-", " "))
+    return " ".join(spaced.split()).lower()
+
+
+def _tool_activity_phrase(name: str) -> str | None:
+    clean = name.strip()
+    if not clean:
+        return None
+    normalized = normalize_tool_name(clean)
+    key = _NON_ALNUM_RE.sub("", normalized.lower())
+    label_key = {
+        "shell": "footer.action_running_shell",
+        "edit": "footer.action_editing_files", "write": "footer.action_editing_files",
+        "filechange": "footer.action_editing_files", "multiedit": "footer.action_editing_files",
+        "strreplace": "footer.action_editing_files", "applypatch": "footer.action_editing_files",
+        "read": "footer.action_reading_files", "view": "footer.action_reading_files",
+        "cat": "footer.action_reading_files", "glob": "footer.action_reading_files",
+        "ls": "footer.action_reading_files", "listdir": "footer.action_reading_files",
+        "listfiles": "footer.action_reading_files", "websearch": "footer.action_searching_web",
+        "todowrite": "footer.action_updating_plan", "todolist": "footer.action_updating_plan",
+        "todolistwrite": "footer.action_updating_plan", "updateplan": "footer.action_updating_plan",
+    }.get(key)
+    if label_key:
+        return t(label_key)
+    pretty = _prettify_identifier(normalized)
+    return t("footer.action_using_tool", tool=pretty) if pretty else None
+
+
+def tool_activity_summary(name: str) -> str | None:
+    return _tool_activity_phrase(name)
+
+
+def tool_activity_text(name: str) -> str:
+    """Return a sentence-case label for live tool activity."""
+    return _sentence_case(_tool_activity_phrase(name) or "")
+
+
+def system_status_text(status: str | None) -> str | None:
+    return _sentence_case(_system_status_phrase(status) or "") or None
+
+
+def _system_status_phrase(status: str | None) -> str | None:
+    if not status or not status.strip():
+        return None
+    known = {
+        "thinking": t("footer.action_thinking"), "compacting": t("footer.action_compacting_context"),
+        "recovering": t("footer.action_recovering_session"), "timeout_warning": t("footer.action_approaching_timeout"),
+        "timeout_extended": t("footer.action_extended_timeout"),
+    }
+    return known.get(status.strip(), _prettify_identifier(status.strip()))
+
+
+def system_status_summary(status: str | None) -> str | None:
+    return None if status == "thinking" else _system_status_phrase(status)
+
+
+def format_action_footer(actions: Sequence[tuple[str, int]]) -> str:
+    if not actions:
+        return ""
+    rendered = ", ".join(f"{name} x{count}" if count > 1 else name for name, count in actions)
+    return "\n---\n" + t("footer.actions", actions=rendered)
 
 
 def fmt(*blocks: str) -> str:

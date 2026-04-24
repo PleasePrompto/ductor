@@ -143,3 +143,31 @@ def test_asdict_contains_provider_sessions_not_session_id() -> None:
     assert "provider_sessions" in serialized
     assert "session_id" not in serialized
     assert serialized["provider_sessions"]["claude"]["session_id"] == "sid"
+
+
+def test_planner_properties_are_provider_scoped() -> None:
+    session = SessionData(
+        chat_id=1,
+        provider="claude",
+        provider_sessions={
+            "claude": ProviderSessionData(planner_mode=False, planner_waiting=False),
+            "codex": ProviderSessionData(planner_mode=True, planner_waiting=True),
+        },
+    )
+
+    assert session.planner_mode is False
+    assert session.planner_waiting is False
+
+    session.provider = "codex"
+    assert session.planner_mode is True
+    assert session.planner_waiting is True
+
+
+def test_planner_setters_write_to_current_provider() -> None:
+    session = SessionData(chat_id=1, provider="codex", provider_sessions={})
+
+    session.planner_mode = True
+    session.planner_waiting = True
+
+    assert session.provider_sessions["codex"].planner_mode is True
+    assert session.provider_sessions["codex"].planner_waiting is True

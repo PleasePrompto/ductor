@@ -64,6 +64,8 @@ QUICK_COMMANDS: frozenset[str] = frozenset(
     }
 )
 
+BARE_QUICK_COMMANDS: frozenset[str] = frozenset({"sessions", "tasks"})
+
 MQ_PREFIX = "mq:"
 """Callback data prefix for message queue cancel buttons."""
 
@@ -75,13 +77,18 @@ def is_quick_command(text: str, bot_username: str | None = None) -> bool:
     (``/status@my_bot``), and commands with arguments (``/model sonnet``).
     Commands addressed to a different bot (``/status@other_bot``) are rejected.
     """
-    cmd_part = text.strip().lower().split(None, 1)[0] if text.strip() else ""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    cmd_part = stripped.lower().split(None, 1)[0]
     if "@" in cmd_part:
         cmd, mention = cmd_part.split("@", 1)
         if bot_username and mention != bot_username.lower():
             return False
         return cmd in QUICK_COMMANDS
-    return cmd_part in QUICK_COMMANDS
+    if cmd_part in QUICK_COMMANDS:
+        return True
+    return stripped.lower() in BARE_QUICK_COMMANDS
 
 
 RejectedCallback = Callable[[int, str, str], None]

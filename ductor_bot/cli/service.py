@@ -371,7 +371,9 @@ class CLIService:
         # would fail on a path outside the workspace.
         working_dir = self._config.working_dir
         append_prompt = request.append_system_prompt
-        if self._working_dir_resolver is not None and not self._config.docker_container:
+        if request.working_dir_override and not self._config.docker_container:
+            working_dir = request.working_dir_override
+        elif self._working_dir_resolver is not None and not self._config.docker_container:
             override = self._working_dir_resolver(request)
             if override is not None:
                 working_dir = override

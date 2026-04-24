@@ -132,6 +132,7 @@ MAX_SESSIONS_PER_CHAT = 10
 MAX_INTERAGENT_SESSIONS_PER_CHAT = 32
 
 _MAX_NAME_ATTEMPTS = 50
+_MAX_IMPORTED_NAME_LENGTH = 24
 
 
 def generate_name(existing: set[str]) -> str:
@@ -148,6 +149,21 @@ def generate_name(existing: set[str]) -> str:
             return candidate
     msg = "Could not generate unique session name"
     raise RuntimeError(msg)
+
+
+def suggest_name(raw: str, existing: set[str]) -> str:
+    """Build a compact deterministic name for an imported Codex thread."""
+    slug = re.sub(r"[^a-z0-9]+", "", raw.lower())[:_MAX_IMPORTED_NAME_LENGTH]
+    if not slug:
+        return generate_name(existing)
+    if slug not in existing:
+        return slug
+    for i in range(2, 100):
+        suffix = str(i)
+        candidate = f"{slug[: _MAX_IMPORTED_NAME_LENGTH - len(suffix)]}{suffix}"
+        if candidate not in existing:
+            return candidate
+    return generate_name(existing)
 
 
 @dataclass(slots=True)
@@ -167,6 +183,10 @@ class NamedSession:
     transport: str = "tg"
     reasoning_effort: str = ""
     topic_id: int | None = None
+    working_dir: str = ""
+    source_kind: str = "ductor"
+    planner_mode: bool = False
+    planner_waiting: bool = False
 
 
 def _session_from_dict(data: dict[str, Any]) -> NamedSession:
@@ -185,6 +205,10 @@ def _session_from_dict(data: dict[str, Any]) -> NamedSession:
         last_prompt=str(data.get("last_prompt", data.get("prompt_preview", ""))),
         transport=str(data.get("transport", "tg")),
         reasoning_effort=str(data.get("reasoning_effort", "")),
+        working_dir=str(data.get("working_dir", "")),
+        source_kind=str(data.get("source_kind", "ductor")),
+        planner_mode=bool(data.get("planner_mode", False)),
+        planner_waiting=bool(data.get("planner_waiting", False)),
     )
 
 
@@ -229,8 +253,12 @@ class NamedSessionRegistry:
                     last_prompt=ns.last_prompt,
                     transport=ns.transport,
                     reasoning_effort=ns.reasoning_effort,
+                    working_dir=ns.working_dir,
+                    source_kind=ns.source_kind,
+                    planner_mode=ns.planner_mode,
                 )
                 ns.status = "idle"
+                ns.planner_waiting = False
             self._sessions[(ns.chat_id, ns.name)] = ns
         logger.info("Loaded %d named sessions from %s", len(self._sessions), self._path)
 
@@ -328,6 +356,7 @@ class NamedSessionRegistry:
             ns.session_id = session_id
         ns.message_count += 1
         ns.status = status
+        ns.planner_waiting = False
         self._persist()
 
     def add(self, session: NamedSession) -> None:
@@ -383,6 +412,25 @@ class NamedSessionRegistry:
             ns.transport = transport
         if topic_id is not None:
             ns.topic_id = topic_id
+        ns.planner_waiting = ns.planner_mode
+        self._persist()
+
+    def set_status(self, chat_id: int, name: str, status: str) -> None:
+        ns = self._sessions.get((chat_id, name))
+        if ns is None:
+            return
+        ns.status = status
+        if status != "running":
+            ns.planner_waiting = False
+        self._persist()
+
+    def set_planner_mode(self, chat_id: int, name: str, enabled: bool) -> None:
+        ns = self._sessions.get((chat_id, name))
+        if ns is None:
+            return
+        ns.planner_mode = enabled
+        if not enabled:
+            ns.planner_waiting = False
         self._persist()
 
     def pop_recovered_running(

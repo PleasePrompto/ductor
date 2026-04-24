@@ -85,6 +85,8 @@ class AgentRequest:
     process_label: str = "main"
     resume_session: str | None = None
     continue_session: bool = False
+    working_dir_override: str | None = None
+    allow_invalid_session_recovery: bool = True
     timeout_seconds: float | None = None
     timeout_controller: TimeoutController | None = None
 

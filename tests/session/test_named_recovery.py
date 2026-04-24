@@ -53,6 +53,30 @@ class TestLastPrompt:
         reg = _make_registry(tmp_path)
         reg.mark_running(1, "nonexistent", "prompt")  # should not raise
 
+    def test_mark_running_sets_planner_waiting_when_mode_enabled(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="codex", model="gpt-5.2-codex", prompt_preview="hi")
+        reg.set_planner_mode(1, ns.name, True)
+
+        reg.mark_running(1, ns.name, "plan this")
+
+        updated = reg.get(1, ns.name)
+        assert updated is not None
+        assert updated.planner_waiting is True
+
+    def test_update_after_response_clears_planner_waiting(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="codex", model="gpt-5.2-codex", prompt_preview="hi")
+        reg.set_planner_mode(1, ns.name, True)
+        reg.mark_running(1, ns.name, "plan this")
+
+        reg.update_after_response(1, ns.name, "sid-1")
+
+        updated = reg.get(1, ns.name)
+        assert updated is not None
+        assert updated.planner_mode is True
+        assert updated.planner_waiting is False
+
 
 class TestRecoveredRunning:
     def _persist_running_session(

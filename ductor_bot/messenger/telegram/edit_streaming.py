@@ -22,7 +22,7 @@ from ductor_bot.messenger.telegram.formatting import (
     markdown_to_telegram_html,
     split_html_message,
 )
-from ductor_bot.text.response_format import normalize_tool_name
+from ductor_bot.text.response_format import system_status_text, tool_activity_text
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -53,14 +53,22 @@ class _ToolTracker:
     def __init__(self) -> None:
         self._entries: list[_ToolEntry] = []
 
-    def add(self, name: str, *, style: str = "tool") -> None:
+    def add(self, name: str, *, style: str = "tool") -> bool:
         """Record an indicator, incrementing count if same as previous."""
         if style == "tool":
-            name = normalize_tool_name(name)
+            name = tool_activity_text(name)
+        else:
+            status = system_status_text(name)
+            if status is None:
+                return False
+            name = status
+        if not name:
+            return False
         if self._entries and self._entries[-1].name == name and self._entries[-1].style == style:
             self._entries[-1].count += 1
         else:
             self._entries.append(_ToolEntry(name=name, style=style))
+        return True
 
     def render_html(self) -> str:
         """Render all entries as Telegram HTML lines."""
@@ -69,9 +77,9 @@ class _ToolTracker:
             escaped = html.escape(entry.name)
             suffix = f" x{entry.count}" if entry.count > 1 else ""
             if entry.style == "system":
-                parts.append(f"<i>[{escaped}]{suffix}</i>")
+                parts.append(f"<i>{escaped}{suffix}</i>")
             else:
-                parts.append(f"<b>[TOOL: {escaped}]{suffix}</b>")
+                parts.append(f"<b>{escaped}{suffix}</b>")
         return "\n".join(parts)
 
     @property
@@ -141,15 +149,17 @@ class EditStreamEditor:
 
     async def append_tool(self, tool_name: str) -> None:
         """Record a tool event (collapsed with consecutive duplicates)."""
-        tool_name = normalize_tool_name(tool_name)
+        label = tool_activity_text(tool_name)
+        if not label:
+            return
         if self._s.fallen_back:
-            indicator = f"<b>[TOOL: {html.escape(tool_name)}]</b>"
+            indicator = f"<b>{html.escape(label)}</b>"
             await self._send_new(indicator)
             return
         # Transition text -> tool: seal the text block
         self._flush_text_segment()
-        self._s.tool_tracker.add(tool_name)
-        await self._schedule_edit()
+        if self._s.tool_tracker.add(tool_name):
+            await self._schedule_edit()
 
     async def append_system(self, text: str) -> None:
         """Show a system status indicator (e.g. THINKING, COMPACTING).
@@ -157,12 +167,15 @@ class EditStreamEditor:
         Routed through the tool tracker so consecutive identical entries
         are collapsed (``[THINKING] x3``).
         """
+        label = system_status_text(text)
+        if label is None:
+            return
         if self._s.fallen_back:
-            await self._send_new(f"<i>[{html.escape(text)}]</i>")
+            await self._send_new(f"<i>{html.escape(label)}</i>")
             return
         self._flush_text_segment()
-        self._s.tool_tracker.add(text, style="system")
-        await self._schedule_edit()
+        if self._s.tool_tracker.add(text, style="system"):
+            await self._schedule_edit()
 
     async def finalize(self, full_text: str) -> None:
         """Force a final edit with indicators stripped for a clean message."""

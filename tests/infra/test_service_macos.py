@@ -70,6 +70,13 @@ class TestGeneratePlistData:
         assert f"{home}/.nvm/versions/node/v24.0.0/bin" in path_value
         assert f"{home}/.nvm/versions/node/v22.0.0/bin" in path_value
 
+    def test_path_includes_npm_global_bin(self, tmp_path: Path) -> None:
+        with patch("ductor_bot.infra.service_macos.Path.home", return_value=tmp_path):
+            data = _generate_plist_data("ductor")
+
+        path_value = data["EnvironmentVariables"]["PATH"]
+        assert f"{tmp_path}/.npm-global/bin" in path_value
+
     def test_has_log_paths(self) -> None:
         data = _generate_plist_data("ductor")
         assert "StandardOutPath" in data
