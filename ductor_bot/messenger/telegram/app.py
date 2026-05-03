@@ -46,6 +46,7 @@ from ductor_bot.messenger.telegram.handlers import (
     handle_command,
     handle_interrupt,
     handle_new_session,
+    merge_reply_context,
     strip_mention,
 )
 from ductor_bot.messenger.telegram.media import (
@@ -1407,7 +1408,10 @@ class TelegramBot:
             )
         if not message.text:
             return None
-        return strip_mention(message.text, self._bot_username)
+        text = strip_mention(message.text, self._bot_username)
+        reply = message.reply_to_message
+        reply_text = None if reply is None else (reply.text or reply.caption)
+        return merge_reply_context(text, reply_text)
 
     async def _handle_streaming(
         self, message: Message, key: SessionKey, text: str, *, thread_id: int | None = None

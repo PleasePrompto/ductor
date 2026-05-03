@@ -203,3 +203,12 @@ def strip_mention(text: str, bot_username: str | None) -> str:
         stripped = (text[:idx] + text[idx + len(tag) :]).strip()
         return stripped or text
     return text
+
+
+def merge_reply_context(text: str, reply_text: str | None) -> str:
+    """Combine the user's message with replied-to text when present."""
+    message_text = text.strip()
+    quoted = (reply_text or "").strip()
+    if not quoted:
+        return message_text
+    return f"[REPLY TO]\n{quoted}\n\n[USER MESSAGE]\n{message_text}"
