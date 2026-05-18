@@ -225,6 +225,51 @@ class TaskRegistry:
             to_remove.append(task_id)
         return self._remove_entries(to_remove, "cleanup_finished")
 
+    def cleanup_finished_retention(
+        self,
+        *,
+        max_age_hours: int,
+        keep_last: int,
+        now: float | None = None,
+    ) -> int:
+        """Prune finished task history by age and count.
+
+        Running/waiting tasks are never removed.  ``completed_at`` is preferred
+        for ordering; older entries may lack it, so fall back to ``created_at``.
+        """
+        if max_age_hours <= 0 and keep_last <= 0:
+            return 0
+
+        current_time = time.time() if now is None else now
+        cutoff = current_time - max_age_hours * 3600 if max_age_hours > 0 else None
+
+        finished = [
+            (task_id, entry)
+            for task_id, entry in self._entries.items()
+            if entry.status in _FINISHED_STATUSES
+        ]
+        to_remove: set[str] = set()
+
+        if cutoff is not None:
+            for task_id, entry in finished:
+                if _finished_sort_time(entry) < cutoff:
+                    to_remove.add(task_id)
+
+        if keep_last > 0:
+            keep = {
+                task_id
+                for task_id, _ in sorted(
+                    finished,
+                    key=lambda item: _finished_sort_time(item[1]),
+                    reverse=True,
+                )[:keep_last]
+            }
+            for task_id, _ in finished:
+                if task_id not in keep:
+                    to_remove.add(task_id)
+
+        return self._remove_entries(sorted(to_remove), "cleanup_finished_retention")
+
     def _remove_entries(self, task_ids: list[str], label: str) -> int:
         """Delete entries and their folders from the registry."""
         # Resolve folder paths before deleting entries (entries carry per-agent
@@ -239,6 +284,11 @@ class TaskRegistry:
             self._persist()
             logger.info("%s removed %d task(s)", label, len(task_ids))
         return len(task_ids)
+
+
+def _finished_sort_time(entry: TaskEntry) -> float:
+    """Return the timestamp used for finished task retention."""
+    return entry.completed_at or entry.created_at
 
 
 # -- Task folder seeding -------------------------------------------------------

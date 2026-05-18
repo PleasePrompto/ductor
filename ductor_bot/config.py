@@ -251,6 +251,8 @@ class TasksConfig(BaseModel):
     enabled: bool = True
     max_parallel: int = 5
     timeout_seconds: float = 3600.0
+    finished_retention_hours: int = 168
+    finished_keep_last: int = 100
 
 
 class TimeoutConfig(BaseModel):

@@ -416,18 +416,28 @@ class TaskHub:
         self._in_flight.clear()
 
     async def _maintenance_loop(self) -> None:
-        """Periodically clean orphaned task entries/folders (every 5 hours)."""
+        """Periodically clean orphaned task entries/folders and old finished tasks."""
         try:
             while True:
-                await asyncio.sleep(_MAINTENANCE_INTERVAL)
                 try:
-                    removed = self._registry.cleanup_orphans()
-                    if removed:
-                        logger.info("Task maintenance: removed %d orphan(s)", removed)
+                    self._run_maintenance_once()
                 except Exception:
                     logger.exception("Task maintenance failed (continuing)")
+                await asyncio.sleep(_MAINTENANCE_INTERVAL)
         except asyncio.CancelledError:
             pass
+
+    def _run_maintenance_once(self) -> None:
+        """Run one task registry maintenance pass."""
+        removed = self._registry.cleanup_orphans()
+        if removed:
+            logger.info("Task maintenance: removed %d orphan(s)", removed)
+        pruned = self._registry.cleanup_finished_retention(
+            max_age_hours=self._config.finished_retention_hours,
+            keep_last=self._config.finished_keep_last,
+        )
+        if pruned:
+            logger.info("Task maintenance: pruned %d finished task(s)", pruned)
 
     async def _run(
         self,

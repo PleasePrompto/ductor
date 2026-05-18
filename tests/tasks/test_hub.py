@@ -928,6 +928,43 @@ class TestPerAgentDeliveryIsolation:
         await hub.shutdown()
 
 
+class TestMaintenance:
+    async def test_maintenance_cleans_finished_retention(
+        self, registry: TaskRegistry, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Periodic maintenance should prune finished task history, not just orphans."""
+        old_done = registry.create(_submit(name="old"), "claude", "opus")
+        recent_done = registry.create(_submit(name="recent"), "claude", "opus")
+        registry.update_status(old_done.task_id, "done")
+        registry.update_status(recent_done.task_id, "done")
+        old_done.completed_at = 1.0
+        old_done.created_at = 1.0
+        recent_done.completed_at = 10_000.0
+        recent_done.created_at = 10_000.0
+        registry._persist()
+
+        async def fake_sleep(_: float) -> None:
+            raise asyncio.CancelledError
+
+        monkeypatch.setattr("ductor_bot.tasks.hub.asyncio.sleep", fake_sleep)
+        monkeypatch.setattr("ductor_bot.tasks.registry.time.time", lambda: 10_000.0)
+
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(
+                finished_retention_hours=1,
+                finished_keep_last=100,
+            ),
+        )
+
+        await hub._maintenance_loop()
+
+        assert registry.get(old_done.task_id) is None
+        assert registry.get(recent_done.task_id) is not None
+
+
 class TestAppendTaskmemory:
     """#91: _append_taskmemory must emit a WARNING log and include the original
     length + full file path in the suffix when truncation occurs. Without this,
