@@ -42,7 +42,7 @@ async def _feed_stdin_and_close(
     if windows_only and not _IS_WINDOWS:
         return
 
-    writer = process.stdin
+    writer = getattr(process, "stdin", None)
     if writer is None:
         return
 
