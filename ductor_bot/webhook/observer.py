@@ -13,6 +13,7 @@ from ductor_bot.infra.base_task_observer import BaseTaskObserver
 from ductor_bot.infra.file_watcher import FileWatcher
 from ductor_bot.infra.task_runner import execute_in_task_folder
 from ductor_bot.utils.quiet_hours import check_quiet_hour
+from ductor_bot.wake_slo_responder import is_probe_payload, respond as wake_slo_respond
 from ductor_bot.webhook.models import WebhookResult, render_template
 from ductor_bot.webhook.server import WebhookServer
 
@@ -137,6 +138,33 @@ class WebhookObserver(BaseTaskObserver):
                 mode="?",
                 result_text="",
                 status="error:not_found",
+            )
+
+        # Wake SLO recipient-side responder: short-circuit probe payloads
+        # before they cost a Claude session. The responder acks + replies
+        # via the local Qoopia MCP endpoint. On any error it falls through
+        # to the normal dispatch path below.
+        if hook.mode == "wake" and is_probe_payload(payload):
+            slo_result = wake_slo_respond(payload)
+            status = slo_result.get("status", "error:no_status")
+            if status == "ok":
+                logger.info(
+                    "Wake SLO probe handled hook=%s message_id=%s",
+                    hook_id,
+                    slo_result.get("message_id"),
+                )
+                self._manager.record_trigger(hook_id, error=None)
+                return WebhookResult(
+                    hook_id=hook_id,
+                    hook_title=hook.title,
+                    mode="wake",
+                    result_text=f"WAKE_SLO_PONG {slo_result.get('pong_ts')}",
+                    status="success:wake_slo_probe",
+                )
+            logger.warning(
+                "Wake SLO responder errored (%s); falling through to Claude dispatch hook=%s",
+                status,
+                hook_id,
             )
 
         rendered = render_template(hook.prompt_template, payload)
