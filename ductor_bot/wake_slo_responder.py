@@ -59,7 +59,21 @@ def is_probe_payload(payload: dict[str, Any]) -> bool:
 
 
 def _read_api_key() -> str | None:
-    path_str = os.environ.get("QOOPIA_API_KEY_FILE", DEFAULT_API_KEY_FILE)
+    # Resolution order:
+    #   1. WAKE_SLO_RESPONDER_API_KEY env var (raw value) — explicit override
+    #      so deployments can name the key the responder uses without
+    #      hijacking other env vars.
+    #   2. WAKE_SLO_RESPONDER_API_KEY_FILE env var (path to a key file).
+    #   3. Default file path (steward-style key, may not have ack rights
+    #      on messages addressed to the local recipient agent — see the
+    #      contract doc note on per-agent key sourcing).
+    env_value = os.environ.get("WAKE_SLO_RESPONDER_API_KEY")
+    if env_value:
+        return env_value.strip() or None
+    path_str = os.environ.get(
+        "WAKE_SLO_RESPONDER_API_KEY_FILE",
+        os.environ.get("QOOPIA_API_KEY_FILE", DEFAULT_API_KEY_FILE),
+    )
     try:
         return Path(path_str).expanduser().read_text(encoding="utf-8").strip() or None
     except OSError as e:
