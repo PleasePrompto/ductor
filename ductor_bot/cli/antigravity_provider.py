@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.antigravity_events import parse_antigravity_json
+from ductor_bot.cli.antigravity_runtime import antigravity_process_env
 from ductor_bot.cli.base import BaseCLI, CLIConfig
 from ductor_bot.cli.executor import build_subprocess_env
 from ductor_bot.cli.process_registry import ProcessRegistry, TrackedProcess
@@ -185,7 +186,7 @@ class AntigravityCLI(BaseCLI):
         safe_cmd = _safe_command_for_logging(cmd)
         logger.debug("Antigravity send: %s", safe_cmd)
 
-        env = build_subprocess_env(self._config)
+        env = antigravity_process_env(build_subprocess_env(self._config))
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,

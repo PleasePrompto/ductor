@@ -13,6 +13,7 @@ from enum import StrEnum, unique
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.antigravity_runtime import antigravity_process_env
 from ductor_bot.cli.gemini_utils import find_gemini_cli
 from ductor_bot.config import NULLISH_TEXT_VALUES
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
@@ -419,6 +420,7 @@ def _antigravity_cli_logged_in() -> bool:
             text=True,
             timeout=10,
             check=False,
+            env=antigravity_process_env(),
             creationflags=_CREATION_FLAGS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

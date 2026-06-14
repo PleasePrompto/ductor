@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 from ductor_bot.cli.antigravity_discovery import discover_antigravity_models
+from ductor_bot.cli.antigravity_runtime import configured_antigravity_models
 from ductor_bot.cli.model_cache import BaseModelCache
 
 # Hardcoded fallback when discovery and disk cache both fail. Mirrors the
@@ -35,6 +36,13 @@ class AntigravityModelCache(BaseModelCache):
 
     @classmethod
     async def _discover(cls) -> tuple[str, ...]:
+        configured = configured_antigravity_models()
+        if configured:
+            # agy 1.0.x can hang or return empty stdout outside a TTY. Official
+            # settings prove the CLI is configured and identify the selected
+            # model, so avoid a redundant network probe for every agent home.
+            return tuple(dict.fromkeys((*_FALLBACK_ANTIGRAVITY_MODELS, *configured)))
+
         return await discover_antigravity_models()
 
     @classmethod

@@ -11,6 +11,10 @@ import pytest
 
 from ductor_bot.cli.antigravity_cache import _FALLBACK_ANTIGRAVITY_MODELS, AntigravityModelCache
 from ductor_bot.cli.antigravity_discovery import _parse_models, discover_antigravity_models
+from ductor_bot.cli.antigravity_runtime import (
+    antigravity_process_env,
+    configured_antigravity_models,
+)
 from ductor_bot.config import (
     ModelRegistry,
     reset_antigravity_models,
@@ -52,14 +56,21 @@ def _mock_proc(stdout: bytes, returncode: int = 0) -> AsyncMock:
 
 
 async def test_discover_returns_models_on_success() -> None:
-    with patch(
-        "ductor_bot.cli.antigravity_discovery.asyncio.create_subprocess_exec",
-        return_value=_mock_proc(_SAMPLE_OUTPUT.encode()),
+    with (
+        patch(
+            "ductor_bot.cli.antigravity_discovery.asyncio.create_subprocess_exec",
+            return_value=_mock_proc(_SAMPLE_OUTPUT.encode()),
+        ) as create_process,
+        patch(
+            "ductor_bot.cli.antigravity_discovery.antigravity_process_env",
+            return_value={"HOME": "host"},
+        ),
     ):
         models = await discover_antigravity_models()
 
     assert models[0] == "Gemini 3.5 Flash (Medium)"
     assert len(models) == 3
+    assert create_process.call_args.kwargs["env"] == {"HOME": "host"}
 
 
 async def test_discover_returns_empty_on_nonzero_exit() -> None:
@@ -87,6 +98,48 @@ async def test_cache_falls_back_when_discovery_empty(tmp_path: Path) -> None:
         cache = await AntigravityModelCache.load_or_refresh(cache_path, force_refresh=True)
 
     assert cache.models == _FALLBACK_ANTIGRAVITY_MODELS
+
+
+async def test_cache_persists_models_from_official_settings(tmp_path: Path) -> None:
+    cache_path = tmp_path / "antigravity_models.json"
+    configured = "Future Antigravity Model"
+    with (
+        patch(
+            "ductor_bot.cli.antigravity_cache.discover_antigravity_models",
+            AsyncMock(return_value=()),
+        ) as cli_discovery,
+        patch(
+            "ductor_bot.cli.antigravity_cache.configured_antigravity_models",
+            return_value=(configured,),
+        ),
+    ):
+        cache = await AntigravityModelCache.load_or_refresh(cache_path, force_refresh=True)
+
+    assert cache.models == (*_FALLBACK_ANTIGRAVITY_MODELS, configured)
+    assert cache_path.is_file()
+    cli_discovery.assert_not_awaited()
+
+
+def test_discovers_model_from_official_settings(tmp_path: Path) -> None:
+    settings_dir = tmp_path / ".gemini" / "antigravity-cli"
+    settings_dir.mkdir(parents=True)
+    (settings_dir / "settings.json").write_text(
+        '{"model": "Claude Opus 4.6 (Thinking)"}',
+        encoding="utf-8",
+    )
+
+    assert configured_antigravity_models(tmp_path) == ("Claude Opus 4.6 (Thinking)",)
+
+
+def test_process_env_removes_codex_sandbox_flag() -> None:
+    env = antigravity_process_env(
+        {
+            "HOME": "host",
+            "CODEX_SANDBOX_NETWORK_DISABLED": "1",
+        }
+    )
+
+    assert env == {"HOME": "host"}
 
 
 def test_runtime_display_name_routes_to_antigravity() -> None:

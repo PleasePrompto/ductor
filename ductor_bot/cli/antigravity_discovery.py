@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from ductor_bot.cli.antigravity_runtime import antigravity_process_env
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from ductor_bot.infra.process_tree import force_kill_process_tree
 
@@ -27,6 +28,7 @@ async def discover_antigravity_models() -> tuple[str, ...]:
             "models",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=antigravity_process_env(),
             creationflags=_CREATION_FLAGS,
         )
     except (OSError, ValueError):
