@@ -13,12 +13,11 @@ Scripts for managing incoming HTTP webhook endpoints.
 
 2. **Which model?**
    - **If Claude:** `haiku`, `sonnet` (recommended), `sonnet[1m]`, `opus`, `opus[1m]`, `fable`
-   - **If Codex:** `gpt-5.2-codex` (recommended), `gpt-5.3-codex`, `gpt-5.1-codex-max`, `gpt-5.2`, `gpt-5.1-codex-mini`
-   - **If Gemini:** `gemini-2.5-pro` (recommended), `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-3.1-pro-preview`
+   - **If Codex:** `gpt-5.5` (recommended), `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex-spark`
+   - **If Gemini:** `gemini-2.5-pro` (recommended), `gemini-2.5-flash`, `gemini-3-pro-preview`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`, `gemini-3.5-flash`
 
 3. **If Codex: Which thinking level?**
    - `low`, `medium` (default), `high`, `xhigh`
-   - Note: `gpt-5.1-codex-mini` only supports `medium` and `high`
 
 4. **Should this webhook respect quiet hours?**
    - Ask: "Should this webhook skip execution during specific hours (e.g., at night)?"
@@ -130,7 +129,7 @@ python3 tools/webhook_tools/webhook_add.py \
   --mode "cron_task" --task-folder "github-review" \
   --prompt-template "Review PR #{{number}}: {{title}}" \
   --provider codex \
-  --model gpt-5.2-codex \
+  --model gpt-5.5 \
   --reasoning-effort high
 
 # cron_task mode - Gemini example
@@ -250,21 +249,19 @@ Webhooks in `cron_task` mode can override global config settings in `webhooks.js
 - `model`: Model name (optional, defaults to global config)
   - Claude models: `"haiku"`, `"sonnet"`, `"sonnet[1m]"`, `"opus"`, `"opus[1m]"`, `"fable"`
   - Codex models:
-    - `"gpt-5.2-codex"` - Frontier agentic coding model
-    - `"gpt-5.3-codex"` - Latest frontier agentic coding model
-    - `"gpt-5.1-codex-max"` - Codex-optimized for deep and fast reasoning
-    - `"gpt-5.2"` - Latest frontier model
-    - `"gpt-5.1-codex-mini"` - Cheaper, faster (limited reasoning)
+    - `"gpt-5.5"` - Newest/recommended frontier agentic coding model
+    - `"gpt-5.4"` - Frontier agentic coding model
+    - `"gpt-5.4-mini"` - Smaller, faster frontier coding model
+    - `"gpt-5.3-codex-spark"` - Codex-optimized coding model
   - Gemini models:
     - `"gemini-2.5-pro"` - Balanced, most capable
     - `"gemini-2.5-flash"` - Fast and cost-effective
-    - `"gemini-2.5-flash-lite"` - Cheapest, fastest
     - `"gemini-3-pro-preview"` - Next-gen preview
-    - `"gemini-3-flash-preview"` - Next-gen fast preview
-    - `"gemini-3.1-pro-preview"` - Latest preview
+    - `"gemini-3.1-pro-preview"` - Latest pro preview
+    - `"gemini-3.1-flash-lite"` - Lightweight fast preview
+    - `"gemini-3.5-flash"` - Latest fast model
 - `reasoning_effort`: Thinking level (Codex only, optional, defaults to `"medium"`)
-  - Most models: `"low"`, `"medium"`, `"high"`, `"xhigh"`
-  - `gpt-5.1-codex-mini`: `"medium"`, `"high"` only
+  - Supported values: `"low"`, `"medium"`, `"high"`, `"xhigh"`
 - `cli_parameters`: List of additional CLI flags (optional, advanced users only)
 
 **Fallback behavior:**
@@ -294,7 +291,7 @@ Codex webhook:
   "task_folder": "data-analysis",
   "prompt_template": "Analyze data: {{summary}}",
   "provider": "codex",
-  "model": "gpt-5.2-codex",
+  "model": "gpt-5.5",
   "reasoning_effort": "high"
 }
 ```

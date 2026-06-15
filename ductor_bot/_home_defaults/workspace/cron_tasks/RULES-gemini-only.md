@@ -11,10 +11,10 @@ For cron tool commands (add/edit/remove/list), see `tools/cron_tools/CLAUDE.md`.
    - Options:
      - `gemini-2.5-pro` - Balanced, most capable (recommended)
      - `gemini-2.5-flash` - Fast and cost-effective
-     - `gemini-2.5-flash-lite` - Cheapest, fastest
      - `gemini-3-pro-preview` - Next-gen preview
-     - `gemini-3-flash-preview` - Next-gen fast preview
-     - `gemini-3.1-pro-preview` - Latest preview
+     - `gemini-3.1-pro-preview` - Latest pro preview
+     - `gemini-3.1-flash-lite` - Lightweight fast preview
+     - `gemini-3.5-flash` - Latest fast model
    - Default if user doesn't specify: Use global config model
 
 **YOU MUST present these options to the user and wait for their answers BEFORE calling cron_add.py!**
@@ -32,7 +32,7 @@ You: "I'll create a cron job to check weather every 3 minutes. Let me configure 
 **Model**: Which Gemini model should execute this task?
    - `gemini-2.5-pro` (balanced, most capable)
    - `gemini-2.5-flash` (fast and cost-effective)
-   - `gemini-2.5-flash-lite` (cheapest, fastest)
+   - `gemini-3.1-flash-lite` (lightweight, cheapest)
 
 Please specify your choice, or I'll use the global config default."
 
@@ -73,10 +73,10 @@ Each cron task can override global config settings in `cron_jobs.json`:
   - Available:
     - `"gemini-2.5-pro"` - Balanced, most capable
     - `"gemini-2.5-flash"` - Fast and cost-effective
-    - `"gemini-2.5-flash-lite"` - Cheapest, fastest
     - `"gemini-3-pro-preview"` - Next-gen preview
-    - `"gemini-3-flash-preview"` - Next-gen fast preview
-    - `"gemini-3.1-pro-preview"` - Latest preview
+    - `"gemini-3.1-pro-preview"` - Latest pro preview
+    - `"gemini-3.1-flash-lite"` - Lightweight fast preview
+    - `"gemini-3.5-flash"` - Latest fast model
 - `cli_parameters`: List of additional CLI flags (optional)
 
 **Fallback behavior:**
@@ -96,5 +96,5 @@ Each cron task can override global config settings in `cron_jobs.json`:
 
 **Use cases:**
 - High-capability tasks: `"model": "gemini-2.5-pro"`
-- Cost-effective tasks: `"model": "gemini-2.5-flash-lite"`
+- Cost-effective tasks: `"model": "gemini-3.1-flash-lite"`
 - Advanced CLI flags: `"cli_parameters": [...]` (only if user explicitly requests)

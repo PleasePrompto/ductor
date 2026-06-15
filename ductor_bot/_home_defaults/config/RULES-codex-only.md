@@ -18,14 +18,12 @@ Edit only when the user asks for behavior changes.
 - `provider`: `codex`
 - `model`: default model id
   - Available models:
-    - `gpt-5.2-codex` - Frontier agentic coding model
-    - `gpt-5.3-codex` - Latest frontier agentic coding model
-    - `gpt-5.1-codex-max` - Codex-optimized for deep and fast reasoning
-    - `gpt-5.2` - Latest frontier model
-    - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+    - `gpt-5.5` - Newest/recommended frontier agentic coding model
+    - `gpt-5.4` - Frontier agentic coding model
+    - `gpt-5.4-mini` - Smaller, faster frontier coding model
+    - `gpt-5.3-codex-spark` - Codex-optimized coding model
 - `reasoning_effort`: `low|medium|high|xhigh` (Codex models)
-  - Most models support: `low`, `medium`, `high`, `xhigh`
-  - `gpt-5.1-codex-mini` only: `medium`, `high`
+  - Supported values: `low`, `medium`, `high`, `xhigh`
 - `permission_mode`: CLI permission behavior
 
 ### Time and Scheduling

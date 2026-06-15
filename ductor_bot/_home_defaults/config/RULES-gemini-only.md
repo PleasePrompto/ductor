@@ -20,10 +20,10 @@ Edit only when the user asks for behavior changes.
   - Available:
     - `gemini-2.5-pro` - Balanced, most capable (recommended)
     - `gemini-2.5-flash` - Fast and cost-effective
-    - `gemini-2.5-flash-lite` - Cheapest, fastest
     - `gemini-3-pro-preview` - Next-gen preview
-    - `gemini-3-flash-preview` - Next-gen fast preview
-    - `gemini-3.1-pro-preview` - Latest preview
+    - `gemini-3.1-pro-preview` - Latest pro preview
+    - `gemini-3.1-flash-lite` - Lightweight fast preview
+    - `gemini-3.5-flash` - Latest fast model
 - `permission_mode`: CLI permission behavior
 
 ### Time and Scheduling

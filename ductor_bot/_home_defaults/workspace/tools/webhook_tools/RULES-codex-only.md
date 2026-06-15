@@ -7,18 +7,16 @@ Scripts for managing incoming HTTP webhook endpoints.
 **When creating a webhook in `cron_task` mode, you MUST ask:**
 
 1. **Which model?**
-   - `gpt-5.2-codex` - Frontier agentic coding model (recommended)
-   - `gpt-5.3-codex` - Latest frontier agentic coding model
-   - `gpt-5.1-codex-max` - Optimized for deep and fast reasoning
-   - `gpt-5.2` - Latest frontier model
-   - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+   - `gpt-5.5` - Newest/recommended frontier agentic coding model
+   - `gpt-5.4` - Frontier agentic coding model
+   - `gpt-5.4-mini` - Smaller, faster frontier coding model
+   - `gpt-5.3-codex-spark` - Codex-optimized coding model
 
 2. **Which thinking level?**
    - `low` - Fast, surface-level reasoning
    - `medium` - Balanced (default)
    - `high` - Extended thinking
    - `xhigh` - Maximum reasoning depth
-   - Note: `gpt-5.1-codex-mini` only supports `medium` and `high`
 
 3. **Should this webhook respect quiet hours?**
    - Ask: "Should this webhook skip execution during specific hours (e.g., at night)?"
@@ -120,7 +118,7 @@ python3 tools/webhook_tools/webhook_add.py \
   --description "Review incoming PR payloads" \
   --mode "cron_task" --task-folder "github-review" \
   --prompt-template "Review PR #{{number}}: {{title}}" \
-  --model gpt-5.2-codex \
+  --model gpt-5.5 \
   --reasoning-effort high
 ```
 
@@ -224,14 +222,12 @@ Webhooks in `cron_task` mode can override global config settings in `webhooks.js
 
 - `model`: Model name (optional, defaults to global config)
   - Available models:
-    - `"gpt-5.2-codex"` - Frontier agentic coding model
-    - `"gpt-5.3-codex"` - Latest frontier agentic coding model
-    - `"gpt-5.1-codex-max"` - Codex-optimized for deep and fast reasoning
-    - `"gpt-5.2"` - Latest frontier model
-    - `"gpt-5.1-codex-mini"` - Cheaper, faster (limited reasoning)
+    - `"gpt-5.5"` - Newest/recommended frontier agentic coding model
+    - `"gpt-5.4"` - Frontier agentic coding model
+    - `"gpt-5.4-mini"` - Smaller, faster frontier coding model
+    - `"gpt-5.3-codex-spark"` - Codex-optimized coding model
 - `reasoning_effort`: Thinking level (optional, defaults to `"medium"`)
-  - Most models: `"low"`, `"medium"`, `"high"`, `"xhigh"`
-  - `gpt-5.1-codex-mini`: `"medium"`, `"high"` only
+  - Supported values: `"low"`, `"medium"`, `"high"`, `"xhigh"`
 - `cli_parameters`: List of additional CLI flags (optional, e.g., `["--chrome"]`)
 
 **Fallback behavior:**
@@ -246,7 +242,7 @@ Webhooks in `cron_task` mode can override global config settings in `webhooks.js
   "mode": "cron_task",
   "task_folder": "github-review",
   "prompt_template": "Review PR #{{number}}",
-  "model": "gpt-5.2-codex",
+  "model": "gpt-5.5",
   "reasoning_effort": "high",
   "cli_parameters": ["--chrome"]
 }
@@ -255,4 +251,4 @@ Webhooks in `cron_task` mode can override global config settings in `webhooks.js
 **Use cases:**
 - Browser automation: `"cli_parameters": ["--chrome"]`
 - High-reasoning analysis: `"reasoning_effort": "high"`
-- Fast iteration with mini: `"model": "gpt-5.1-codex-mini"`, `"reasoning_effort": "medium"`
+- Fast iteration with mini: `"model": "gpt-5.4-mini"`, `"reasoning_effort": "medium"`
