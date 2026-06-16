@@ -280,3 +280,28 @@ async def test_memory_flusher_runs_unlocked_without_lock_pool(tmp_path: Path) ->
     await flusher.maybe_flush(key, session)
 
     assert cli.execute.await_count == 1
+
+
+async def test_flush_excludes_appended_system_prompt(tmp_path: Path) -> None:
+    """Regression: memory flush must NOT inject append_system_prompt_files."""
+    flusher, cli = _make_flusher(tmp_path, compact_cfg=MemoryCompactionConfig(enabled=False))
+    key = SessionKey(chat_id=101)
+    session = _session_with_id("sess-abc")
+    flusher.mark_boundary(key)
+    await flusher.maybe_flush(key, session)
+
+    assert cli.execute.await_count == 1
+    request = cli.execute.await_args[0][0]
+    assert request.append_system_prompt is None
+
+
+async def test_compact_excludes_appended_system_prompt(tmp_path: Path) -> None:
+    """Regression: memory compaction must NOT inject append_system_prompt_files."""
+    flusher, cli = _make_flusher(tmp_path, mainmemory_lines=100)
+    key = SessionKey(chat_id=101)
+    session = _session_with_id("sess-abc")
+    await flusher.compact(key, session)
+
+    assert cli.execute.await_count == 1
+    request = cli.execute.await_args[0][0]
+    assert request.append_system_prompt is None

@@ -141,6 +141,7 @@ class AgentSupervisor:
                 self._main_paths,
                 cli_service=None,  # Set per-agent in _post_startup
                 config=self._main_config.tasks,
+                append_system_prompt_files=self._main_config.append_system_prompt_files,
                 process_registry=self._task_process_registry,
             )
             self._internal_api.set_task_hub(self._task_hub)

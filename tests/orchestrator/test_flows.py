@@ -14,6 +14,7 @@ from ductor_bot.orchestrator.flows import (
     _finish_normal,
     _strip_ack_token,
     _update_session,
+    heartbeat_flow,
     named_session_flow,
     normal,
     normal_streaming,
@@ -862,3 +863,51 @@ def test_finish_normal_non_empty_success_unchanged() -> None:
     response = AgentResponse(result="Hello world", is_error=False)
     result = _finish_normal(response)
     assert result.text == "Hello world"
+
+
+# -- append_system_prompt_files injection --
+
+
+async def test_normal_injects_appended_files_every_turn(orch: Orchestrator) -> None:
+    orch._config.append_system_prompt_files = ["PERSONA.md"]
+    (orch.paths.workspace / "PERSONA.md").write_text("You are helpful.")
+    captured: list[object] = []
+
+    async def mock_execute(req: object) -> AgentResponse:
+        captured.append(req)
+        return _mock_response()
+
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    await normal(orch, SessionKey(chat_id=1), "Hello")  # new session
+    await normal(orch, SessionKey(chat_id=1), "Again")  # resume session
+
+    assert len(captured) == 2
+    for req in captured:
+        assert req.append_system_prompt is not None  # type: ignore[attr-defined]
+        assert "You are helpful." in req.append_system_prompt  # type: ignore[attr-defined]
+
+
+async def test_normal_no_files_configured_leaves_resume_append_none(orch: Orchestrator) -> None:
+    # Default config (empty list) -> behavior unchanged: resume turn has no append.
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    await normal(orch, SessionKey(chat_id=1), "Hello")
+    await normal(orch, SessionKey(chat_id=1), "Again")
+    request = mock_execute.call_args[0][0]
+    assert request.append_system_prompt is None
+
+
+async def test_heartbeat_excludes_appended_files(orch: Orchestrator) -> None:
+    """Regression: the heartbeat path must NOT inject append_system_prompt_files."""
+    orch._config.append_system_prompt_files = ["PERSONA.md"]
+    (orch.paths.workspace / "PERSONA.md").write_text("You are helpful.")
+    orch._config.heartbeat.cooldown_minutes = 0
+    await _establish_session(orch)
+
+    mock_execute = AsyncMock(return_value=_mock_response(result="HEARTBEAT_OK"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+    await heartbeat_flow(orch, SessionKey(chat_id=1))
+
+    assert mock_execute.await_count == 1
+    request = mock_execute.await_args[0][0]
+    assert request.append_system_prompt is None

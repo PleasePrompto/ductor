@@ -12,6 +12,7 @@ from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.tasks.hub import TaskHub
 from ductor_bot.tasks.models import TaskResult, TaskSubmit
 from ductor_bot.tasks.registry import TaskRegistry
+from ductor_bot.workspace.paths import DuctorPaths
 
 
 @pytest.fixture
@@ -963,3 +964,53 @@ class TestAppendTaskmemory:
         assert not any("TASKMEMORY truncated" in rec.message for rec in caplog.records)
         assert "truncated" not in result.lower()
         assert "short content" in result
+
+
+class TestAppendSystemPromptFiles:
+    async def test_uses_parent_agent_workspace_files(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        """_run reads append_system_prompt_files from the parent agent's workspace."""
+        cli = _make_cli_service("task output")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path / "main_ws"),
+            cli_service=cli,
+            config=_make_config(),
+            append_system_prompt_files=["PERSONA.md"],
+        )
+        # Parent agent "dev" has its own workspace + persona file.
+        dev_paths = DuctorPaths(ductor_home=tmp_path / "dev_home")
+        dev_paths.workspace.mkdir(parents=True, exist_ok=True)
+        (dev_paths.workspace / "PERSONA.md").write_text("Dev persona.")
+        hub.set_agent_paths("dev", dev_paths)
+        hub.set_result_handler("dev", AsyncMock())
+
+        submit = TaskSubmit(
+            chat_id=42, prompt="go", message_id=1, thread_id=None, parent_agent="dev", name="T"
+        )
+        hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        await hub.shutdown()
+        request = cli.execute.await_args.args[0]
+        assert request.append_system_prompt is not None
+        assert "Dev persona." in request.append_system_prompt
+
+    async def test_no_files_leaves_append_none(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        cli = _make_cli_service("task output")
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+        hub.submit(_submit())
+        await asyncio.sleep(0.1)
+
+        await hub.shutdown()
+        request = cli.execute.await_args.args[0]
+        assert request.append_system_prompt is None
