@@ -29,6 +29,7 @@ from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
+    cmd_effort,
     cmd_memory,
     cmd_model,
     cmd_reset,
@@ -418,6 +419,7 @@ class Orchestrator:
         reg.register_async("/status", cmd_status)
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
+        reg.register_async("/effort", cmd_effort)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)

@@ -107,6 +107,7 @@ header = "**Estado**"
 no_session = "No hay sesión activa."
 model_line = "Modelo: {model}"
 model_line_configured = "Modelo: {model} (configurado: {configured})"
+effort_line = "Esfuerzo: {effort}"
 topic_line = "Tema: {topic}"
 session_line = "Sesión: `{sid}`"
 messages_line = "Mensajes: {count}"
@@ -450,3 +451,7 @@ changelog_header = "**Changelog v{version}**"
 
 [multiagent]
 async_task_received = "📥 **Tarea asíncrona recibida** de `{sender}`\nSesión: `{session}` · ID de tarea: `{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "Selecciona el esfuerzo de razonamiento para {model}:"
+unsupported = "El esfuerzo de razonamiento no es configurable para el proveedor `{provider}`."

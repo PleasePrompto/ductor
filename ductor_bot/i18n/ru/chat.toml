@@ -107,6 +107,7 @@ header = "**Статус**"
 no_session = "Нет активной сессии."
 model_line = "Модель: {model}"
 model_line_configured = "Модель: {model} (настроено: {configured})"
+effort_line = "Усилие: {effort}"
 topic_line = "Тема: {topic}"
 session_line = "Сессия: `{sid}`"
 messages_line = "Сообщений: {count}"
@@ -450,3 +451,7 @@ changelog_header = "**Changelog v{version}**"
 
 [multiagent]
 async_task_received = "📥 **Async-задача получена** от `{sender}`\nСессия: `{session}` · Task ID: `{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "Выберите уровень рассуждения для {model}:"
+unsupported = "Уровень рассуждения недоступен для провайдера `{provider}`."

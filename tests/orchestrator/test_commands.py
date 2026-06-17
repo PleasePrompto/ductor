@@ -9,6 +9,7 @@ from ductor_bot.cli.auth import AuthResult, AuthStatus
 from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
+    cmd_effort,
     cmd_memory,
     cmd_model,
     cmd_status,
@@ -234,3 +235,39 @@ async def test_model_unknown_name(orch: Orchestrator) -> None:
     assert "totally_fake_model" in result.text
     assert orch._config.model == "totally_fake_model"
     assert orch._config.provider == "codex"
+
+
+# -- /status effort line + /effort -----------------------------------------
+
+
+async def test_status_shows_effort_for_claude(orch: Orchestrator) -> None:
+    orch._config.reasoning_effort = "high"
+    with patch("ductor_bot.orchestrator.commands.check_all_auth", return_value={}):
+        result = await cmd_status(orch, SessionKey(chat_id=1), "/status")
+    assert "Effort: high" in result.text
+
+
+async def test_status_hides_effort_for_non_effort_provider(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    from ductor_bot.orchestrator.selectors.model_selector import switch_model
+
+    await switch_model(orch, SessionKey(chat_id=1), "gemini-2.5-pro")
+    with patch("ductor_bot.orchestrator.commands.check_all_auth", return_value={}):
+        result = await cmd_status(orch, SessionKey(chat_id=1), "/status")
+    assert "Effort:" not in result.text
+
+
+async def test_cmd_effort_returns_selector(orch: Orchestrator) -> None:
+    result = await cmd_effort(orch, SessionKey(chat_id=1), "/effort")  # claude opus
+    assert result.buttons is not None
+    labels = [b.text for row in result.buttons.rows for b in row]
+    assert "Max" in labels
+
+
+async def test_cmd_effort_unsupported_provider_no_buttons(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    from ductor_bot.orchestrator.selectors.model_selector import switch_model
+
+    await switch_model(orch, SessionKey(chat_id=1), "gemini-2.5-pro")
+    result = await cmd_effort(orch, SessionKey(chat_id=1), "/effort")
+    assert result.buttons is None

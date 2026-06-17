@@ -263,12 +263,31 @@ async def test_callback_provider_antigravity(orch: Orchestrator) -> None:
 # -- handle_model_callback: model selection --
 
 
-async def test_callback_model_claude_switches(orch: Orchestrator) -> None:
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+async def test_callback_model_claude_shows_reasoning(orch: Orchestrator) -> None:
+    """Picking a Claude model offers the effort sub-selector (incl. max)."""
     resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:m:sonnet")
-    assert "sonnet" in resp.text
+    assert "Thinking level" in resp.text
+    assert resp.buttons is not None
+    labels = [btn.text for row in resp.buttons.rows for btn in row]
+    assert "Low" in labels
+    assert "Max" in labels  # Claude-only top level
+    callbacks = [btn.callback_data for row in resp.buttons.rows for btn in row]
+    assert "ms:r:max:sonnet" in callbacks
+    assert "ms:b:claude" in callbacks  # back to the Claude model list
+    # Model is not switched until an effort is chosen.
+    assert orch._config.model == "opus"
+
+
+async def test_callback_claude_reasoning_applies_via_picker(orch: Orchestrator) -> None:
+    """Selecting a Claude effort in the picker applies it via the shared path."""
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    # Step 1: pick the claude model -> effort sub-selector.
+    await handle_model_callback(orch, SessionKey(chat_id=1), "ms:m:sonnet")
+    # Step 2: pick an effort -> same ms:r path codex/_effort use.
+    resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:r:max:sonnet")
     assert resp.buttons is None
     assert orch._config.model == "sonnet"
+    assert orch._config.reasoning_effort == "max"
 
 
 async def test_callback_model_antigravity_switches_without_reasoning_step(
@@ -472,3 +491,127 @@ async def test_switch_model_rejects_invalid_codex_reasoning_effort(orch: Orchest
 
     assert "Invalid reasoning effort" in result
     assert "gpt-4o-mini" in result
+
+
+# -- Claude effort + provider-aware validation ------------------------------
+
+
+async def test_switch_model_claude_accepts_max(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    result = await switch_model(orch, SessionKey(chat_id=1), "opus", reasoning_effort="max")
+    assert "Invalid reasoning effort" not in result
+    assert orch._config.reasoning_effort == "max"
+
+
+async def test_switch_model_codex_rejects_max_with_cache(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    with _with_codex_cache(orch):
+        result = await switch_model(
+            orch, SessionKey(chat_id=1), "gpt-5.2-codex", reasoning_effort="max"
+        )
+    assert "Invalid reasoning effort" in result
+    assert "max" in result
+
+
+async def test_switch_model_codex_rejects_max_no_cache(orch: Orchestrator) -> None:
+    """Even without a Codex cache, the fallback set rejects ``max``."""
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    orch._observers.codex_cache_obs = None
+    result = await switch_model(
+        orch, SessionKey(chat_id=1), "gpt-5.2-codex", reasoning_effort="max"
+    )
+    assert "Invalid reasoning effort" in result
+
+
+async def test_provider_switch_resets_invalid_effort_to_medium(orch: Orchestrator) -> None:
+    """Claude+max then /model to Codex must reset effort to medium (max not sent)."""
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "opus", reasoning_effort="max")
+    assert orch._config.reasoning_effort == "max"
+
+    orch._observers.codex_cache_obs = None  # exercise the fallback path
+    await switch_model(orch, SessionKey(chat_id=1), "gpt-5.2-codex")
+    assert orch._config.reasoning_effort == "medium"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["reasoning_effort"] == "medium"
+
+
+async def test_provider_switch_keeps_valid_effort(orch: Orchestrator) -> None:
+    """A carried-over effort valid for the new provider is left untouched."""
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "opus", reasoning_effort="high")
+    orch._observers.codex_cache_obs = None
+    await switch_model(orch, SessionKey(chat_id=1), "gpt-5.2-codex")
+    assert orch._config.reasoning_effort == "high"
+
+
+# -- /effort selector -------------------------------------------------------
+
+
+async def test_effort_selector_claude_shows_max(orch: Orchestrator) -> None:
+    from ductor_bot.orchestrator.selectors.model_selector import effort_selector_start
+
+    resp = await effort_selector_start(orch, SessionKey(chat_id=1))  # default model: opus (claude)
+    assert resp.buttons is not None
+    labels = [b.text for row in resp.buttons.rows for b in row]
+    assert "Max" in labels
+    callbacks = [b.callback_data for row in resp.buttons.rows for b in row]
+    assert any(c.startswith("ms:r:max:") for c in callbacks)
+
+
+async def test_effort_selector_codex_no_max(orch: Orchestrator) -> None:
+    from ductor_bot.orchestrator.selectors.model_selector import effort_selector_start
+
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "gpt-5.2-codex")
+    orch._observers.codex_cache_obs = None
+    resp = await effort_selector_start(orch, SessionKey(chat_id=1))
+    assert resp.buttons is not None
+    labels = [b.text for row in resp.buttons.rows for b in row]
+    assert "Max" not in labels
+
+
+async def test_effort_selector_unsupported_provider_info_only(orch: Orchestrator) -> None:
+    from ductor_bot.orchestrator.selectors.model_selector import effort_selector_start
+
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "gemini-2.5-pro")
+    resp = await effort_selector_start(orch, SessionKey(chat_id=1))
+    assert resp.buttons is None  # info message only, no UI
+    assert "gemini" in resp.text.lower()
+
+
+# -- topic-session effort apply (Gate D) ------------------------------------
+
+
+async def test_topic_effort_change_applies_runtime(orch: Orchestrator) -> None:
+    """`/effort` (effort_only) in a TOPIC must update the runtime effort.
+
+    Effort has no per-session field, so it lives in the service config; a topic
+    change must still reach orch._config / CLIService (it previously no-op'd).
+    """
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    update_mock = MagicMock()
+    object.__setattr__(orch._cli_service, "update_reasoning_effort", update_mock)
+
+    await switch_model(orch, key, "opus", reasoning_effort="high")
+
+    assert orch._config.reasoning_effort == "high"
+    update_mock.assert_called_once_with("high")
+
+
+async def test_topic_provider_switch_resets_invalid_effort(orch: Orchestrator) -> None:
+    """Topic claude+max -> codex must reset effort to medium (not leave max)."""
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+
+    # Set effort to max on the claude topic session first.
+    await switch_model(orch, key, "opus", reasoning_effort="max")
+    assert orch._config.reasoning_effort == "max"
+
+    orch._observers.codex_cache_obs = None  # exercise the fallback
+    await switch_model(orch, key, "gpt-5.2-codex")
+    assert orch._config.reasoning_effort == "medium"

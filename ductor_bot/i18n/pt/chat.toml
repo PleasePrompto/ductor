@@ -107,6 +107,7 @@ header = "**Status**"
 no_session = "Nenhuma sessão ativa."
 model_line = "Modelo: {model}"
 model_line_configured = "Modelo: {model} (configurado: {configured})"
+effort_line = "Esforco: {effort}"
 topic_line = "Tópico: {topic}"
 session_line = "Sessão: `{sid}`"
 messages_line = "Mensagens: {count}"
@@ -450,3 +451,7 @@ changelog_header = "**Changelog v{version}**"
 
 [multiagent]
 async_task_received = "📥 **Tarefa assíncrona recebida** de `{sender}`\nSessão: `{session}` · ID da tarefa: `{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "Selecione o esforco de raciocinio para {model}:"
+unsupported = "O esforco de raciocinio nao e configuravel para o provedor `{provider}`."

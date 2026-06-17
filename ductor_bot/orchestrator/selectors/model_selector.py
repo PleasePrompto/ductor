@@ -11,6 +11,8 @@ from ductor_bot.cli.auth import AuthStatus, check_all_auth
 from ductor_bot.config import (
     ANTIGRAVITY_MODELS_ORDERED,
     CLAUDE_MODELS_ORDERED,
+    CLAUDE_SUPPORTED_EFFORTS,
+    CODEX_SUPPORTED_EFFORTS_FALLBACK,
     get_antigravity_models,
     get_gemini_models,
     update_config_file_async,
@@ -34,6 +36,7 @@ _EFFORT_LABELS: dict[str, str] = {
     "medium": "Medium",
     "high": "High",
     "xhigh": "XHigh",
+    "max": "Max",
 }
 
 
@@ -97,26 +100,46 @@ def _build_switch_summary(ctx: _SwitchSummaryContext) -> str:
     return "\n".join(parts)
 
 
-def _validate_codex_reasoning_effort(
+def _supported_efforts(orch: Orchestrator, model_id: str) -> tuple[str, ...]:
+    """Return the reasoning-effort levels supported by *model_id*'s provider.
+
+    Claude accepts a fixed set (incl. ``max``). Codex uses the live model
+    cache when available, else a fallback constant so ``max`` is still
+    rejected. Other providers don't use reasoning effort.
+    """
+    provider = orch.models.provider_for(model_id)
+    if provider == "claude":
+        return CLAUDE_SUPPORTED_EFFORTS
+    if provider == "codex":
+        codex_cache = (
+            orch._observers.codex_cache_obs.get_cache()
+            if orch._observers.codex_cache_obs
+            else None
+        )
+        model_info = codex_cache.get_model(model_id) if codex_cache else None
+        if model_info is not None:
+            return tuple(model_info.supported_efforts)
+        return CODEX_SUPPORTED_EFFORTS_FALLBACK
+    return ()
+
+
+def _validate_reasoning_effort(
     orch: Orchestrator,
     model_id: str,
     reasoning_effort: str | None,
 ) -> str | None:
-    """Return a user-facing error when Codex effort is unsupported."""
-    if not reasoning_effort or orch.models.provider_for(model_id) != "codex":
+    """Return a user-facing error when the effort is unsupported by the provider.
+
+    Providers without a reasoning-effort concept (gemini/antigravity) skip
+    validation; codex/claude validate against their supported set (an empty
+    set rejects any effort).
+    """
+    if not reasoning_effort:
+        return None
+    if orch.models.provider_for(model_id) not in ("codex", "claude"):
         return None
 
-    codex_cache = (
-        orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
-    )
-    if codex_cache is None:
-        return None
-
-    model_info = codex_cache.get_model(model_id)
-    if model_info is None:
-        return None
-
-    supported = tuple(model_info.supported_efforts)
+    supported = _supported_efforts(orch, model_id)
     if reasoning_effort in supported:
         return None
 
@@ -224,6 +247,40 @@ async def model_selector_start(
     return SelectorResponse(text=f"{header}\n\n{t('model.pick_provider')}", buttons=keyboard)
 
 
+async def effort_selector_start(
+    orch: Orchestrator,
+    key: SessionKey,
+) -> SelectorResponse:
+    """Build the ``/effort`` response: effort buttons for the active provider.
+
+    Reuses the model wizard's reasoning step (``ms:r:<effort>:<model>``) so the
+    selection flows through ``switch_model`` as an effort-only change. Providers
+    without reasoning effort (gemini/antigravity) return an info message only.
+    """
+    session = await orch._sessions.get_active(key)
+    if session:
+        model, provider = session.model, session.provider
+    else:
+        model, provider = orch.resolve_runtime_target(orch._config.model)
+
+    supported = _supported_efforts(orch, model)
+    if not supported:
+        return SelectorResponse(text=t("effort.unsupported", provider=provider))
+
+    buttons = [
+        Button(text=_EFFORT_LABELS.get(e, e), callback_data=f"ms:r:{e}:{model}")
+        for e in supported
+    ]
+    keyboard = ButtonGrid(
+        rows=[
+            buttons,
+            [Button(text=t("model.btn_back"), callback_data="ms:b:root")],
+        ]
+    )
+    header = await _status_line(orch, key)
+    return SelectorResponse(text=f"{header}\n\n{t('effort.select', model=model)}", buttons=keyboard)
+
+
 async def handle_model_callback(
     orch: Orchestrator,
     key: SessionKey,
@@ -247,7 +304,7 @@ async def handle_model_callback(
         return await _build_model_step(payload, await _status_line(orch, key), codex_cache)
 
     if action == "m":
-        return await _handle_model_selected(orch, key, payload, codex_cache)
+        return await _handle_model_selected(orch, key, payload)
 
     if action == "r":
         return await _handle_reasoning_selected(orch, key, effort=payload, model_id=extra)
@@ -286,7 +343,7 @@ async def switch_model(  # noqa: C901
     new_provider = orch.models.provider_for(model_id)
     provider_changed = old_provider != new_provider
 
-    validation_error = _validate_codex_reasoning_effort(orch, model_id, reasoning_effort)
+    validation_error = _validate_reasoning_effort(orch, model_id, reasoning_effort)
     if validation_error is not None:
         return validation_error
 
@@ -304,6 +361,25 @@ async def switch_model(  # noqa: C901
                 model=model_id,
             )
 
+    # Reasoning effort is a runtime, service-wide value (no per-session field),
+    # so it must be applied even from a topic — otherwise /effort and the
+    # provider-switch revalidation are no-ops in topic sessions. The *global
+    # config file* is still only rewritten from the main chat / DM.
+    effort = reasoning_effort
+    if (
+        effort is None
+        and provider_changed
+        and _validate_reasoning_effort(orch, model_id, orch._config.reasoning_effort) is not None
+    ):
+        # The carried-over effort isn't valid for the new provider
+        # (e.g. Claude ``max`` -> Codex); reset to a safe default so an
+        # invalid value never reaches the CLI.
+        effort = "medium"
+
+    if effort is not None:
+        orch._config.reasoning_effort = effort
+        orch._cli_service.update_reasoning_effort(effort)
+
     if not is_topic:
         # Global config: update only from main chat / DM (not from topics).
         orch._config.model = model_id
@@ -312,11 +388,8 @@ async def switch_model(  # noqa: C901
             orch._config.provider = new_provider
 
         updates: dict[str, object] = {"model": model_id, "provider": orch._config.provider}
-
-        if reasoning_effort is not None:
-            orch._config.reasoning_effort = reasoning_effort
-            orch._cli_service.update_reasoning_effort(reasoning_effort)
-            updates["reasoning_effort"] = reasoning_effort
+        if effort is not None:
+            updates["reasoning_effort"] = effort
 
         await update_config_file_async(orch.paths.config_path, **updates)
 
@@ -326,8 +399,9 @@ async def switch_model(  # noqa: C901
             agents_path = orch.paths.ductor_home.parent.parent / "agents.json"
             agent_name = orch._cli_service._config.agent_name
             registry_updates = dict(updates)
-            # Only Codex uses reasoning_effort — remove it when switching away
-            if new_provider != "codex" and "reasoning_effort" not in registry_updates:
+            # Codex and Claude both use reasoning_effort — only drop it when
+            # switching to a provider that has no notion of effort.
+            if new_provider not in {"codex", "claude"} and "reasoning_effort" not in registry_updates:
                 registry_updates["reasoning_effort"] = None
             await asyncio.to_thread(
                 update_agent_fields, agents_path, agent_name, **registry_updates
@@ -370,7 +444,7 @@ async def _status_line(orch: Orchestrator, key: SessionKey) -> str:
 
     effort = orch._config.reasoning_effort
 
-    if provider == "codex":
+    if provider in ("codex", "claude") and effort and effort != "default":
         current = (
             f"{t('model.header')}\n{t('model.current_with_effort', model=model, effort=effort)}"
         )
@@ -450,18 +524,22 @@ async def _handle_model_selected(
     orch: Orchestrator,
     key: SessionKey,
     model_id: str,
-    codex_cache: CodexModelCache | None = None,
 ) -> SelectorResponse:
-    """Handle a model button press. Codex shows reasoning; other providers switch directly."""
+    """Handle a model button press.
+
+    Codex and Claude show a reasoning sub-selector; other providers switch
+    directly.
+    """
     provider = orch.models.provider_for(model_id)
 
-    if provider in ("claude", "gemini", "antigravity"):
+    if provider in ("gemini", "antigravity"):
         result = await switch_model(orch, key, model_id)
         return SelectorResponse(text=result)
 
-    # Use cache instead of live discovery
-    codex_info = codex_cache.get_model(model_id) if codex_cache else None
-    efforts = codex_info.supported_efforts if codex_info else ("low", "medium", "high", "xhigh")
+    efforts = _supported_efforts(orch, model_id)
+    if not efforts:
+        result = await switch_model(orch, key, model_id)
+        return SelectorResponse(text=result)
 
     buttons = [
         Button(
@@ -473,7 +551,7 @@ async def _handle_model_selected(
     keyboard = ButtonGrid(
         rows=[
             buttons,
-            [Button(text=t("model.btn_back"), callback_data="ms:b:codex")],
+            [Button(text=t("model.btn_back"), callback_data=f"ms:b:{provider}")],
         ]
     )
 

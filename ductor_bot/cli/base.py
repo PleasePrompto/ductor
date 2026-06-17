@@ -83,11 +83,12 @@ class CLIConfig:
     disallowed_tools: list[str] = field(default_factory=list)
     permission_mode: str = "bypassPermissions"
     docker_container: str = ""
+    # Reasoning effort: used by Codex (-c model_reasoning_effort) and Claude (--effort).
+    reasoning_effort: str = "medium"
     # Codex-specific fields (ignored by Claude provider):
     sandbox_mode: str = "read-only"
     images: list[str] = field(default_factory=list)
     instructions: str | None = None
-    reasoning_effort: str = "medium"
     # Process tracking (shared across providers):
     process_registry: ProcessRegistry | None = None
     chat_id: int = 0

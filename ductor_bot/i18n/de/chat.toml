@@ -107,6 +107,7 @@ header = "**Status**"
 no_session = "Keine aktive Session."
 model_line = "Modell: {model}"
 model_line_configured = "Modell: {model} (konfiguriert: {configured})"
+effort_line = "Aufwand: {effort}"
 topic_line = "Thema: {topic}"
 session_line = "Session: `{sid}`"
 messages_line = "Nachrichten: {count}"
@@ -450,3 +451,7 @@ changelog_header = "**Changelog v{version}**"
 
 [multiagent]
 async_task_received = "📥 **Async-Aufgabe empfangen** von `{sender}`\nSession: `{session}` · Task-ID: `{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "Denkaufwand für {model} wählen:"
+unsupported = "Denkaufwand ist für den Anbieter `{provider}` nicht einstellbar."
