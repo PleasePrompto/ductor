@@ -593,6 +593,14 @@ CLAUDE_MODELS_ORDERED: tuple[str, ...] = (
 )
 CLAUDE_MODELS: frozenset[str] = frozenset(CLAUDE_MODELS_ORDERED)
 
+# Reasoning-effort levels the Claude CLI accepts via ``--effort``. ``max`` is
+# Claude-specific (Codex tops out at ``xhigh``).
+CLAUDE_SUPPORTED_EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+
+# Codex effort levels used to validate when the live Codex model cache is
+# unavailable, so ``max`` is rejected for Codex regardless of cache state.
+CODEX_SUPPORTED_EFFORTS_FALLBACK: tuple[str, ...] = ("low", "medium", "high", "xhigh")
+
 # "auto" is a Gemini-specific alias (Gemini CLI auto-selects the best model).
 _GEMINI_ALIASES: frozenset[str] = frozenset({"auto", "pro", "flash", "flash-lite"})
 

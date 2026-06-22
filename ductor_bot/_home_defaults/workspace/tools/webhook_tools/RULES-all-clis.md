@@ -16,8 +16,8 @@ Scripts for managing incoming HTTP webhook endpoints.
    - **If Codex:** `gpt-5.2-codex` (recommended), `gpt-5.3-codex`, `gpt-5.1-codex-max`, `gpt-5.2`, `gpt-5.1-codex-mini`
    - **If Gemini:** `gemini-2.5-pro` (recommended), `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-3.1-pro-preview`
 
-3. **If Codex: Which thinking level?**
-   - `low`, `medium` (default), `high`, `xhigh`
+3. **If Codex or Claude: Which thinking level?**
+   - `low`, `medium` (default), `high`, `xhigh`; Claude also supports `max`
    - Note: `gpt-5.1-codex-mini` only supports `medium` and `high`
 
 4. **Should this webhook respect quiet hours?**
@@ -146,7 +146,7 @@ python3 tools/webhook_tools/webhook_add.py \
 **Available parameters for cron_task mode:**
 - `--provider` - CLI provider: `claude`, `codex`, or `gemini` (optional)
 - `--model` - Model choice (optional)
-- `--reasoning-effort` - Codex only: thinking level (optional)
+- `--reasoning-effort` - Codex and Claude: thinking level (optional)
 - `--cli-parameters` - Advanced: JSON array (only if user explicitly requests)
 
 ### List
@@ -262,7 +262,7 @@ Webhooks in `cron_task` mode can override global config settings in `webhooks.js
     - `"gemini-3-pro-preview"` - Next-gen preview
     - `"gemini-3-flash-preview"` - Next-gen fast preview
     - `"gemini-3.1-pro-preview"` - Latest preview
-- `reasoning_effort`: Thinking level (Codex only, optional, defaults to `"medium"`)
+- `reasoning_effort`: Thinking level (Codex and Claude, optional, defaults to `"medium"`)
   - Most models: `"low"`, `"medium"`, `"high"`, `"xhigh"`
   - `gpt-5.1-codex-mini`: `"medium"`, `"high"` only
 - `cli_parameters`: List of additional CLI flags (optional, advanced users only)
@@ -312,7 +312,7 @@ Gemini webhook:
 ```
 
 **Use cases:**
-- High-reasoning analysis: `"reasoning_effort": "high"` (Codex only)
+- High-reasoning analysis: `"reasoning_effort": "high"` (Codex and Claude)
 - Provider-specific webhook: `"provider": "gemini"` while main agent uses Claude
 - Webhook-specific model: Different model per webhook
 - Advanced CLI flags: `"cli_parameters": [...]` (only if explicitly needed)

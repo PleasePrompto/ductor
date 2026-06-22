@@ -11,7 +11,12 @@ if TYPE_CHECKING:
     from ductor_bot.cli.codex_cache import CodexModelCache
     from ductor_bot.config import AgentConfig
 
-from ductor_bot.config import _GEMINI_ALIASES, CLAUDE_MODELS, get_gemini_models
+from ductor_bot.config import (
+    _GEMINI_ALIASES,
+    CLAUDE_MODELS,
+    CLAUDE_SUPPORTED_EFFORTS,
+    get_gemini_models,
+)
 
 _TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini"})
 
@@ -67,6 +72,51 @@ class TaskExecutionConfig:
     file_access: str
 
 
+def _resolve_reasoning_effort(
+    provider: str,
+    model: str,
+    overrides: TaskOverrides,
+    base_config: AgentConfig,
+    codex_cache: CodexModelCache | None,
+) -> str:
+    """Resolve the reasoning effort delivered to the CLI.
+
+    Codex and Claude carry the effort (override or global default); other
+    providers drop it. An explicit, unsupported override raises DuctorError.
+    """
+    requested_effort = overrides.reasoning_effort or base_config.reasoning_effort
+    if not requested_effort or requested_effort == "default":
+        return ""
+
+    if provider == "claude":
+        if requested_effort in CLAUDE_SUPPORTED_EFFORTS:
+            return requested_effort
+        if overrides.reasoning_effort is not None:
+            msg = (
+                f"Invalid reasoning effort '{requested_effort}' for Claude model {model}. "
+                f"Supported: {', '.join(CLAUDE_SUPPORTED_EFFORTS)}"
+            )
+            raise DuctorError(msg)
+        return ""
+
+    if provider == "codex" and codex_cache:
+        model_info = codex_cache.get_model(model)
+        if (
+            model_info
+            and model_info.supported_efforts
+            and requested_effort in model_info.supported_efforts
+        ):
+            return requested_effort
+        if overrides.reasoning_effort is not None:
+            supported_display = ", ".join(model_info.supported_efforts) if model_info else "none"
+            msg = (
+                f"Invalid reasoning effort '{requested_effort}' for Codex model {model}. "
+                f"Supported: {supported_display}"
+            )
+            raise DuctorError(msg)
+    return ""
+
+
 def resolve_cli_config(
     base_config: AgentConfig,
     codex_cache: CodexModelCache | None,
@@ -118,29 +168,10 @@ def resolve_cli_config(
             msg = f"Invalid Codex model: {model}"
             raise DuctorError(msg)
 
-    # 4. Resolve reasoning effort (Codex only)
-    reasoning_effort = ""
-    if provider == "codex":
-        requested_effort = overrides.reasoning_effort or base_config.reasoning_effort
-
-        # Check if model supports reasoning and if effort is valid
-        if codex_cache and requested_effort:
-            model_info = codex_cache.get_model(model)
-            if (
-                model_info
-                and model_info.supported_efforts
-                and requested_effort in model_info.supported_efforts
-            ):
-                reasoning_effort = requested_effort
-            elif overrides.reasoning_effort is not None:
-                supported_display = (
-                    ", ".join(model_info.supported_efforts) if model_info else "none"
-                )
-                msg = (
-                    f"Invalid reasoning effort '{requested_effort}' for Codex model {model}. "
-                    f"Supported: {supported_display}"
-                )
-                raise DuctorError(msg)
+    # 4. Resolve reasoning effort (Codex and Claude carry it; others drop it).
+    reasoning_effort = _resolve_reasoning_effort(
+        provider, model, overrides, base_config, codex_cache
+    )
 
     # 5. Merge CLI parameters: base per-provider bucket first, task overrides second.
     #    argparse-style resolution — last flag wins at the CLI level.

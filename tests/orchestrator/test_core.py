@@ -696,3 +696,126 @@ def test_paths_property(
     paths, config = workspace
     o = Orchestrator(config, paths)
     assert o.paths is paths
+
+
+
+# -- named/background session effort wiring (Gate D #1) ----------------------
+
+
+async def test_submit_named_session_passes_effort(orch: Orchestrator) -> None:
+    """A new named session captures the global default effort into create + BackgroundSubmit."""
+    from ductor_bot.orchestrator.core import NamedSessionRequest
+    from ductor_bot.session.named import NamedSession
+
+    orch._config.reasoning_effort = "high"
+    ns = NamedSession(
+        name="alpha", chat_id=1, provider="claude", model="opus", session_id="",
+        prompt_preview="p", status="running", created_at=0.0, reasoning_effort="high",
+    )
+    create_mock = MagicMock(return_value=ns)
+    object.__setattr__(orch._named_sessions, "create", create_mock)
+    bg = MagicMock()
+    bg.submit = MagicMock(return_value="task-1")
+    orch._observers.background = bg
+
+    req = NamedSessionRequest(message_id=1, thread_id=None)
+    with patch("ductor_bot.cli.param_resolver.resolve_cli_config", return_value=MagicMock()):
+        orch.submit_named_session(1, "do it", req)
+
+    # create() received the effort
+    assert create_mock.call_args.kwargs.get("reasoning_effort") == "high"
+    # BackgroundSubmit carried the effort override
+    sub = bg.submit.call_args[0][0]
+    assert sub.reasoning_effort_override == "high"
+
+
+async def test_submit_named_followup_carries_session_effort(orch: Orchestrator) -> None:
+    """A background follow-up carries the existing named session's effort."""
+    from ductor_bot.session.named import NamedSession
+
+    ns = NamedSession(
+        name="beta", chat_id=1, provider="claude", model="opus", session_id="sid",
+        prompt_preview="p", status="idle", created_at=0.0, reasoning_effort="xhigh",
+    )
+    object.__setattr__(orch._named_sessions, "get", MagicMock(return_value=ns))
+    object.__setattr__(orch._named_sessions, "mark_running", MagicMock())
+    bg = MagicMock()
+    bg.submit = MagicMock(return_value="task-2")
+    orch._observers.background = bg
+
+    with patch("ductor_bot.cli.param_resolver.resolve_cli_config", return_value=MagicMock()):
+        orch.submit_named_followup_bg(1, "beta", "follow up", 2, None)
+
+    sub = bg.submit.call_args[0][0]
+    assert sub.reasoning_effort_override == "xhigh"
+
+
+
+async def test_submit_named_session_resets_invalid_effort_for_codex(
+    orch: Orchestrator,
+) -> None:
+    """Global Claude ``max`` -> a @codex named session resets effort to medium.
+
+    ``max`` is Claude-only; it must not be stored on / sent to a Codex session.
+    """
+    from ductor_bot.orchestrator.core import NamedSessionRequest
+    from ductor_bot.session.named import NamedSession
+
+    orch._config.reasoning_effort = "max"  # global default (claude-only level)
+    orch._observers.codex_cache_obs = None  # exercise the codex fallback set
+
+    captured: dict[str, object] = {}
+
+    def _create(chat_id, provider, model, prompt, *, reasoning_effort=""):
+        captured["effort"] = reasoning_effort
+        return NamedSession(
+            name="x", chat_id=chat_id, provider=provider, model=model, session_id="",
+            prompt_preview=prompt, status="running", created_at=0.0,
+            reasoning_effort=reasoning_effort,
+        )
+
+    object.__setattr__(orch._named_sessions, "create", _create)
+    bg = MagicMock()
+    bg.submit = MagicMock(return_value="t")
+    orch._observers.background = bg
+
+    req = NamedSessionRequest(
+        message_id=1, thread_id=None, provider_override="codex", model_override="gpt-5.2-codex"
+    )
+    with patch("ductor_bot.cli.param_resolver.resolve_cli_config", return_value=MagicMock()):
+        orch.submit_named_session(1, "go", req)
+
+    assert captured["effort"] == "medium"                 # reset (max not stored)
+    assert bg.submit.call_args[0][0].reasoning_effort_override == "medium"
+
+
+async def test_submit_named_session_keeps_valid_effort_for_claude(
+    orch: Orchestrator,
+) -> None:
+    """A @claude named session keeps the global Claude ``max`` (supported)."""
+    from ductor_bot.orchestrator.core import NamedSessionRequest
+    from ductor_bot.session.named import NamedSession
+
+    orch._config.reasoning_effort = "max"
+    captured: dict[str, object] = {}
+
+    def _create(chat_id, provider, model, prompt, *, reasoning_effort=""):
+        captured["effort"] = reasoning_effort
+        return NamedSession(
+            name="x", chat_id=chat_id, provider=provider, model=model, session_id="",
+            prompt_preview=prompt, status="running", created_at=0.0,
+            reasoning_effort=reasoning_effort,
+        )
+
+    object.__setattr__(orch._named_sessions, "create", _create)
+    bg = MagicMock()
+    bg.submit = MagicMock(return_value="t")
+    orch._observers.background = bg
+
+    req = NamedSessionRequest(
+        message_id=1, thread_id=None, provider_override="claude", model_override="opus"
+    )
+    with patch("ductor_bot.cli.param_resolver.resolve_cli_config", return_value=MagicMock()):
+        orch.submit_named_session(1, "go", req)
+
+    assert captured["effort"] == "max"  # claude supports max

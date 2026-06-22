@@ -862,3 +862,47 @@ def test_finish_normal_non_empty_success_unchanged() -> None:
     response = AgentResponse(result="Hello world", is_error=False)
     result = _finish_normal(response)
     assert result.text == "Hello world"
+
+
+# -- per-session effort: capture-on-first-use + creation-time fixed ----------
+
+
+async def test_effort_passed_as_override_and_captured(orch: Orchestrator) -> None:
+    """A normal turn captures the global default effort into the session and
+    passes it as effort_override."""
+    orch._config.reasoning_effort = "high"
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await normal(orch, SessionKey(chat_id=1), "Hello")
+
+    request = mock_execute.call_args[0][0]
+    assert request.effort_override == "high"
+    session = await orch._sessions.get_active(SessionKey(chat_id=1))
+    assert session is not None
+    assert session.reasoning_effort == "high"
+
+
+async def test_existing_topic_effort_fixed_when_global_default_changes(
+    orch: Orchestrator,
+) -> None:
+    """An existing topic session keeps its captured effort; a NEW topic inherits
+    the (changed) global default."""
+    mock_execute = AsyncMock(return_value=_mock_response())
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    orch._config.reasoning_effort = "low"
+    existing = SessionKey(chat_id=1, topic_id=10)
+    await normal(orch, existing, "first")  # captures "low"
+
+    orch._config.reasoning_effort = "high"  # global default changes
+    await normal(orch, existing, "again")   # existing topic must stay "low"
+    fresh = SessionKey(chat_id=1, topic_id=20)
+    await normal(orch, fresh, "new topic")  # new topic captures "high"
+
+    se = await orch._sessions.get_active(existing)
+    sf = await orch._sessions.get_active(fresh)
+    assert se is not None
+    assert se.reasoning_effort == "low"
+    assert sf is not None
+    assert sf.reasoning_effort == "high"

@@ -100,6 +100,7 @@ class TaskRegistry:
         model: str,
         *,
         thinking: str = "",
+        reasoning_effort: str = "",
         tasks_dir: Path | None = None,
         priority: str = "",
     ) -> TaskEntry:
@@ -121,6 +122,7 @@ class TaskRegistry:
             status="running",
             original_prompt=submit.prompt,
             thinking=thinking,
+            reasoning_effort=reasoning_effort,
             tasks_dir=str(resolved_dir),
             thread_id=submit.thread_id,
             priority=normalise_priority(priority or submit.priority),

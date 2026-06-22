@@ -108,6 +108,7 @@ header = "**Status**"
 no_session = "No active session."
 model_line = "Model: {model}"
 model_line_configured = "Model: {model} (configured: {configured})"
+effort_line = "Effort: {effort}"
 topic_line = "Topic: {topic}"
 session_line = "Session: `{sid}`"
 messages_line = "Messages: {count}"
@@ -219,7 +220,7 @@ model_line = "Model: {model}"
 model_change = "Model: {old} -> {new}"
 provider_change = "Provider: {old} -> {new}"
 reasoning_line = "Reasoning: {effort}"
-effort_updated = "Reasoning effort updated."
+effort_updated = "Reasoning effort set to {effort}."
 already_running = "Already running {model}. No changes made."
 
 resume_hint = """\
@@ -451,3 +452,7 @@ changelog_header = "**Changelog v{version}**"
 
 [multiagent]
 async_task_received = "📥 **Async task received** from `{sender}`\nSession: `{session}` · Task ID: `{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "Select reasoning effort for {model}:"
+unsupported = "Reasoning effort is not configurable for the `{provider}` provider."

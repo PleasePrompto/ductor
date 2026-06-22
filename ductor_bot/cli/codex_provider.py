@@ -116,6 +116,12 @@ class CodexCLI(BaseCLI):
         if json_output:
             cmd.append("--json")
         cmd += self._sandbox_flags()
+        # Re-assert reasoning effort on resume. Codex stores the effort the
+        # session was created with, so without this a later per-session
+        # effort change would be ignored on resumed turns (unlike Claude,
+        # whose --effort is re-sent every turn).
+        if self._config.reasoning_effort and self._config.reasoning_effort != "default":
+            cmd += ["-c", f"model_reasoning_effort={self._config.reasoning_effort}"]
         cmd += ["--", session_id]
         cmd.append("-" if _IS_WINDOWS else final_prompt)
         return cmd

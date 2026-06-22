@@ -41,6 +41,19 @@ class TestTaskEntry:
         assert entry.status == "running"
         assert entry.question_count == 0
 
+    def test_reasoning_effort_roundtrip(self) -> None:
+        entry = TaskEntry(
+            task_id="e1", chat_id=1, parent_agent="main", name="t",
+            prompt_preview="p", provider="claude", model="opus", status="running",
+            reasoning_effort="high",
+        )
+        restored = TaskEntry.from_dict(entry.to_dict())
+        assert restored.reasoning_effort == "high"
+
+    def test_reasoning_effort_default_empty(self) -> None:
+        entry = TaskEntry.from_dict({"task_id": "x", "chat_id": 1})
+        assert entry.reasoning_effort == ""
+
     def test_to_dict_includes_original_prompt(self) -> None:
         """#90: original_prompt MUST be persisted so it survives bot restarts.
 

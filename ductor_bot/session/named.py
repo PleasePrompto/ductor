@@ -143,6 +143,7 @@ class NamedSession:
     message_count: int = 0
     last_prompt: str = ""
     transport: str = "tg"
+    reasoning_effort: str = ""
 
 
 def _session_from_dict(data: dict[str, Any]) -> NamedSession:
@@ -159,6 +160,7 @@ def _session_from_dict(data: dict[str, Any]) -> NamedSession:
         message_count=int(data.get("message_count", 0)),
         last_prompt=str(data.get("last_prompt", data.get("prompt_preview", ""))),
         transport=str(data.get("transport", "tg")),
+        reasoning_effort=str(data.get("reasoning_effort", "")),
     )
 
 
@@ -200,6 +202,8 @@ class NamedSessionRegistry:
                     created_at=ns.created_at,
                     message_count=ns.message_count,
                     last_prompt=ns.last_prompt,
+                    transport=ns.transport,
+                    reasoning_effort=ns.reasoning_effort,
                 )
                 ns.status = "idle"
             self._sessions[(ns.chat_id, ns.name)] = ns
@@ -216,6 +220,7 @@ class NamedSessionRegistry:
         provider: str,
         model: str,
         prompt_preview: str,
+        reasoning_effort: str = "",
     ) -> NamedSession:
         """Create a new named session. Raises ValueError if limit exceeded."""
         active = self.active_names(chat_id)
@@ -233,6 +238,7 @@ class NamedSessionRegistry:
             prompt_preview=prompt_preview[:60],
             status="running",
             created_at=time.time(),
+            reasoning_effort=reasoning_effort,
         )
         self._sessions[(chat_id, name)] = session
         self._persist()
