@@ -246,6 +246,8 @@ class TestCancel:
         hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
 
         task_id = hub.submit(_submit())
+        memory = registry.taskmemory_path(task_id)
+        memory.write_text("partial cancellation notes\n", encoding="utf-8")
         await asyncio.sleep(0.05)
 
         success = await hub.cancel(task_id)
@@ -254,10 +256,94 @@ class TestCancel:
 
         assert len(delivered) == 1
         assert delivered[0].status == "cancelled"
+        assert "partial cancellation notes" in delivered[0].result_text
+        assert "CONTENT FROM TASKMEMORY.MD" in delivered[0].result_text
 
         entry = registry.get(task_id)
         assert entry is not None
         assert entry.status == "cancelled"
+
+    async def test_cancel_after_completion_preserves_result(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        delivery_started = asyncio.Event()
+        delivery_released = asyncio.Event()
+        delivered_event = asyncio.Event()
+        delivered: list[TaskResult] = []
+
+        async def _blocked_handler(result: TaskResult) -> None:
+            delivery_started.set()
+            await delivery_released.wait()
+            delivered.append(result)
+            delivered_event.set()
+
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service("complete result"),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", _blocked_handler)
+
+        task_id = hub.submit(_submit())
+        await asyncio.wait_for(delivery_started.wait(), timeout=1)
+
+        success = await hub.cancel(task_id)
+        assert success
+
+        delivery_released.set()
+        await asyncio.wait_for(delivered_event.wait(), timeout=1)
+
+        assert len(delivered) == 1
+        assert delivered[0].status == "done"
+        assert "complete result" in delivered[0].result_text
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "done"
+
+        await hub.shutdown()
+
+    async def test_cancel_all_after_completion_preserves_result(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        delivery_started = asyncio.Event()
+        delivery_released = asyncio.Event()
+        delivered_event = asyncio.Event()
+        delivered: list[TaskResult] = []
+
+        async def _blocked_handler(result: TaskResult) -> None:
+            delivery_started.set()
+            await delivery_released.wait()
+            delivered.append(result)
+            delivered_event.set()
+
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service("complete result"),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", _blocked_handler)
+
+        task_id = hub.submit(_submit())
+        await asyncio.wait_for(delivery_started.wait(), timeout=1)
+
+        count = await hub.cancel_all(42)
+        assert count == 1
+
+        delivery_released.set()
+        await asyncio.wait_for(delivered_event.wait(), timeout=1)
+
+        assert len(delivered) == 1
+        assert delivered[0].status == "done"
+        assert "complete result" in delivered[0].result_text
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "done"
+
+        await hub.shutdown()
 
     async def test_cancel_nonexistent(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = TaskHub(
@@ -267,6 +353,104 @@ class TestCancel:
             config=_make_config(),
         )
         assert not await hub.cancel("nonexistent")
+
+    async def test_cancel_logs(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level("INFO", logger="ductor_bot.tasks.hub")
+
+        async def _hang(_: object) -> MagicMock:
+            await asyncio.sleep(999)
+            return MagicMock()
+
+        cli = _make_cli_service()
+        cli.execute = AsyncMock(side_effect=_hang)
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+
+        task_id = hub.submit(_submit(name="Log Task"))
+        await asyncio.sleep(0.05)
+        assert await hub.cancel(task_id)
+        assert not await hub.cancel("missing-task")
+
+        hub.submit(_submit(name="A"))
+        hub.submit(_submit(name="B"))
+        await asyncio.sleep(0.05)
+        assert await hub.cancel_all(42) == 2
+
+        delivery_started = asyncio.Event()
+        delivery_released = asyncio.Event()
+
+        async def _blocked_handler(_: TaskResult) -> None:
+            delivery_started.set()
+            await delivery_released.wait()
+
+        late_hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service("late complete"),
+            config=_make_config(),
+        )
+        late_hub.set_result_handler("main", _blocked_handler)
+        late_task_id = late_hub.submit(_submit(name="Late Log Task"))
+        await asyncio.wait_for(delivery_started.wait(), timeout=1)
+        assert await late_hub.cancel(late_task_id)
+        delivery_released.set()
+        await late_hub.shutdown()
+
+        messages = "\n".join(record.getMessage() for record in caplog.records)
+        assert f"Task cancel accepted id={task_id} name='Log Task'" in messages
+        assert "Cancel requested for non-running task id=missing-task" in messages
+        assert "Task cancel accepted for 2 task(s) chat=42" in messages
+        assert (
+            f"Task {late_task_id} cancelled after completion — finished result preserved"
+            in messages
+        )
+
+    async def test_shutdown_drains_pending_delivery(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        delivery_started = asyncio.Event()
+        delivery_released = asyncio.Event()
+        delivered_event = asyncio.Event()
+        delivered: list[TaskResult] = []
+
+        async def _blocked_handler(result: TaskResult) -> None:
+            delivery_started.set()
+            await delivery_released.wait()
+            delivered.append(result)
+            delivered_event.set()
+
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service("shutdown result"),
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", _blocked_handler)
+
+        task_id = hub.submit(_submit())
+        await asyncio.wait_for(delivery_started.wait(), timeout=1)
+        assert await hub.cancel(task_id)
+
+        shutdown_task = asyncio.create_task(hub.shutdown())
+        await asyncio.sleep(0.05)
+        assert not shutdown_task.done()
+
+        delivery_released.set()
+        await asyncio.wait_for(shutdown_task, timeout=1)
+        await asyncio.wait_for(delivered_event.wait(), timeout=1)
+
+        assert len(delivered) == 1
+        assert delivered[0].status == "done"
 
 
 class TestCancelWithProcessRegistry:
