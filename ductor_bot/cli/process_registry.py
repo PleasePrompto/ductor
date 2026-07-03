@@ -17,6 +17,8 @@ from ductor_bot.infra.process_tree import (
 logger = logging.getLogger(__name__)
 
 _SIGTERM_GRACE_SECONDS = 2.0
+_PRESERVED_LABEL_PREFIXES: tuple[str, ...] = ("task:", "task_result:", "ns:")
+# Lifecycle for these subprocesses is owned by /tasks, /sessions, or TaskHub.cancel().
 
 
 @dataclass(slots=True)
@@ -108,19 +110,23 @@ class ProcessRegistry:
 
         Used by ``/stop`` so a stop in one topic does not affect another
         topic in the same chat. ``topic_id=None`` matches processes
-        registered without a topic (e.g. private chats).
+        registered without a topic (e.g. private chats). Labels owned by
+        /tasks, /sessions, or TaskHub.cancel() are preserved.
         """
         async with self._kill_lock:
             entries = self._processes.get(chat_id, [])
             targets = [
-                t for t in entries if t.topic_id == topic_id and t.process.returncode is None
+                t
+                for t in entries
+                if t.topic_id == topic_id
+                and t.process.returncode is None
+                and not t.label.startswith(_PRESERVED_LABEL_PREFIXES)
             ]
             if not targets:
                 return 0
             self._aborted_topics.add((chat_id, topic_id))
-            remaining = [
-                t for t in entries if t.topic_id != topic_id or t.process.returncode is not None
-            ]
+            target_ids = {id(t) for t in targets}
+            remaining = [t for t in entries if id(t) not in target_ids]
             if remaining:
                 self._processes[chat_id] = remaining
             else:

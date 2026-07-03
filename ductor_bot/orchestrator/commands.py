@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /new: kill processes and reset only active provider session."""
     logger.info("Reset requested")
-    await orch._process_registry.kill_all(key.chat_id)
+    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     provider = await orch.reset_active_provider_session(key)
     return OrchestratorResult(text=new_session_text(provider))
 
@@ -40,7 +40,7 @@ async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
 async def cmd_reset_current(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /reset: kill processes and reset the *current* provider session."""
     logger.info("Reset (current) requested")
-    await orch._process_registry.kill_all(key.chat_id)
+    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     provider = await orch.reset_current_provider_session(key)
     return OrchestratorResult(text=new_session_text(provider))
 

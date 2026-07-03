@@ -38,10 +38,10 @@ def _mock_response(**kwargs: object) -> AgentResponse:
 
 async def test_new_command(orch: Orchestrator) -> None:
     mock_kill = AsyncMock(return_value=0)
-    object.__setattr__(orch._process_registry, "kill_all", mock_kill)
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", mock_kill)
     result = await orch.handle_message(SessionKey(chat_id=1), "/new")
     assert "session reset" in result.text.lower()
-    mock_kill.assert_called_once_with(1)
+    mock_kill.assert_called_once_with(1, None)
 
 
 async def test_new_command_resets_only_active_provider_bucket(orch: Orchestrator) -> None:
@@ -172,14 +172,14 @@ async def test_reset_command_with_args_uses_reset_dispatch(orch: Orchestrator) -
     mock_kill = AsyncMock(return_value=0)
     mock_reset = AsyncMock(return_value="codex")
     mock_execute = AsyncMock()
-    object.__setattr__(orch._process_registry, "kill_all", mock_kill)
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", mock_kill)
     object.__setattr__(orch, "reset_current_provider_session", mock_reset)
     object.__setattr__(orch._cli_service, "execute", mock_execute)
 
     result = await orch.handle_message(SessionKey(chat_id=17), "/reset extra")
 
     assert "Session reset for Codex" in result.text
-    mock_kill.assert_awaited_once_with(17)
+    mock_kill.assert_awaited_once_with(17, None)
     mock_reset.assert_awaited_once_with(SessionKey(chat_id=17))
     mock_execute.assert_not_called()
 

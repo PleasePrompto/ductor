@@ -139,6 +139,32 @@ class TestRunAndDeliver:
 
         await hub.shutdown()
 
+    async def test_task_request_uses_task_label(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        captured: list[object] = []
+        cli = _make_cli_service("task output")
+
+        async def _execute(request: object) -> object:
+            captured.append(request)
+            return _make_cli_service("task output").execute.return_value
+
+        cli.execute = AsyncMock(side_effect=_execute)
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.1)
+
+        assert captured
+        assert captured[0].process_label == f"task:{task_id}"
+
+        await hub.shutdown()
+
     async def test_delivers_error_on_cli_failure(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
