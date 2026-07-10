@@ -290,19 +290,26 @@ async def switch_model(  # noqa: C901
     if validation_error is not None:
         return validation_error
 
-    resume_session_id, resume_message_count = _resume_state_for_provider(
-        active_session,
-        new_provider,
-    )
-
+    resume_source = active_session
     if not same_model:
         await orch._process_registry.kill_all(key.chat_id)
-        if active_session is not None:
+        if is_topic:
+            resolved, created = await orch._sessions.resolve_session_target(
+                key,
+                provider=new_provider,
+                model=model_id,
+            )
+            resume_source = None if created else resolved
+        elif active_session is not None:
             await orch._sessions.sync_session_target(
                 active_session,
                 provider=new_provider,
                 model=model_id,
             )
+    resume_session_id, resume_message_count = _resume_state_for_provider(
+        resume_source,
+        new_provider,
+    )
 
     if not is_topic:
         # Global config: update only from main chat / DM (not from topics).
