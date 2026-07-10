@@ -112,10 +112,15 @@ class CodexCLI(BaseCLI):
         self, final_prompt: str, session_id: str, *, json_output: bool
     ) -> list[str]:
         """Build command to resume an existing Codex session."""
+        cfg = self._config
         cmd = [self._cli, "exec", "resume"]
         if json_output:
             cmd.append("--json")
         cmd += self._sandbox_flags()
+        # Codex stores the model at session creation; re-assert it so later
+        # /model changes apply on resume, matching Claude's per-turn --model.
+        if cfg.model:
+            cmd += ["--model", cfg.model]
         cmd += ["--", session_id]
         cmd.append("-" if _IS_WINDOWS else final_prompt)
         return cmd

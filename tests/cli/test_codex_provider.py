@@ -278,11 +278,23 @@ class TestBuildCommand:
         assert cmd[2] == "resume"
         assert "--json" in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
-        assert "thread-abc" in cmd
-        # resume does not include --model, --color, --skip-git-repo-check
-        assert "--model" not in cmd
+        idx_model = cmd.index("--model")
+        assert cmd[idx_model + 1] == "gpt-5.2-codex"
+        idx_separator = cmd.index("--")
+        assert idx_model < idx_separator
+        assert cmd[idx_separator + 1] == "thread-abc"
+        assert cmd[-1] == "hello"
         assert "--color" not in cmd
         assert "--skip-git-repo-check" not in cmd
+
+    @pytest.mark.parametrize("model", [None, ""])
+    def test_resume_session_no_model_omits_flag(
+        self, monkeypatch: pytest.MonkeyPatch, model: str | None
+    ) -> None:
+        cli = _make_cli(monkeypatch, model=model)
+        cmd = cli._build_command("hello", resume_session="thread-abc")
+        assert "--model" not in cmd
+        assert cmd[-3:] == ["--", "thread-abc", "hello"]
 
     def test_resume_session_json_output_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)
