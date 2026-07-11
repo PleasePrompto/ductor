@@ -51,7 +51,7 @@ class TestBuildCmd:
             working_dir="/tmp",
             file_access="all",
         )
-        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
             result = build_cmd(exec_config, "hello")
         assert result is not None
         assert result.cmd[0] == "/usr/bin/codex"
@@ -69,7 +69,7 @@ class TestBuildCmd:
             working_dir="/tmp",
             file_access="all",
         )
-        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
             result = build_cmd(exec_config, "hello")
         assert result is not None
         assert "--full-auto" in result.cmd

@@ -54,6 +54,14 @@ def codex_cache() -> CodexModelCache:
                 default_effort="",
                 is_default=False,
             ),
+            CodexModelInfo(
+                id="gpt-5.5",
+                display_name="GPT-5.5",
+                description="GPT-5.5 model",
+                supported_efforts=("low", "medium", "high", "xhigh"),
+                default_effort="medium",
+                is_default=False,
+            ),
         ],
     )
 
@@ -176,6 +184,23 @@ def test_resolve_codex_effort_fallback(
 
     with pytest.raises(DuctorError, match="Invalid reasoning effort"):
         resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
+
+
+def test_resolve_gpt_55_medium_effort_to_low(
+    base_config: AgentConfig, codex_cache: CodexModelCache
+) -> None:
+    """Should normalize old Codex effort names before cache validation."""
+    overrides = TaskOverrides(
+        provider="codex",
+        model="gpt-5.5",
+        reasoning_effort="medium",
+    )
+
+    result = resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
+
+    assert result.provider == "codex"
+    assert result.model == "gpt-5.5"
+    assert result.reasoning_effort == "low"
 
 
 def test_resolve_claude_ignores_reasoning(

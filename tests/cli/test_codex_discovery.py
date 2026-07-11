@@ -73,7 +73,7 @@ def _mock_process(stdout: str = _STDOUT, returncode: int = 0) -> AsyncMock:
 async def test_discover_models_parses_response() -> None:
     proc = _mock_process()
     with (
-        patch("ductor_bot.cli.codex_discovery.which", return_value="/usr/bin/codex"),
+        patch("ductor_bot.cli.codex_discovery.find_codex_cli", return_value="/usr/bin/codex"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
     ):
         models = await discover_codex_models()
@@ -95,7 +95,10 @@ async def test_discover_models_parses_response() -> None:
 
 
 async def test_discover_models_codex_not_installed() -> None:
-    with patch("ductor_bot.cli.codex_discovery.which", return_value=None):
+    with patch(
+        "ductor_bot.cli.codex_discovery.find_codex_cli",
+        side_effect=FileNotFoundError("codex CLI not found"),
+    ):
         models = await discover_codex_models()
     assert models == []
 
@@ -110,7 +113,7 @@ async def test_discover_models_timeout() -> None:
     proc.kill = MagicMock()
 
     with (
-        patch("ductor_bot.cli.codex_discovery.which", return_value="/usr/bin/codex"),
+        patch("ductor_bot.cli.codex_discovery.find_codex_cli", return_value="/usr/bin/codex"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
     ):
         models = await discover_codex_models(deadline=0.1)
@@ -122,7 +125,7 @@ async def test_discover_models_timeout() -> None:
 async def test_discover_models_invalid_json() -> None:
     proc = _mock_process(stdout="not json at all\n")
     with (
-        patch("ductor_bot.cli.codex_discovery.which", return_value="/usr/bin/codex"),
+        patch("ductor_bot.cli.codex_discovery.find_codex_cli", return_value="/usr/bin/codex"),
         patch("asyncio.create_subprocess_exec", return_value=proc),
     ):
         models = await discover_codex_models()
@@ -131,7 +134,7 @@ async def test_discover_models_invalid_json() -> None:
 
 async def test_discover_models_spawn_error() -> None:
     with (
-        patch("ductor_bot.cli.codex_discovery.which", return_value="/usr/bin/codex"),
+        patch("ductor_bot.cli.codex_discovery.find_codex_cli", return_value="/usr/bin/codex"),
         patch("asyncio.create_subprocess_exec", side_effect=OSError("exec failed")),
     ):
         models = await discover_codex_models()

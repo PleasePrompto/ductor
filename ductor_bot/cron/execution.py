@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import which
 
+from ductor_bot.cli.codex_compat import (
+    codex_reasoning_effort_for_command,
+    find_codex_cli,
+)
 from ductor_bot.cli.codex_events import parse_codex_jsonl
 from ductor_bot.cli.gemini_events import parse_gemini_json
 from ductor_bot.cli.gemini_utils import find_gemini_cli
@@ -151,8 +155,9 @@ def _build_gemini_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotC
 
 def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
     """Build a Codex CLI command for one-shot cron execution."""
-    cli = which("codex")
-    if not cli:
+    try:
+        cli = find_codex_cli()
+    except FileNotFoundError:
         return None
     cmd = [cli, "exec", "--json", "--color", "never", "--skip-git-repo-check"]
 
@@ -164,9 +169,14 @@ def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCo
 
     cmd += ["--model", exec_config.model]
 
-    # Add reasoning effort (if not default)
-    if exec_config.reasoning_effort and exec_config.reasoning_effort != "medium":
-        cmd += ["-c", f"model_reasoning_effort={exec_config.reasoning_effort}"]
+    # Add reasoning effort (if not default).
+    reasoning_effort = codex_reasoning_effort_for_command(
+        exec_config.model,
+        exec_config.reasoning_effort,
+        omit_legacy_medium_default=True,
+    )
+    if reasoning_effort:
+        cmd += ["-c", f"model_reasoning_effort={reasoning_effort}"]
 
     # Add extra CLI parameters
     cmd.extend(exec_config.cli_parameters)

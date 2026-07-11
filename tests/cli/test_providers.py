@@ -125,7 +125,7 @@ def test_claude_streaming_command_uses_stream_json(monkeypatch: pytest.MonkeyPat
 
 
 def test_codex_build_command_basic(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(provider="codex", model="gpt-5.2-codex", permission_mode="bypassPermissions")
     cli = CodexCLI(cfg)
     cmd = cli._build_command("hello")
@@ -138,7 +138,7 @@ def test_codex_build_command_basic(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_codex_compose_prompt_injects_system_context(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(
         provider="codex",
         system_prompt="System",
@@ -154,7 +154,7 @@ def test_codex_compose_prompt_injects_system_context(monkeypatch: pytest.MonkeyP
 
 
 def test_codex_sandbox_flags_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(provider="codex", permission_mode="bypassPermissions")
     cli = CodexCLI(cfg)
     flags = cli._sandbox_flags()
@@ -162,7 +162,7 @@ def test_codex_sandbox_flags_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_codex_sandbox_flags_full_access(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(provider="codex", permission_mode="other", sandbox_mode="full-access")
     cli = CodexCLI(cfg)
     flags = cli._sandbox_flags()
@@ -170,7 +170,7 @@ def test_codex_sandbox_flags_full_access(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_codex_sandbox_flags_workspace_write(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(provider="codex", permission_mode="other", sandbox_mode="workspace-write")
     cli = CodexCLI(cfg)
     flags = cli._sandbox_flags()
@@ -178,7 +178,7 @@ def test_codex_sandbox_flags_workspace_write(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_codex_build_command_with_resume(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(provider="codex", model="gpt-5.2-codex")
     cli = CodexCLI(cfg)
     cmd = cli._build_command("hello", resume_session="thread-abc")
@@ -187,7 +187,7 @@ def test_codex_build_command_with_resume(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_codex_build_command_with_reasoning_effort(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(provider="codex", model="gpt-5.2-codex", reasoning_effort="high")
     cli = CodexCLI(cfg)
     cmd = cli._build_command("hello")
@@ -195,7 +195,7 @@ def test_codex_build_command_with_reasoning_effort(monkeypatch: pytest.MonkeyPat
 
 
 def test_codex_build_command_with_images(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     cfg = CLIConfig(provider="codex", model="gpt-5.2-codex", images=["img.png"])
     cli = CodexCLI(cfg)
     cmd = cli._build_command("hello")

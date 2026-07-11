@@ -7,8 +7,8 @@ import contextlib
 import json
 import logging
 from dataclasses import dataclass
-from shutil import which
 
+from ductor_bot.cli.codex_compat import find_codex_cli
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 
 logger = logging.getLogger(__name__)
@@ -53,8 +53,9 @@ async def discover_codex_models(*, deadline: float = DISCOVERY_TIMEOUT) -> list[
     Returns an empty list on timeout, missing CLI, or parse error.
     Never raises -- all errors are logged and swallowed.
     """
-    codex_path = which("codex")
-    if not codex_path:
+    try:
+        codex_path = find_codex_cli()
+    except FileNotFoundError:
         logger.debug("codex CLI not found, skipping model discovery")
         return []
 

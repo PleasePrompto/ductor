@@ -10,4 +10,7 @@
 
 ## Decisions and Preferences
 
-(Empty -- record important decisions and their reasoning here.)
+- When the user asks to list active threads or reformats a thread list, keep the
+  default output extremely simple: thread names only, one per line. Include
+  dates, projects, IDs, counts, tables, or explanations only if explicitly
+  requested.

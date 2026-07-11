@@ -6,7 +6,6 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from shutil import which
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.base import (
@@ -14,6 +13,10 @@ from ductor_bot.cli.base import (
     BaseCLI,
     CLIConfig,
     docker_wrap,
+)
+from ductor_bot.cli.codex_compat import (
+    codex_reasoning_effort_for_command,
+    find_codex_cli,
 )
 from ductor_bot.cli.codex_events import (
     CodexThinkingFilter,
@@ -80,11 +83,7 @@ class CodexCLI(BaseCLI):
 
     @staticmethod
     def _find_cli() -> str:
-        path = which("codex")
-        if not path:
-            msg = "codex CLI not found on PATH. Install via: npm install -g @openai/codex"
-            raise FileNotFoundError(msg)
-        return path
+        return find_codex_cli()
 
     def _compose_prompt(self, prompt: str) -> str:
         """Inject system context into user prompt (Codex has no --system-prompt)."""
@@ -112,10 +111,22 @@ class CodexCLI(BaseCLI):
         self, final_prompt: str, session_id: str, *, json_output: bool
     ) -> list[str]:
         """Build command to resume an existing Codex session."""
-        cmd = [self._cli, "exec", "resume"]
+        cfg = self._config
+        cmd = [self._cli, "exec"]
         if json_output:
             cmd.append("--json")
         cmd += self._sandbox_flags()
+        cmd.append("--skip-git-repo-check")
+
+        if cfg.model:
+            cmd += ["--model", cfg.model]
+        reasoning_effort = codex_reasoning_effort_for_command(cfg.model, cfg.reasoning_effort)
+        if reasoning_effort:
+            cmd += ["-c", f"model_reasoning_effort={reasoning_effort}"]
+        if cfg.cli_parameters:
+            cmd.extend(cfg.cli_parameters)
+
+        cmd.append("resume")
         cmd += ["--", session_id]
         cmd.append("-" if _IS_WINDOWS else final_prompt)
         return cmd
@@ -142,8 +153,9 @@ class CodexCLI(BaseCLI):
 
         if cfg.model:
             cmd += ["--model", cfg.model]
-        if cfg.reasoning_effort and cfg.reasoning_effort != "default":
-            cmd += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
+        reasoning_effort = codex_reasoning_effort_for_command(cfg.model, cfg.reasoning_effort)
+        if reasoning_effort:
+            cmd += ["-c", f"model_reasoning_effort={reasoning_effort}"]
         if cfg.instructions:
             cmd += ["--instructions", cfg.instructions]
         for img in cfg.images:

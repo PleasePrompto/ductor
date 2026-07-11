@@ -39,7 +39,7 @@ def _default_non_windows_cli(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _make_cli(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> CodexCLI:
-    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
     return CodexCLI(
         CLIConfig(
             provider="codex",
@@ -104,12 +104,15 @@ async def _collect_events(gen: AsyncGenerator[StreamEvent, None]) -> list[Stream
 
 class TestInit:
     def test_find_cli_raises_when_not_on_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: None)
+        def raise_missing() -> str:
+            raise FileNotFoundError("codex CLI not found on PATH")
+
+        monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", raise_missing)
         with pytest.raises(FileNotFoundError, match="codex CLI not found"):
             CodexCLI(CLIConfig(provider="codex"))
 
     def test_find_cli_uses_resolved_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/opt/bin/codex")
+        monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/opt/bin/codex")
         cli = CodexCLI(CLIConfig(provider="codex"))
         assert cli._cli == "/opt/bin/codex"
 
@@ -119,7 +122,7 @@ class TestInit:
         assert cli._cli == "codex"
 
     def test_working_dir_resolved(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
+        monkeypatch.setattr("ductor_bot.cli.codex_provider.find_codex_cli", lambda: "/usr/bin/codex")
         cli = CodexCLI(CLIConfig(provider="codex", working_dir=str(tmp_path)))
         assert cli._working_dir == tmp_path.resolve()
 
@@ -250,6 +253,28 @@ class TestBuildCommand:
         else:
             assert "-c" not in cmd
 
+    @pytest.mark.parametrize(
+        ("effort", "expected"),
+        [
+            ("minimal", "low"),
+            ("low", "low"),
+            ("medium", "low"),
+            ("high", "high"),
+            ("xhigh", "xhigh"),
+            ("fast", "low"),
+            ("flex", "high"),
+        ],
+    )
+    def test_gpt_55_reasoning_effort_is_normalized(
+        self, monkeypatch: pytest.MonkeyPatch, effort: str, expected: str
+    ) -> None:
+        cli = _make_cli(monkeypatch, model="gpt-5.5", reasoning_effort=effort)
+        cmd = cli._build_command("hello")
+
+        assert "-c" in cmd
+        idx = cmd.index("-c")
+        assert cmd[idx + 1] == f"model_reasoning_effort={expected}"
+
     def test_instructions_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, instructions="/path/to/instructions.md")
         cmd = cli._build_command("hello")
@@ -271,18 +296,29 @@ class TestBuildCommand:
         assert cmd[image_indices[1] + 1] == "img2.jpg"
 
     def test_resume_session_changes_structure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        cli = _make_cli(monkeypatch, permission_mode="bypassPermissions")
+        cli = _make_cli(
+            monkeypatch,
+            permission_mode="bypassPermissions",
+            model="gpt-5.5",
+            reasoning_effort="fast",
+            cli_parameters=["--ignore-user-config", "--cd", "/tmp/work"],
+        )
         cmd = cli._build_command("hello", resume_session="thread-abc")
         assert cmd[0] == "/usr/bin/codex"
         assert cmd[1] == "exec"
-        assert cmd[2] == "resume"
+        assert "resume" in cmd
         assert "--json" in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert "--skip-git-repo-check" in cmd
+        assert "--model" in cmd
+        assert cmd[cmd.index("--model") + 1] == "gpt-5.5"
+        assert "-c" in cmd
+        assert cmd[cmd.index("-c") + 1] == "model_reasoning_effort=low"
+        assert "--ignore-user-config" in cmd
+        assert "--cd" in cmd
+        assert cmd[cmd.index("--cd") + 1] == "/tmp/work"
         assert "thread-abc" in cmd
-        # resume does not include --model, --color, --skip-git-repo-check
-        assert "--model" not in cmd
         assert "--color" not in cmd
-        assert "--skip-git-repo-check" not in cmd
 
     def test_resume_session_json_output_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)

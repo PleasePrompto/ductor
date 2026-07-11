@@ -143,7 +143,7 @@ async def test_cron_task_cli_parameters(
     exec_config = resolve_cli_config(base_config, mock_codex_cache, task_overrides=overrides)
 
     # Build command
-    with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+    with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
         result = build_cmd(exec_config, "Test prompt")
 
     # Verify --chrome appears in command before --
@@ -189,7 +189,7 @@ async def test_cron_task_reasoning_effort(
     exec_config = resolve_cli_config(base_config, mock_codex_cache, task_overrides=overrides)
 
     # Build command
-    with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+    with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
         result = build_cmd(exec_config, "Test prompt")
 
     # Verify reasoning effort parameter
@@ -297,7 +297,7 @@ async def test_cron_task_provider_switch(
     exec_config = resolve_cli_config(base_config, mock_codex_cache, task_overrides=overrides)
 
     # Build command
-    with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+    with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
         result = build_cmd(exec_config, "Test prompt")
 
     # Verify Codex command instead of Claude

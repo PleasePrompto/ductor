@@ -73,7 +73,7 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
             result = build_cmd(exec_config, "hello world")
 
         assert result is not None
@@ -98,7 +98,7 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
             result = build_cmd(exec_config, "test prompt")
 
         assert result is not None
@@ -124,7 +124,7 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
             result = build_cmd(exec_config, "complex task")
 
         assert result is not None
@@ -145,7 +145,7 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
             result = build_cmd(exec_config, "quick task")
 
         assert result is not None
@@ -230,7 +230,7 @@ class TestBuildCmdWithTaskExecutionConfig:
             file_access="all",
         )
 
-        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
             result = build_cmd(exec_config, "complex task")
 
         assert result is not None
@@ -248,3 +248,22 @@ class TestBuildCmdWithTaskExecutionConfig:
         assert result.cmd.index("-c") < separator_idx
         assert result.cmd.index("--verbose") < separator_idx
         assert result.cmd.index("--no-cache") < separator_idx
+
+    def test_build_cmd_gpt_55_medium_maps_to_low(self) -> None:
+        """GPT-5.5 medium config is lowered for faster Codex task execution."""
+        exec_config = TaskExecutionConfig(
+            provider="codex",
+            model="gpt-5.5",
+            reasoning_effort="medium",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
+
+        with patch("ductor_bot.cron.execution.find_codex_cli", return_value="/usr/bin/codex"):
+            result = build_cmd(exec_config, "quick task")
+
+        assert result is not None
+        config_idx = result.cmd.index("-c")
+        assert result.cmd[config_idx + 1] == "model_reasoning_effort=low"

@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.codex_compat import normalize_codex_reasoning_effort
+from ductor_bot.config import _GEMINI_ALIASES, CLAUDE_MODELS, get_gemini_models
 from ductor_bot.errors import DuctorError
 
 if TYPE_CHECKING:
     from ductor_bot.cli.codex_cache import CodexModelCache
     from ductor_bot.config import AgentConfig
-
-from ductor_bot.config import _GEMINI_ALIASES, CLAUDE_MODELS, get_gemini_models
 
 _TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini"})
 
@@ -121,7 +121,10 @@ def resolve_cli_config(
     # 4. Resolve reasoning effort (Codex only)
     reasoning_effort = ""
     if provider == "codex":
-        requested_effort = overrides.reasoning_effort or base_config.reasoning_effort
+        requested_effort = normalize_codex_reasoning_effort(
+            model,
+            overrides.reasoning_effort or base_config.reasoning_effort,
+        )
 
         # Check if model supports reasoning and if effort is valid
         if codex_cache and requested_effort:
