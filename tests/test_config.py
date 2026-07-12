@@ -39,6 +39,9 @@ def test_agent_config_defaults() -> None:
     assert cfg.gemini_api_key is None
     assert cfg.telegram_token == ""
     assert cfg.allowed_user_ids == []
+    assert cfg.cron_delivery_retry.enabled is False
+    assert cfg.cron_delivery_retry.interval_seconds == 300
+    assert cfg.cron_delivery_retry.max_attempts == 12
 
 
 def test_agent_config_normalizes_nullish_gemini_api_key() -> None:

@@ -137,5 +137,10 @@
         "finished_retention_hours": 168,
         "finished_keep_last": 100
     },
+    "cron_delivery_retry": {
+        "enabled": false,
+        "interval_seconds": 300,
+        "max_attempts": 12
+    },
     "interagent_port": 8799
 }

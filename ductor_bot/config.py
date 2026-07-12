@@ -265,6 +265,14 @@ class TasksConfig(BaseModel):
     finished_keep_last: int = 100
 
 
+class CronDeliveryRetryConfig(BaseModel):
+    """Retry delivery of preserved cron results without rerunning the agent."""
+
+    enabled: bool = False
+    interval_seconds: int = Field(default=300, ge=1)
+    max_attempts: int = Field(default=12, ge=1)
+
+
 class TimeoutConfig(BaseModel):
     """Per-execution-path timeout settings."""
 
@@ -463,6 +471,7 @@ class AgentConfig(BaseModel):
     image: ImageConfig = Field(default_factory=ImageConfig)
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    cron_delivery_retry: CronDeliveryRetryConfig = Field(default_factory=CronDeliveryRetryConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)

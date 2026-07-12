@@ -38,6 +38,8 @@ class CronJob:
     last_delivery_status: str | None = None  # "ok" | "failed" | "skipped" | None
     last_delivery_error: str = ""
     last_result_text: str | None = None
+    delivery_retry_attempts: int = 0
+    next_delivery_retry_at: str | None = None
 
     # Per-task execution overrides
     provider: str | None = None
@@ -96,6 +98,10 @@ class CronJob:
             result["last_delivery_error"] = self.last_delivery_error
         if self.last_result_text is not None:
             result["last_result_text"] = self.last_result_text
+        if self.delivery_retry_attempts:
+            result["delivery_retry_attempts"] = self.delivery_retry_attempts
+        if self.next_delivery_retry_at is not None:
+            result["next_delivery_retry_at"] = self.next_delivery_retry_at
         return result
 
     @classmethod
@@ -115,6 +121,8 @@ class CronJob:
             last_delivery_status=data.get("last_delivery_status"),
             last_delivery_error=data.get("last_delivery_error", ""),
             last_result_text=data.get("last_result_text"),
+            delivery_retry_attempts=data.get("delivery_retry_attempts", 0),
+            next_delivery_retry_at=data.get("next_delivery_retry_at"),
             provider=data.get("provider"),
             model=data.get("model"),
             reasoning_effort=data.get("reasoning_effort"),
@@ -215,6 +223,33 @@ class CronManager:
         job.last_delivery_status = delivery_status
         job.last_delivery_error = delivery_error
         job.last_result_text = result_text
+        job.delivery_retry_attempts = 0
+        job.next_delivery_retry_at = None
+        self._save()
+
+    def update_delivery_retry(
+        self,
+        job_id: str,
+        *,
+        delivered: bool,
+        delivery_error: str = "",
+        next_attempt_at: str | None = None,
+    ) -> None:
+        """Persist one delivery retry without changing the job execution status."""
+        job = self.get_job(job_id)
+        if job is None:
+            return
+        if delivered:
+            job.last_delivery_status = "ok"
+            job.last_delivery_error = ""
+            job.last_result_text = None
+            job.delivery_retry_attempts = 0
+            job.next_delivery_retry_at = None
+        else:
+            job.last_delivery_status = "failed"
+            job.last_delivery_error = delivery_error
+            job.delivery_retry_attempts += 1
+            job.next_delivery_retry_at = next_attempt_at
         self._save()
 
     def reload(self) -> None:
