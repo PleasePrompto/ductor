@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +12,7 @@ import time_machine
 
 from ductor_bot.config import AgentConfig
 from ductor_bot.session.key import SessionKey
-from ductor_bot.session.manager import SessionData, SessionManager
+from ductor_bot.session.manager import ProviderSessionData, SessionData, SessionManager
 
 
 def _make_manager(tmp_path: Path, **overrides: Any) -> SessionManager:
@@ -52,6 +54,237 @@ async def test_resolve_treats_empty_session_id_as_new(tmp_path: Path) -> None:
     s2, new2 = await mgr.resolve_session(key=SessionKey(chat_id=1))
     assert new2 is True
     assert s2.session_id == ""
+
+
+async def test_resolve_session_target_creates_missing_session(tmp_path: Path) -> None:
+    mgr = _make_manager(tmp_path)
+    mgr.set_topic_name_resolver(lambda _chat, _topic: "new topic")
+    key = SessionKey(chat_id=-100, topic_id=10)
+
+    session, created = await mgr.resolve_session_target(
+        key,
+        provider="codex",
+        model="gpt-5.2-codex",
+        reasoning_effort="high",
+    )
+
+    assert created is True
+    assert session.provider == "codex"
+    assert session.model == "gpt-5.2-codex"
+    assert session.reasoning_effort == "high"
+    assert session.topic_name == "new topic"
+    assert session.provider_sessions == {}
+
+
+async def test_resolve_session_target_retargets_fresh_session(tmp_path: Path) -> None:
+    mgr = _make_manager(tmp_path)
+    key = SessionKey(chat_id=-100, topic_id=11)
+    existing, _ = await mgr.resolve_session(key, provider="claude", model="opus")
+    existing.session_id = "claude-session"
+    await mgr.update_session(existing)
+    mgr.set_topic_name_resolver(lambda _chat, _topic: "existing topic")
+
+    session, created = await mgr.resolve_session_target(
+        key,
+        provider="codex",
+        model="gpt-5.2-codex",
+        reasoning_effort="high",
+    )
+
+    assert created is False
+    assert session.provider == "codex"
+    assert session.model == "gpt-5.2-codex"
+    assert session.reasoning_effort == "high"
+    assert session.topic_name == "existing topic"
+    assert session.provider_sessions["claude"].session_id == "claude-session"
+
+
+@time_machine.travel("2025-06-15 12:00:00", tick=False)
+async def test_resolve_session_target_idle_stale_replaces_whole_shell(
+    tmp_path: Path,
+) -> None:
+    """Session-wide staleness (idle timeout) wipes the full shell, like resolve_session."""
+    mgr = _make_manager(tmp_path, idle_timeout_minutes=30)
+    key = SessionKey(chat_id=-100, topic_id=12)
+    with time_machine.travel("2025-06-15 12:00:00", tick=False):
+        stale, _ = await mgr.resolve_session(key, provider="claude", model="opus")
+        stale.session_id = "stale-session"
+        stale.provider_sessions["codex"] = ProviderSessionData(message_count=1)
+        await mgr.update_session(stale)
+
+    with time_machine.travel("2025-06-15 13:00:00", tick=False):
+        session, created = await mgr.resolve_session_target(
+            key,
+            provider="codex",
+            model="gpt-5.2-codex",
+        )
+
+    assert created is True
+    assert session.provider == "codex"
+    assert session.model == "gpt-5.2-codex"
+    assert session.provider_sessions == {}
+
+
+async def test_resolve_session_target_resets_only_stale_target_bucket(
+    tmp_path: Path,
+) -> None:
+    """Target bucket over the cap resets only that bucket; other buckets survive."""
+    mgr = _make_manager(tmp_path, max_session_messages=3)
+    key = SessionKey(chat_id=-100, topic_id=15)
+    existing, _ = await mgr.resolve_session(key, provider="claude", model="opus")
+    existing.provider_sessions["claude"] = ProviderSessionData(
+        session_id="fresh-claude-session",
+        message_count=1,
+    )
+    existing.provider_sessions["codex"] = ProviderSessionData(
+        session_id="stale-codex-session",
+        message_count=4,
+    )
+    await mgr.preserve_session_identity(existing)
+
+    session, created = await mgr.resolve_session_target(
+        key,
+        provider="codex",
+        model="gpt-5.2-codex",
+    )
+
+    assert created is True
+    assert session.provider == "codex"
+    assert session.model == "gpt-5.2-codex"
+    # Only the maxed-out codex bucket is dropped; claude history is preserved.
+    assert "codex" not in session.provider_sessions
+    assert session.provider_sessions["claude"].session_id == "fresh-claude-session"
+
+
+async def test_resolve_session_target_keeps_other_bucket_when_target_count_stale(
+    tmp_path: Path,
+) -> None:
+    """codex bucket fresh + claude bucket count-stale -> /model claude keeps codex history."""
+    mgr = _make_manager(tmp_path, max_session_messages=3)
+    key = SessionKey(chat_id=-100, topic_id=17)
+    existing, _ = await mgr.resolve_session(key, provider="codex", model="gpt-5.2-codex")
+    existing.provider_sessions["codex"] = ProviderSessionData(
+        session_id="fresh-codex-session",
+        message_count=1,
+    )
+    existing.provider_sessions["claude"] = ProviderSessionData(
+        session_id="stale-claude-session",
+        message_count=4,
+    )
+    await mgr.preserve_session_identity(existing)
+
+    session, created = await mgr.resolve_session_target(
+        key,
+        provider="claude",
+        model="opus",
+    )
+
+    assert created is True
+    assert session.provider == "claude"
+    assert session.model == "opus"
+    # Target (claude) bucket reset, but the fresh codex history survives.
+    assert "claude" not in session.provider_sessions
+    assert session.provider_sessions["codex"].session_id == "fresh-codex-session"
+
+
+async def test_resolve_session_target_retargets_when_target_bucket_is_fresh(
+    tmp_path: Path,
+) -> None:
+    mgr = _make_manager(tmp_path, max_session_messages=3)
+    key = SessionKey(chat_id=-100, topic_id=16)
+    existing, _ = await mgr.resolve_session(key, provider="claude", model="opus")
+    existing.provider_sessions["claude"] = ProviderSessionData(
+        session_id="stale-claude-session",
+        message_count=4,
+    )
+    existing.provider_sessions["codex"] = ProviderSessionData(
+        session_id="fresh-codex-session",
+        message_count=1,
+    )
+    await mgr.preserve_session_identity(existing)
+    history_before = copy.deepcopy(existing.provider_sessions)
+
+    session, created = await mgr.resolve_session_target(
+        key,
+        provider="codex",
+        model="gpt-5.2-codex",
+    )
+
+    assert created is False
+    assert session.provider == "codex"
+    assert session.model == "gpt-5.2-codex"
+    assert session.provider_sessions == history_before
+
+
+@pytest.mark.parametrize(
+    "target_first", [True, False], ids=["target-then-update", "update-then-target"]
+)
+async def test_resolve_session_target_and_other_topic_update_preserve_both_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_first: bool,
+) -> None:
+    mgr = _make_manager(tmp_path)
+    target_key = SessionKey(chat_id=-100, topic_id=13)
+    update_key = SessionKey(chat_id=-100, topic_id=14)
+    await mgr.resolve_session(target_key, provider="claude", model="opus")
+    update_record, _ = await mgr.resolve_session(update_key, provider="claude", model="opus")
+    update_record.session_id = "other-topic-session"
+    await mgr.update_session(update_record)
+
+    first_loaded = asyncio.Event()
+    release_first = asyncio.Event()
+    second_started = asyncio.Event()
+    original_load = mgr._load
+    first_task: asyncio.Task[None] | None = None
+    paused = False
+
+    async def controlled_load() -> dict[str, SessionData]:
+        nonlocal paused
+        sessions = await original_load()
+        if asyncio.current_task() is first_task and not paused:
+            paused = True
+            first_loaded.set()
+            await release_first.wait()
+        return sessions
+
+    async def retarget() -> None:
+        await mgr.resolve_session_target(
+            target_key,
+            provider="codex",
+            model="gpt-5.2-codex",
+        )
+
+    async def update_other() -> None:
+        await mgr.update_session(update_record, cost_usd=0.25, tokens=25)
+
+    monkeypatch.setattr(mgr, "_load", controlled_load)
+    first_operation, second_operation = (
+        (retarget, update_other) if target_first else (update_other, retarget)
+    )
+    first_task = asyncio.create_task(first_operation())
+    await first_loaded.wait()
+
+    async def run_second() -> None:
+        second_started.set()
+        await second_operation()
+
+    second_task = asyncio.create_task(run_second())
+    await second_started.wait()
+    release_first.set()
+    await first_task
+    await second_task
+
+    final_target = await mgr.get_active(target_key)
+    final_update = await mgr.get_active(update_key)
+    assert final_target is not None
+    assert final_update is not None
+    assert final_target.provider == "codex"
+    assert final_target.model == "gpt-5.2-codex"
+    assert final_update.session_id == "other-topic-session"
+    assert final_update.message_count == 2
+    assert final_update.total_cost_usd == pytest.approx(0.25)
+    assert final_update.total_tokens == 25
 
 
 @time_machine.travel("2025-06-15 12:00:00", tick=False)
