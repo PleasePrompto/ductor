@@ -90,7 +90,7 @@ async def test_cron_ignores_heartbeat_quiet_hours(tmp_path: Path) -> None:
     )
     _add_job(mgr, paths)
 
-    result_handler = AsyncMock()
+    result_handler = AsyncMock(return_value=(True, ""))
     obs.set_result_handler(result_handler)
 
     with patch("ductor_bot.cron.execution.build_cmd", return_value=None):
@@ -116,7 +116,7 @@ async def test_cron_runs_during_active_hours(tmp_path: Path) -> None:
     )
     _add_job(mgr, paths)
 
-    result_handler = AsyncMock()
+    result_handler = AsyncMock(return_value=(True, ""))
     obs.set_result_handler(result_handler)
 
     with patch("ductor_bot.cron.execution.build_cmd", return_value=None):
@@ -144,7 +144,7 @@ async def test_cron_respects_task_specific_quiet_hours(tmp_path: Path) -> None:
     # Task-specific quiet hours: 10-16 (14:00 is quiet)
     _add_job(mgr, paths, quiet_start=10, quiet_end=16)
 
-    result_handler = AsyncMock()
+    result_handler = AsyncMock(return_value=(True, ""))
     obs.set_result_handler(result_handler)
 
     await obs._execute_job("test-job", "do something", "test_task")
@@ -161,7 +161,7 @@ async def test_cron_job_quiet_hours_boundary_start(tmp_path: Path) -> None:
     obs = _make_observer(paths, mgr, user_timezone="UTC")
     _add_job(mgr, paths, quiet_start=21, quiet_end=8)
 
-    result_handler = AsyncMock()
+    result_handler = AsyncMock(return_value=(True, ""))
     obs.set_result_handler(result_handler)
 
     await obs._execute_job("test-job", "do something", "test_task")
@@ -178,7 +178,7 @@ async def test_cron_job_quiet_hours_boundary_end(tmp_path: Path) -> None:
     obs = _make_observer(paths, mgr, user_timezone="UTC")
     _add_job(mgr, paths, quiet_start=21, quiet_end=8)
 
-    result_handler = AsyncMock()
+    result_handler = AsyncMock(return_value=(True, ""))
     obs.set_result_handler(result_handler)
 
     with patch("ductor_bot.cron.execution.build_cmd", return_value=None):
@@ -204,7 +204,7 @@ async def test_cron_quiet_hours_disabled(tmp_path: Path) -> None:
     )
     _add_job(mgr, paths)
 
-    result_handler = AsyncMock()
+    result_handler = AsyncMock(return_value=(True, ""))
     obs.set_result_handler(result_handler)
 
     with patch("ductor_bot.cron.execution.build_cmd", return_value=None):
