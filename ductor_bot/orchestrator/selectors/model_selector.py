@@ -174,10 +174,15 @@ def _button_label(model_id: str) -> str:
     return model_id.removeprefix("gemini-").removeprefix("auto-")
 
 
+def _rows_of(buttons: list[Button], *, per_row: int = 2) -> list[list[Button]]:
+    """Split buttons into rows of at most *per_row* (readability on mobile)."""
+    return [buttons[i : i + per_row] for i in range(0, len(buttons), per_row)]
+
+
 def _chunk_buttons(
     model_ids: list[str],
     *,
-    columns: int = 3,
+    columns: int = 2,
 ) -> list[list[Button]]:
     rows: list[list[Button]] = []
     for index in range(0, len(model_ids), columns):
@@ -274,7 +279,7 @@ async def effort_selector_start(
     buttons = [Button(text=_EFFORT_LABELS.get(e, e), callback_data=f"ms:e:{e}") for e in supported]
     keyboard = ButtonGrid(
         rows=[
-            buttons,
+            *_rows_of(buttons),
             [Button(text=t("model.btn_back"), callback_data="ms:b:root")],
         ]
     )
@@ -552,7 +557,7 @@ async def _build_model_step(
         buttons = [Button(text=m.upper(), callback_data=f"ms:m:{m}") for m in CLAUDE_MODELS_ORDERED]
         keyboard = ButtonGrid(
             rows=[
-                buttons,
+                *_rows_of(buttons),
                 [Button(text=t("model.btn_back"), callback_data="ms:b:root")],
             ]
         )
@@ -633,7 +638,7 @@ async def _handle_model_selected(
     ]
     keyboard = ButtonGrid(
         rows=[
-            buttons,
+            *_rows_of(buttons),
             [Button(text=t("model.btn_back"), callback_data=f"ms:b:{provider}")],
         ]
     )
