@@ -379,33 +379,48 @@ class SessionManager:
         return sessions.get(key.storage_key)
 
     async def resolve_session_target(
-        self, key: SessionKey, *, provider: str, model: str
+        self,
+        key: SessionKey,
+        *,
+        provider: str,
+        model: str,
+        reasoning_effort: str | None = None,
     ) -> tuple[SessionData, bool]:
-        """Atomically record the model target for *key*'s next-message session.
+        """Atomically record the model/effort target for *key*'s next session.
 
-        Fresh existing sessions are retargeted in place; stale or missing
-        sessions are replaced by a fresh shell carrying the target. Runs
-        under ``self._lock``. Returns ``(session, created)``.
+        Persists the picked ``provider``/``model``/``reasoning_effort`` onto the
+        session the next message will resolve, so a ``/model`` change in a topic
+        survives even when the topic has no session yet or a stale one. Runs
+        under ``self._lock``. Returns ``(session, created)`` where ``created``
+        is ``True`` when the target provider has no resumable history.
+
+        Staleness is per-provider: a session that is only stale because the
+        *target* provider's bucket hit the message cap keeps its other buckets
+        (only the target bucket is reset). Session-wide staleness (idle timeout
+        or daily reset) replaces the whole shell, matching ``resolve_session``.
         """
         async with self._lock:
             sessions = await self._load()
             skey = key.storage_key
             existing = sessions.get(skey)
 
-            if existing and self._is_fresh_for_target(existing, provider):
-                changed = False
-                if existing.provider != provider:
-                    logger.info("Provider switch %s -> %s", existing.provider, provider)
-                    existing.provider = provider
-                    changed = True
-                if existing.model != model:
-                    existing.model = model
-                    changed = True
-                if self._apply_topic_name(existing):
-                    changed = True
-                if changed:
-                    await self._save(sessions)
-                return existing, False
+            if existing is not None and self._time_fresh(existing):
+                target_bucket = existing.provider_sessions.get(provider)
+                bucket_count = target_bucket.message_count if target_bucket is not None else 0
+                if self._within_message_limit(bucket_count):
+                    # Fresh for the target provider: retarget in place and keep
+                    # every provider's bucket history intact.
+                    if self._retarget_session(existing, provider, model, reasoning_effort):
+                        await self._save(sessions)
+                    return existing, False
+                # Otherwise fresh, but the target bucket hit the message cap.
+                # Reset only that bucket so switching back to another provider
+                # keeps its history, then retarget onto the fresh bucket.
+                existing.provider_sessions.pop(provider, None)
+                self._retarget_session(existing, provider, model, reasoning_effort)
+                await self._save(sessions)
+                logger.info("Target bucket reset provider=%s model=%s", provider, model)
+                return existing, True
 
             topic_name: str | None = None
             if key.topic_id is not None and self._topic_name_resolver is not None:
@@ -418,12 +433,40 @@ class SessionManager:
                 topic_name=topic_name,
                 provider=provider,
                 model=model,
+                reasoning_effort=reasoning_effort or "",
                 provider_sessions={},
             )
             sessions[skey] = new
             await self._save(sessions)
             logger.info("Session created provider=%s model=%s", provider, model)
             return new, True
+
+    def _retarget_session(
+        self,
+        session: SessionData,
+        provider: str,
+        model: str,
+        reasoning_effort: str | None,
+    ) -> bool:
+        """Point *session* at provider/model/effort in place. Returns True if changed.
+
+        ``reasoning_effort=None`` leaves the existing effort untouched (mirrors
+        ``sync_session_target``); an explicit value overwrites it.
+        """
+        changed = False
+        if session.provider != provider:
+            logger.info("Provider switch %s -> %s", session.provider, provider)
+            session.provider = provider
+            changed = True
+        if session.model != model:
+            session.model = model
+            changed = True
+        if reasoning_effort is not None and session.reasoning_effort != reasoning_effort:
+            session.reasoning_effort = reasoning_effort
+            changed = True
+        if self._apply_topic_name(session):
+            changed = True
+        return changed
 
     async def list_active_for_chat(self, chat_id: int) -> list[SessionData]:
         """Return all fresh sessions belonging to *chat_id*."""
@@ -654,23 +697,21 @@ class SessionManager:
                     break
         return isinstance(entry, dict) and "model" not in entry
 
-    def _is_fresh_for_target(self, session: SessionData, provider: str) -> bool:
-        """Check freshness using the next message's provider bucket."""
-        provider_data = session.provider_sessions.get(provider)
-        message_count = provider_data.message_count if provider_data is not None else 0
+    def _within_message_limit(self, message_count: int) -> bool:
+        """False when the message cap is configured and *message_count* reached it."""
         max_messages = self._config.max_session_messages
         if max_messages is not None and message_count >= max_messages:
             logger.debug("Session fresh check: fresh=no reason=max_messages")
             return False
+        return True
 
-        current_provider = session.provider
-        session.provider = provider
-        try:
-            return self._is_fresh(session)
-        finally:
-            session.provider = current_provider
+    def _time_fresh(self, session: SessionData) -> bool:
+        """Session-wide freshness: idle timeout and daily reset.
 
-    def _is_fresh(self, session: SessionData) -> bool:
+        Independent of any provider bucket's message count, so callers can
+        distinguish a whole-session expiry (idle/daily) from a single provider
+        bucket merely hitting the message cap.
+        """
         now = datetime.now(UTC)
         try:
             last = datetime.fromisoformat(session.last_active)
@@ -678,19 +719,10 @@ class SessionManager:
             logger.warning("Corrupt session timestamp: %r, treating as stale", session.last_active)
             return False
 
-        if (
-            self._config.max_session_messages is not None
-            and session.message_count >= self._config.max_session_messages
-        ):
-            logger.debug("Session fresh check: fresh=no reason=max_messages")
-            return False
-
         timeout = self._config.idle_timeout_minutes
-        if timeout > 0:
-            idle_seconds = (now - last).total_seconds()
-            if idle_seconds >= timeout * 60:
-                logger.debug("Session fresh check: fresh=no reason=idle_timeout")
-                return False
+        if timeout > 0 and (now - last).total_seconds() >= timeout * 60:
+            logger.debug("Session fresh check: fresh=no reason=idle_timeout")
+            return False
 
         if self._config.daily_reset_enabled:
             reset_hour = self._config.daily_reset_hour
@@ -711,6 +743,13 @@ class SessionManager:
                 logger.debug("Session fresh check: fresh=no reason=daily_reset")
                 return False
 
+        return True
+
+    def _is_fresh(self, session: SessionData) -> bool:
+        if not self._within_message_limit(session.message_count):
+            return False
+        if not self._time_fresh(session):
+            return False
         logger.debug("Session fresh check: fresh=yes reason=still_valid")
         return True
 

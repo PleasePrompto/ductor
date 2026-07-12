@@ -65,11 +65,13 @@ async def test_resolve_session_target_creates_missing_session(tmp_path: Path) ->
         key,
         provider="codex",
         model="gpt-5.2-codex",
+        reasoning_effort="high",
     )
 
     assert created is True
     assert session.provider == "codex"
     assert session.model == "gpt-5.2-codex"
+    assert session.reasoning_effort == "high"
     assert session.topic_name == "new topic"
     assert session.provider_sessions == {}
 
@@ -86,28 +88,36 @@ async def test_resolve_session_target_retargets_fresh_session(tmp_path: Path) ->
         key,
         provider="codex",
         model="gpt-5.2-codex",
+        reasoning_effort="high",
     )
 
     assert created is False
     assert session.provider == "codex"
     assert session.model == "gpt-5.2-codex"
+    assert session.reasoning_effort == "high"
     assert session.topic_name == "existing topic"
     assert session.provider_sessions["claude"].session_id == "claude-session"
 
 
-async def test_resolve_session_target_replaces_stale_session(tmp_path: Path) -> None:
-    mgr = _make_manager(tmp_path, max_session_messages=1)
+@time_machine.travel("2025-06-15 12:00:00", tick=False)
+async def test_resolve_session_target_idle_stale_replaces_whole_shell(
+    tmp_path: Path,
+) -> None:
+    """Session-wide staleness (idle timeout) wipes the full shell, like resolve_session."""
+    mgr = _make_manager(tmp_path, idle_timeout_minutes=30)
     key = SessionKey(chat_id=-100, topic_id=12)
-    stale, _ = await mgr.resolve_session(key, provider="claude", model="opus")
-    stale.session_id = "stale-session"
-    stale.provider_sessions["codex"] = ProviderSessionData(message_count=1)
-    await mgr.update_session(stale)
+    with time_machine.travel("2025-06-15 12:00:00", tick=False):
+        stale, _ = await mgr.resolve_session(key, provider="claude", model="opus")
+        stale.session_id = "stale-session"
+        stale.provider_sessions["codex"] = ProviderSessionData(message_count=1)
+        await mgr.update_session(stale)
 
-    session, created = await mgr.resolve_session_target(
-        key,
-        provider="codex",
-        model="gpt-5.2-codex",
-    )
+    with time_machine.travel("2025-06-15 13:00:00", tick=False):
+        session, created = await mgr.resolve_session_target(
+            key,
+            provider="codex",
+            model="gpt-5.2-codex",
+        )
 
     assert created is True
     assert session.provider == "codex"
@@ -115,9 +125,10 @@ async def test_resolve_session_target_replaces_stale_session(tmp_path: Path) -> 
     assert session.provider_sessions == {}
 
 
-async def test_resolve_session_target_replaces_when_target_bucket_is_stale(
+async def test_resolve_session_target_resets_only_stale_target_bucket(
     tmp_path: Path,
 ) -> None:
+    """Target bucket over the cap resets only that bucket; other buckets survive."""
     mgr = _make_manager(tmp_path, max_session_messages=3)
     key = SessionKey(chat_id=-100, topic_id=15)
     existing, _ = await mgr.resolve_session(key, provider="claude", model="opus")
@@ -140,7 +151,40 @@ async def test_resolve_session_target_replaces_when_target_bucket_is_stale(
     assert created is True
     assert session.provider == "codex"
     assert session.model == "gpt-5.2-codex"
-    assert session.provider_sessions == {}
+    # Only the maxed-out codex bucket is dropped; claude history is preserved.
+    assert "codex" not in session.provider_sessions
+    assert session.provider_sessions["claude"].session_id == "fresh-claude-session"
+
+
+async def test_resolve_session_target_keeps_other_bucket_when_target_count_stale(
+    tmp_path: Path,
+) -> None:
+    """codex bucket fresh + claude bucket count-stale -> /model claude keeps codex history."""
+    mgr = _make_manager(tmp_path, max_session_messages=3)
+    key = SessionKey(chat_id=-100, topic_id=17)
+    existing, _ = await mgr.resolve_session(key, provider="codex", model="gpt-5.2-codex")
+    existing.provider_sessions["codex"] = ProviderSessionData(
+        session_id="fresh-codex-session",
+        message_count=1,
+    )
+    existing.provider_sessions["claude"] = ProviderSessionData(
+        session_id="stale-claude-session",
+        message_count=4,
+    )
+    await mgr.preserve_session_identity(existing)
+
+    session, created = await mgr.resolve_session_target(
+        key,
+        provider="claude",
+        model="opus",
+    )
+
+    assert created is True
+    assert session.provider == "claude"
+    assert session.model == "opus"
+    # Target (claude) bucket reset, but the fresh codex history survives.
+    assert "claude" not in session.provider_sessions
+    assert session.provider_sessions["codex"].session_id == "fresh-codex-session"
 
 
 async def test_resolve_session_target_retargets_when_target_bucket_is_fresh(

@@ -322,7 +322,78 @@ async def handle_model_callback(  # noqa: PLR0911
     return SelectorResponse(text=t("model.unknown_action"))
 
 
-async def switch_model(  # noqa: C901, PLR0912, PLR0915
+@dataclass(frozen=True)
+class _SwitchContext:
+    model_id: str
+    new_provider: str
+    is_topic: bool
+    same_model: bool
+    provider_changed: bool
+    reasoning_effort: str | None
+
+
+async def _persist_switch_target(
+    orch: Orchestrator,
+    key: SessionKey,
+    active_session: SessionData | None,
+    ctx: _SwitchContext,
+) -> tuple[str, int]:
+    """Persist the new target onto the next-message session; return resume state.
+
+    Kills in-flight processes, writes the picked provider/model/effort onto the
+    session the next message resolves, and returns that session's target-provider
+    ``(session_id, message_count)`` for the resume hint.
+
+    Reasoning effort is per-session (like model): a topic change touches only
+    that topic's session; a main/DM change updates the global default (handled
+    by the caller). On a provider switch, re-validate the carried-over effort
+    against the new provider and reset to a safe default when it is unsupported
+    (e.g. Claude ``max`` -> Codex) so an invalid value never reaches the CLI.
+    """
+    current_effort = (
+        active_session.reasoning_effort
+        if active_session and active_session.reasoning_effort
+        else orch._config.reasoning_effort
+    )
+    effort = ctx.reasoning_effort
+    if (
+        effort is None
+        and ctx.provider_changed
+        and _validate_reasoning_effort(orch, ctx.model_id, current_effort) is not None
+    ):
+        effort = "medium"
+
+    resume_source: SessionData | None = active_session
+    if not ctx.same_model:
+        await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
+        if ctx.is_topic:
+            # A topic never updates global config, so persist the picked target
+            # onto the session the next message will actually resolve.
+            # resolve_session_target creates it when missing and retargets or
+            # replaces it when stale, so the chosen model+effort survive instead
+            # of falling back to config on the next turn.
+            resolved, created = await orch._sessions.resolve_session_target(
+                key,
+                provider=ctx.new_provider,
+                model=ctx.model_id,
+                reasoning_effort=effort,
+            )
+            resume_source = None if created else resolved
+        elif active_session is not None:
+            await orch._sessions.sync_session_target(
+                active_session,
+                provider=ctx.new_provider,
+                model=ctx.model_id,
+                reasoning_effort=effort,
+            )
+    elif ctx.is_topic and active_session is not None and effort is not None:
+        # effort-only change inside a topic: persist to the topic session only.
+        await orch._sessions.sync_session_target(active_session, reasoning_effort=effort)
+
+    return _resume_state_for_provider(resume_source, ctx.new_provider)
+
+
+async def switch_model(
     orch: Orchestrator,
     key: SessionKey,
     model_id: str,
@@ -359,48 +430,18 @@ async def switch_model(  # noqa: C901, PLR0912, PLR0915
     if validation_error is not None:
         return validation_error
 
-    # Resolve the effective per-session effort. On a provider switch, re-validate
-    # the carried-over effort against the new provider and reset to a safe default
-    # when it is unsupported (e.g. Claude ``max`` -> Codex).
-    current_effort = (
-        active_session.reasoning_effort
-        if active_session and active_session.reasoning_effort
-        else orch._config.reasoning_effort
-    )
-    effort = reasoning_effort
-    if (
-        effort is None
-        and provider_changed
-        and _validate_reasoning_effort(orch, model_id, current_effort) is not None
-    ):
-        effort = "medium"
-
-    resume_source: SessionData | None = active_session
-    if not same_model:
-        await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
-        if is_topic:
-            # A topic never updates global config, so persist the picked target
-            # onto the session the next message will actually resolve.
-            resolved, created = await orch._sessions.resolve_session_target(
-                key,
-                provider=new_provider,
-                model=model_id,
-            )
-            resume_source = None if created else resolved
-        elif active_session is not None:
-            await orch._sessions.sync_session_target(
-                active_session,
-                provider=new_provider,
-                model=model_id,
-                reasoning_effort=effort,
-            )
-    elif is_topic and active_session is not None and effort is not None:
-        # effort-only change inside a topic: persist to the topic session only.
-        await orch._sessions.sync_session_target(active_session, reasoning_effort=effort)
-
-    resume_session_id, resume_message_count = _resume_state_for_provider(
-        resume_source,
-        new_provider,
+    resume_session_id, resume_message_count = await _persist_switch_target(
+        orch,
+        key,
+        active_session,
+        _SwitchContext(
+            model_id=model_id,
+            new_provider=new_provider,
+            is_topic=is_topic,
+            same_model=same_model,
+            provider_changed=provider_changed,
+            reasoning_effort=reasoning_effort,
+        ),
     )
 
     if not is_topic:

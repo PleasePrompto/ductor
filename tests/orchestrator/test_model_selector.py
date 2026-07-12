@@ -343,7 +343,7 @@ async def test_callback_reasoning_topic_without_session_targets_next_message(
     orch: Orchestrator,
 ) -> None:
     key = SessionKey(chat_id=-100, topic_id=42)
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
     mock_execute = AsyncMock(
         return_value=AgentResponse(result="ok", session_id="codex-topic-session")
     )
@@ -364,7 +364,7 @@ async def test_callback_reasoning_stale_topic_targets_next_message(orch: Orchest
     stale.session_id = "stale-claude-session"
     await orch._sessions.update_session(stale)
 
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
     mock_execute = AsyncMock(
         return_value=AgentResponse(result="ok", session_id="fresh-codex-session")
     )
@@ -394,7 +394,7 @@ async def test_callback_reasoning_stale_target_bucket_targets_next_message(
     )
     await orch._sessions.preserve_session_identity(existing)
 
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
     mock_execute = AsyncMock(
         return_value=AgentResponse(result="ok", session_id="fresh-codex-session")
     )
@@ -403,7 +403,9 @@ async def test_callback_reasoning_stale_target_bucket_targets_next_message(
     await handle_model_callback(orch, key, "ms:r:high:gpt-5.2-codex")
     replacement = await orch._sessions.get_active(key)
     assert replacement is not None
-    assert replacement.provider_sessions == {}
+    # Only the maxed-out codex bucket is reset; the fresh claude history stays.
+    assert "codex" not in replacement.provider_sessions
+    assert replacement.provider_sessions["claude"].session_id == "fresh-claude-session"
     await normal(orch, key, "hello", model_override=None)
 
     request = mock_execute.call_args.args[0]
@@ -455,7 +457,7 @@ async def test_switch_model_topic_does_not_change_global_defaults(orch: Orchestr
         orch._config.reasoning_effort,
     )
     config_file_before = orch.paths.config_path.read_bytes()
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
 
     await handle_model_callback(orch, key, "ms:r:high:gpt-5.2-codex")
 
@@ -473,7 +475,7 @@ async def test_switch_model_dm_without_session_keeps_global_persistence(
     orch: Orchestrator,
 ) -> None:
     key = SessionKey(chat_id=1)
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
     resolve_target = AsyncMock(wraps=orch._sessions.resolve_session_target)
 
     with patch.object(orch._sessions, "resolve_session_target", new=resolve_target):
@@ -509,7 +511,7 @@ async def test_switch_model_fresh_topic_preserves_all_provider_sessions(
     persisted = await orch._sessions.get_active(key)
     assert persisted is not None
     provider_sessions_before = copy.deepcopy(persisted.provider_sessions)
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
 
     await switch_model(orch, key, "gpt-5.2-codex")
 
@@ -533,14 +535,17 @@ async def test_switch_model_stale_topic_does_not_show_resume_hint(
         message_count=7,
     )
     await orch._sessions.update_session(stale)
-    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
 
     result = await switch_model(orch, key, "gpt-5.2-codex")
 
     assert "Resuming" not in result
     replaced = await orch._sessions.get_active(key)
     assert replaced is not None
-    assert replaced.provider_sessions == {}
+    # The maxed-out codex target bucket is reset (so no resume hint), but the
+    # session shell and the other provider's bucket are kept.
+    assert "codex" not in replaced.provider_sessions
+    assert replaced.provider_sessions["claude"].session_id == "stale-claude-session"
 
 
 async def test_switch_model_opus_1m_persists(orch: Orchestrator) -> None:
