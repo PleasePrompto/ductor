@@ -215,16 +215,11 @@ class TestBuildReplyPrompt:
         reply_text: str | None = None,
         reply_caption: str | None = None,
         has_reply: bool = False,
-        reply_from_id: int | None = None,
     ) -> Message:
         message = MagicMock(spec=Message)
         message.quote = MagicMock(text=quote_text) if quote_text is not None else None
         if has_reply or reply_text is not None or reply_caption is not None:
             message.reply_to_message = MagicMock(text=reply_text, caption=reply_caption)
-            if reply_from_id is not None:
-                message.reply_to_message.from_user = MagicMock(id=reply_from_id)
-            else:
-                message.reply_to_message.from_user = None
         else:
             message.reply_to_message = None
         return message
@@ -262,31 +257,6 @@ class TestBuildReplyPrompt:
 
         # Forum-topic service messages carry neither text nor caption.
         assert build_reply_prompt(self._message(has_reply=True), "hi") == "hi"
-
-    def test_reply_to_bot_own_message_not_injected(self) -> None:
-        """Replying to the bot's own answer must not re-inject it (session has it)."""
-        from ductor_bot.messenger.telegram.handlers import build_reply_prompt
-
-        msg = self._message(reply_text="the bot's previous answer", reply_from_id=99)
-        assert build_reply_prompt(msg, "go on", bot_id=99) == "go on"
-
-    def test_reply_to_bot_with_quote_fragment_still_injected(self) -> None:
-        """A user-selected quote of the bot's answer disambiguates and passes through."""
-        from ductor_bot.messenger.telegram.handlers import build_reply_prompt
-
-        msg = self._message(
-            quote_text="point 3", reply_text="the bot's previous answer", reply_from_id=99
-        )
-        prompt = build_reply_prompt(msg, "expand", bot_id=99)
-        assert "> point 3" in prompt
-        assert "the bot's previous answer" not in prompt
-
-    def test_reply_to_other_user_still_injected_with_bot_id(self) -> None:
-        from ductor_bot.messenger.telegram.handlers import build_reply_prompt
-
-        msg = self._message(reply_text="someone else's message", reply_from_id=7)
-        prompt = build_reply_prompt(msg, "what about this", bot_id=99)
-        assert "> someone else's message" in prompt
 
 
 class TestPrependReplyToMedia:

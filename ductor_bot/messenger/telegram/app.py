@@ -1416,11 +1416,11 @@ class TelegramBot:
             )
             if media_prompt is None:
                 return None
-            return prepend_reply_to_media(message, media_prompt, self._bot_id)
+            return prepend_reply_to_media(message, media_prompt)
         if not message.text:
             return None
         text = strip_mention(message.text, self._bot_username)
-        return build_reply_prompt(message, text, self._bot_id)
+        return build_reply_prompt(message, text)
 
     async def _handle_streaming(
         self, message: Message, key: SessionKey, text: str, *, thread_id: int | None = None
