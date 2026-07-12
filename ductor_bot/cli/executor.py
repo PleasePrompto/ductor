@@ -158,7 +158,10 @@ async def run_streaming_subprocess(
     if process.stdout is None or process.stderr is None:
         msg = "Subprocess created without stdout/stderr pipes"
         raise RuntimeError(msg)
-    await _feed_streaming_stdin(process, spec)
+    # Feed stdin concurrently with the stdout read loop: a prompt larger than
+    # the OS pipe buffer (~64 KiB) would otherwise deadlock against a child
+    # that starts emitting stdout before draining stdin.
+    stdin_feed = asyncio.create_task(_feed_streaming_stdin(process, spec))
     logger.info("%s subprocess starting pid=%s", provider_label, process.pid)
 
     reg = config.process_registry
@@ -185,6 +188,10 @@ async def run_streaming_subprocess(
         )
         return
     finally:
+        if not stdin_feed.done():
+            stdin_feed.cancel()
+        with contextlib.suppress(BaseException):
+            await stdin_feed
         await _cancel_drain(stderr_drain)
         if tracked and reg:
             reg.unregister(tracked)

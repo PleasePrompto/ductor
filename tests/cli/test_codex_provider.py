@@ -284,7 +284,7 @@ class TestBuildCommand:
         idx_separator = cmd.index("--")
         assert idx_model < idx_separator
         assert cmd[idx_separator + 1] == "thread-abc"
-        assert cmd[-1] == "hello"
+        assert cmd[-1] == "-"  # prompt arrives via stdin (#137)
         assert "--color" not in cmd
         assert "--skip-git-repo-check" not in cmd
 
@@ -295,7 +295,7 @@ class TestBuildCommand:
         cli = _make_cli(monkeypatch, model=model)
         cmd = cli._build_command("hello", resume_session="thread-abc")
         assert "--model" not in cmd
-        assert cmd[-3:] == ["--", "thread-abc", "hello"]
+        assert cmd[-3:] == ["--", "thread-abc", "-"]  # prompt arrives via stdin (#137)
 
     def test_resume_session_json_output_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)

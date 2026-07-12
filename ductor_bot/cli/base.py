@@ -35,13 +35,8 @@ def _win_feed_stdin(process: asyncio.subprocess.Process, data: str) -> None:
 async def _feed_stdin_and_close(
     process: asyncio.subprocess.Process,
     data: str,
-    *,
-    windows_only: bool = False,
 ) -> None:
     """Write prompt to stdin and close the writer gracefully."""
-    if windows_only and not _IS_WINDOWS:
-        return
-
     writer = getattr(process, "stdin", None)
     if writer is None:
         return
