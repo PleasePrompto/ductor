@@ -63,9 +63,7 @@ def _make_exec_config(**overrides: Any) -> TaskExecutionConfig:
 def _make_observer(
     paths: DuctorPaths, timeout: float = 300.0, config: AgentConfig | None = None
 ) -> BackgroundObserver:
-    return BackgroundObserver(
-        paths, timeout_seconds=timeout, config=config or AgentConfig()
-    )
+    return BackgroundObserver(paths, timeout_seconds=timeout, config=config or AgentConfig())
 
 
 def _success_task_result(text: str = "") -> TaskResult:
@@ -180,7 +178,9 @@ class TestExecution:
         assert bg_result.prompt_preview == "say hello"
         assert bg_result.transport == "tg"
 
-    async def test_preserves_transport_and_thread_target(self, observer: BackgroundObserver) -> None:
+    async def test_preserves_transport_and_thread_target(
+        self, observer: BackgroundObserver
+    ) -> None:
         config = _make_exec_config()
         handler = AsyncMock()
         observer.set_result_handler(handler)

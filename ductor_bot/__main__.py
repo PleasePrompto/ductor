@@ -103,17 +103,26 @@ def _is_configured_slack(data: dict[str, object]) -> bool:
 
 
 def _normalized_transport_list(data: dict[str, object]) -> list[str]:
-    """Return normalized transport list from raw config data."""
-    raw_transports = data.get("transports", [])
-    transports = list(raw_transports) if isinstance(raw_transports, list) else []
+    """Return the normalized transport list from raw config data.
+
+    ``transport`` (singular) is the authoritative primary. A non-empty
+    ``transports`` list is honored whenever the primary is one of its members:
+    the primary is placed first and the remaining configured transports are
+    preserved, so genuine multi-transport setups (e.g. telegram+matrix) are
+    never silently dropped when their ordering differs from ``transport``.
+    Only when the primary is absent from the list is the list treated as stale
+    and collapsed to the primary alone.
+    """
     primary = data.get("transport", "telegram")
     if not isinstance(primary, str) or not primary:
         primary = "telegram"
-    if not transports:
+    raw_transports = data.get("transports", [])
+    if not isinstance(raw_transports, list):
+        raw_transports = []
+    transports = [t for t in raw_transports if isinstance(t, str) and t]
+    if primary not in transports:
         return [primary]
-    if transports[0] != primary:
-        return [primary]
-    return [t for t in transports if isinstance(t, str)]
+    return [primary, *(t for t in transports if t != primary)]
 
 
 _IS_CONFIGURED_CHECKS: dict[str, Callable[[dict[str, object]], bool]] = {

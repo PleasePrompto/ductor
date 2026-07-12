@@ -40,7 +40,7 @@
         "bot_token": "xoxb-your-slack-bot-token",
         "app_token": "xapp-your-slack-app-token",
         "allowed_channels": ["C0123456789"],
-        "allowed_users": ["U0123456789"],
+        "allowed_users": ["U0123456789"]
     },
     "streaming": {
         "enabled": true,

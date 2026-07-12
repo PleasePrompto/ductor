@@ -720,11 +720,6 @@ class SlackBot:
         user_ok = not slack.allowed_users or user_id in slack.allowed_users
         return channel_ok and user_ok
 
-    def _is_message_addressed(self, channel_id: str, thread_ts: str, text: str) -> bool:
-        if self._bot_user_id and f"<@{self._bot_user_id}>" in text:
-            return True
-        return self._has_recent_mentioned_thread(channel_id, thread_ts)
-
     def _normalize_command_text(self, text: str) -> str | None:
         stripped = text.strip()
         if not stripped:

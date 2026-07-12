@@ -218,7 +218,7 @@ class NamedSessionRegistry:
         entries = [asdict(ns) for ns in self._sessions.values() if ns.status != "ended"]
         atomic_json_save(self._path, {"sessions": entries})
 
-    def create(
+    def create(  # noqa: PLR0913  -- session identity + provider/model/effort are all intrinsic
         self,
         chat_id: int,
         provider: str,

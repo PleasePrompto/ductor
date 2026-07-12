@@ -53,7 +53,9 @@ class SlackTransport:
             return channel_id, None
         thread_channel, thread_ts = thread
         if thread_channel != channel_id:
-            logger.warning("Slack topic mapping mismatch for chat_id=%s topic_id=%s", env.chat_id, env.topic_id)
+            logger.warning(
+                "Slack topic mapping mismatch for chat_id=%s topic_id=%s", env.chat_id, env.topic_id
+            )
             return channel_id, None
         return channel_id, thread_ts
 

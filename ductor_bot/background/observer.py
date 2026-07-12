@@ -76,7 +76,9 @@ class BackgroundObserver:
             provider=sub.provider_override if has_session_override else exec_config.provider,
             model=sub.model_override if has_session_override else exec_config.model,
             reasoning_effort=(
-                sub.reasoning_effort_override if has_session_override else exec_config.reasoning_effort
+                sub.reasoning_effort_override
+                if has_session_override
+                else exec_config.reasoning_effort
             ),
             submitted_at=time.monotonic(),
             session_name=sub.session_name,

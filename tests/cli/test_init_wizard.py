@@ -196,7 +196,9 @@ def test_run_onboarding_collects_slack_config(tmp_path: Path) -> None:
         patch("ductor_bot.cli.init_wizard._ask_timezone", return_value="UTC"),
         patch("ductor_bot.cli.init_wizard.resolve_paths", return_value=paths),
         patch("ductor_bot.cli.init_wizard._offer_service_install", return_value=False),
-        patch("ductor_bot.cli.init_wizard._write_config", return_value=paths.config_path) as write_config,
+        patch(
+            "ductor_bot.cli.init_wizard._write_config", return_value=paths.config_path
+        ) as write_config,
     ):
         assert run_onboarding() is False
 

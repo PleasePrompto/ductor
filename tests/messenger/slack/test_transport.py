@@ -37,7 +37,12 @@ class TestTransportName:
 class TestCronBroadcast:
     async def test_broadcasts_with_result_text(self) -> None:
         transport, bot = _make_transport()
-        env = _env(origin=Origin.CRON, result_text="All good", status="success", metadata={"title": "Backup"})
+        env = _env(
+            origin=Origin.CRON,
+            result_text="All good",
+            status="success",
+            metadata={"title": "Backup"},
+        )
 
         await transport.deliver_broadcast(env)
 
@@ -50,9 +55,16 @@ class TestCronBroadcast:
 class TestTaskQuestionDelivery:
     async def test_delivers_task_question_into_thread(self) -> None:
         transport, _bot = _make_transport()
-        env = _env(origin=Origin.TASK_QUESTION, prompt="Need approval", metadata={"task_id": "t1"}, topic_id=9)
+        env = _env(
+            origin=Origin.TASK_QUESTION,
+            prompt="Need approval",
+            metadata={"task_id": "t1"},
+            topic_id=9,
+        )
 
-        with patch("ductor_bot.messenger.slack.transport.slack_send_rich", new_callable=AsyncMock) as mock_send:
+        with patch(
+            "ductor_bot.messenger.slack.transport.slack_send_rich", new_callable=AsyncMock
+        ) as mock_send:
             await transport.deliver(env)
 
         mock_send.assert_awaited_once()

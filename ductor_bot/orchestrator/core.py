@@ -658,7 +658,10 @@ class Orchestrator:
         from ductor_bot.orchestrator.selectors.model_selector import _validate_reasoning_effort
 
         followup_effort = ns.reasoning_effort
-        if followup_effort and _validate_reasoning_effort(self, ns.model, followup_effort) is not None:
+        if (
+            followup_effort
+            and _validate_reasoning_effort(self, ns.model, followup_effort) is not None
+        ):
             followup_effort = "medium"
         sub = BackgroundSubmit(
             chat_id=chat_id,

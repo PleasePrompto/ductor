@@ -143,12 +143,14 @@ class TestRecoveredRunning:
         assert recovered[0].last_prompt == "my prompt"
 
 
-
 class TestReasoningEffort:
     def test_create_stores_effort(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
         ns = reg.create(
-            chat_id=1, provider="claude", model="opus", prompt_preview="hi",
+            chat_id=1,
+            provider="claude",
+            model="opus",
+            prompt_preview="hi",
             reasoning_effort="high",
         )
         assert ns.reasoning_effort == "high"
@@ -156,7 +158,10 @@ class TestReasoningEffort:
     def test_effort_survives_reload(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
         reg.create(
-            chat_id=1, provider="claude", model="opus", prompt_preview="hi",
+            chat_id=1,
+            provider="claude",
+            model="opus",
+            prompt_preview="hi",
             reasoning_effort="high",
         )
         reg2 = _make_registry(tmp_path)  # reload from disk

@@ -257,8 +257,12 @@ class TestHeartbeatGroupTargets:
         assert handler.call_count == 3
         handler.assert_any_await(100, None, None, None, "tg")
         # Group targets get resolved prompt/ack from global config
-        handler.assert_any_await(-1001, 42, config.heartbeat.prompt, config.heartbeat.ack_token, "tg")
-        handler.assert_any_await(-1002, None, config.heartbeat.prompt, config.heartbeat.ack_token, "tg")
+        handler.assert_any_await(
+            -1001, 42, config.heartbeat.prompt, config.heartbeat.ack_token, "tg"
+        )
+        handler.assert_any_await(
+            -1002, None, config.heartbeat.prompt, config.heartbeat.ack_token, "tg"
+        )
 
     async def test_tick_group_target_delivers_alert_with_topic_id(self) -> None:
         config = AgentConfig(

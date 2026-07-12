@@ -165,7 +165,7 @@ col_size = "Size"
 prompt = "Select extras (Space to toggle, Enter to confirm):"
 hint = """\
 [dim]These packages are optional and increase image build time.
-You can change this later with [cyan]ductor-slack docker extras-add / extras-remove[/cyan].[/dim]"""
+You can change this later with [cyan]ductor docker extras-add / extras-remove[/cyan].[/dim]"""
 auto_deps = "[dim]Auto-added dependencies: {names}[/dim]"
 
 [timezone]
@@ -180,7 +180,7 @@ error = "[red]Unknown timezone: {tz}[/red]"
 [service]
 title = "[bold]Background Service[/bold]"
 body = """\
-[bold]Run ductor-slack as a background service?[/bold]\n
+[bold]Run ductor as a background service?[/bold]\n
 This creates a {mechanism} that:\n
   - Starts ductor on {trigger}
   - Restarts automatically on crash
