@@ -378,6 +378,53 @@ class SessionManager:
         sessions = await self._load()
         return sessions.get(key.storage_key)
 
+    async def resolve_session_target(
+        self, key: SessionKey, *, provider: str, model: str
+    ) -> tuple[SessionData, bool]:
+        """Atomically record the model target for *key*'s next-message session.
+
+        Fresh existing sessions are retargeted in place; stale or missing
+        sessions are replaced by a fresh shell carrying the target. Runs
+        under ``self._lock``. Returns ``(session, created)``.
+        """
+        async with self._lock:
+            sessions = await self._load()
+            skey = key.storage_key
+            existing = sessions.get(skey)
+
+            if existing and self._is_fresh_for_target(existing, provider):
+                changed = False
+                if existing.provider != provider:
+                    logger.info("Provider switch %s -> %s", existing.provider, provider)
+                    existing.provider = provider
+                    changed = True
+                if existing.model != model:
+                    existing.model = model
+                    changed = True
+                if self._apply_topic_name(existing):
+                    changed = True
+                if changed:
+                    await self._save(sessions)
+                return existing, False
+
+            topic_name: str | None = None
+            if key.topic_id is not None and self._topic_name_resolver is not None:
+                topic_name = self._topic_name_resolver(key.chat_id, key.topic_id)
+
+            new = SessionData(
+                chat_id=key.chat_id,
+                transport=key.transport,
+                topic_id=key.topic_id,
+                topic_name=topic_name,
+                provider=provider,
+                model=model,
+                provider_sessions={},
+            )
+            sessions[skey] = new
+            await self._save(sessions)
+            logger.info("Session created provider=%s model=%s", provider, model)
+            return new, True
+
     async def list_active_for_chat(self, chat_id: int) -> list[SessionData]:
         """Return all fresh sessions belonging to *chat_id*."""
         sessions = await self._load()
@@ -606,6 +653,22 @@ class SessionManager:
                     entry = data[raw_key]
                     break
         return isinstance(entry, dict) and "model" not in entry
+
+    def _is_fresh_for_target(self, session: SessionData, provider: str) -> bool:
+        """Check freshness using the next message's provider bucket."""
+        provider_data = session.provider_sessions.get(provider)
+        message_count = provider_data.message_count if provider_data is not None else 0
+        max_messages = self._config.max_session_messages
+        if max_messages is not None and message_count >= max_messages:
+            logger.debug("Session fresh check: fresh=no reason=max_messages")
+            return False
+
+        current_provider = session.provider
+        session.provider = provider
+        try:
+            return self._is_fresh(session)
+        finally:
+            session.provider = current_provider
 
     def _is_fresh(self, session: SessionData) -> bool:
         now = datetime.now(UTC)
