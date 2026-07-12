@@ -99,6 +99,16 @@ async def _toggle_job(
     return await _build_page(orch, page=page, note=note)
 
 
+def _last_run_label(job: CronJob) -> str:
+    """Render the "last: <status>" suffix incl. a delivery-failure hint (#160)."""
+    if not job.last_run_status:
+        return ""
+    label = f" | last: {job.last_run_status}"
+    if job.last_delivery_status == "failed":
+        label += " (delivery failed)"
+    return label
+
+
 async def _build_page(
     orch: Orchestrator,
     *,
@@ -125,9 +135,7 @@ async def _build_page(
     for idx, job in enumerate(page_jobs):
         number = start + idx + 1
         status_tag = t("cron.status_active") if job.enabled else t("cron.status_paused")
-        last_run = ""
-        if job.last_run_status:
-            last_run = f" | last: {job.last_run_status}"
+        last_run = _last_run_label(job)
         routing = ""
         if job.chat_id:
             routing = f"\n   → Chat {job.chat_id}"

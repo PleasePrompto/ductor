@@ -499,7 +499,7 @@ class TestCronObserverExecution:
         (paths.cron_tasks_dir / "daily").mkdir()
 
         observer = _make_observer(paths, mgr)
-        callback = AsyncMock()
+        callback = AsyncMock(return_value=(True, ""))
         observer.set_result_handler(callback)
 
         mock_proc = AsyncMock()
@@ -514,6 +514,40 @@ class TestCronObserverExecution:
             await observer._execute_job("daily", "Do work", "daily")
 
         callback.assert_awaited_once_with("My Daily Task", "All done.", "success", 0, None, "tg")
+        job = mgr.get_job("daily")
+        assert job is not None
+        assert job.last_run_status == "success"
+        assert job.last_delivery_status == "ok"
+        assert job.last_result_text is None
+
+    async def test_delivery_failure_recorded_and_result_preserved(self, tmp_path: Path) -> None:
+        """#160: execution success + delivery failure must be visible and resendable."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(_make_job("daily", title="My Daily Task"))
+        (paths.cron_tasks_dir / "daily").mkdir()
+
+        observer = _make_observer(paths, mgr)
+        callback = AsyncMock(return_value=(False, "TelegramNetworkError"))
+        observer.set_result_handler(callback)
+
+        mock_proc = AsyncMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b'{"result": "All done."}', b""))
+
+        with (
+            time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)),
+            patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"),
+            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+        ):
+            await observer._execute_job("daily", "Do work", "daily")
+
+        job = mgr.get_job("daily")
+        assert job is not None
+        assert job.last_run_status == "success"
+        assert job.last_delivery_status == "failed"
+        assert job.last_delivery_error == "TelegramNetworkError"
+        assert job.last_result_text == "All done."
 
     async def test_execute_job_timeout_kills_process(self, tmp_path: Path) -> None:
         """Subprocess that exceeds cli_timeout is killed and reported as timeout."""
@@ -615,7 +649,7 @@ class TestCronResultDelivery:
         (paths.cron_tasks_dir / "ephemeral").mkdir()
 
         observer = _make_observer(paths, mgr)
-        callback = AsyncMock()
+        callback = AsyncMock(return_value=(True, ""))
         observer.set_result_handler(callback)
 
         # Remove the job from the manager (simulates a reload that drops it)
@@ -654,12 +688,13 @@ class TestCronResultDelivery:
 
         call_order: list[str] = []
 
-        async def track_result(*_args: object) -> None:
+        async def track_result(*_args: object) -> tuple[bool, str]:
             call_order.append("result_delivered")
+            return True, ""
 
         original_update = mgr.update_run_status
 
-        def track_update(job_id: str, *, status: str) -> None:
+        def track_update(job_id: str, *, status: str, **_kwargs: object) -> None:
             call_order.append("file_written")
             original_update(job_id, status=status)
 
@@ -687,7 +722,7 @@ class TestCronResultDelivery:
         (paths.cron_tasks_dir / "broken").mkdir()
 
         observer = _make_observer(paths, mgr)
-        callback = AsyncMock()
+        callback = AsyncMock(return_value=(True, ""))
         observer.set_result_handler(callback)
 
         with (
@@ -712,7 +747,7 @@ class TestCronResultDelivery:
         (paths.cron_tasks_dir / "reindex").mkdir()
 
         observer = _make_observer(paths, mgr)
-        callback = AsyncMock()
+        callback = AsyncMock(return_value=(True, ""))
         observer.set_result_handler(callback)
 
         mock_proc = AsyncMock()
@@ -739,7 +774,7 @@ class TestCronResultDelivery:
         (paths.cron_tasks_dir / "reindex").mkdir()
 
         observer = _make_observer(paths, mgr)
-        callback = AsyncMock()
+        callback = AsyncMock(return_value=(True, ""))
         observer.set_result_handler(callback)
 
         mock_proc = AsyncMock()

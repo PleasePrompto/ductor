@@ -26,12 +26,14 @@ def main() -> None:
             "enabled": j.get("enabled", True),
             "last_run_at": j.get("last_run_at"),
             "last_run_status": j.get("last_run_status"),
-            "task_folder_exists": (CRON_TASKS_DIR / task_folder).is_dir()
-            if task_folder
-            else False,
+            "task_folder_exists": (CRON_TASKS_DIR / task_folder).is_dir() if task_folder else False,
         }
         if j.get("timezone"):
             entry["timezone"] = j["timezone"]
+        if j.get("last_delivery_status") == "failed":
+            entry["last_delivery_status"] = "failed"
+            entry["last_delivery_error"] = j.get("last_delivery_error", "")
+            entry["last_result_text"] = j.get("last_result_text")
         jobs.append(entry)
 
     global_tz = read_user_timezone()

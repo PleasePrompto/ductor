@@ -245,3 +245,45 @@ class TestPersistence:
 
         mgr = CronManager(jobs_path=jobs_path)
         assert mgr.list_jobs() == []
+
+
+class TestDeliveryTracking:
+    """#160: delivery status persists across save/reload."""
+
+    def test_delivery_failure_roundtrip(self, tmp_path: Path) -> None:
+        mgr = _make_manager(tmp_path)
+        mgr.add_job(_make_job("daily"))
+        mgr.update_run_status(
+            "daily",
+            status="success",
+            delivery_status="failed",
+            delivery_error="TelegramNetworkError",
+            result_text="the full result body",
+        )
+
+        reloaded = CronManager(jobs_path=tmp_path / "cron_jobs.json")
+        job = reloaded.get_job("daily")
+        assert job is not None
+        assert job.last_run_status == "success"
+        assert job.last_delivery_status == "failed"
+        assert job.last_delivery_error == "TelegramNetworkError"
+        assert job.last_result_text == "the full result body"
+
+    def test_successful_delivery_clears_preserved_result(self, tmp_path: Path) -> None:
+        mgr = _make_manager(tmp_path)
+        mgr.add_job(_make_job("daily"))
+        mgr.update_run_status(
+            "daily",
+            status="success",
+            delivery_status="failed",
+            delivery_error="TelegramNetworkError",
+            result_text="stale body",
+        )
+        mgr.update_run_status("daily", status="success", delivery_status="ok")
+
+        reloaded = CronManager(jobs_path=tmp_path / "cron_jobs.json")
+        job = reloaded.get_job("daily")
+        assert job is not None
+        assert job.last_delivery_status == "ok"
+        assert job.last_delivery_error == ""
+        assert job.last_result_text is None

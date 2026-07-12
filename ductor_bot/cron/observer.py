@@ -30,7 +30,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Callback signature: (job_title, result_text, status, chat_id, topic_id, transport)
-CronResultCallback = Callable[[str, str, str, int, int | None, str], Awaitable[None]]
+# Returns (delivered, delivery_error) — the delivery acknowledgement (#160).
+CronResultCallback = Callable[[str, str, str, int, int | None, str], Awaitable[tuple[bool, str]]]
 
 
 @dataclass(slots=True)
@@ -309,19 +310,23 @@ class CronObserver(BaseTaskObserver):
         result_text: str,
         status: str,
         routing: tuple[int, int | None, str] = (0, None, "tg"),
-    ) -> None:
+    ) -> tuple[bool, str]:
         """Send result to the external handler (e.g. Telegram).
 
         Uses *job_title* (computed at execution start) so delivery works even
         if the job was removed from the manager mid-execution.
         *routing* is ``(chat_id, topic_id, transport)``; ``(0, None, "tg")``
         means broadcast.
+
+        Returns ``(delivered, delivery_error)`` (#160).
         """
-        if self._on_result:
-            try:
-                await self._on_result(job_title, result_text, status, *routing)
-            except Exception:
-                logger.exception("Error in cron result handler for job %s", job_id)
+        if not self._on_result:
+            return False, "no result handler registered"
+        try:
+            return await self._on_result(job_title, result_text, status, *routing)
+        except Exception as exc:
+            logger.exception("Error in cron result handler for job %s", job_id)
+            return False, type(exc).__name__
 
     async def _execute_job(
         self,
@@ -383,14 +388,19 @@ class CronObserver(BaseTaskObserver):
 
         if result.execution is None:
             logger.error("CLI not found for cron job %s", job_id)
-            await self._deliver_result(
+            delivered, delivery_error = await self._deliver_result(
                 job_id,
                 job_title,
                 result.result_text,
                 result.status,
                 routing,
             )
-            self._manager.update_run_status(job_id, status=result.status)
+            self._manager.update_run_status(
+                job_id,
+                status=result.status,
+                delivery_status="ok" if delivered else "failed",
+                delivery_error=delivery_error,
+            )
             return
 
         elapsed_ms = (time.monotonic() - t0) * 1000
@@ -410,16 +420,34 @@ class CronObserver(BaseTaskObserver):
         # the subsequent file I/O.
         if job and job.silent_on_success and result.status == "success":
             logger.info("Cron job %s succeeded silently (silent_on_success)", job_title)
+            delivery_status, delivery_error = "skipped", ""
+            delivered = True
         else:
-            await self._deliver_result(
+            delivered, delivery_error = await self._deliver_result(
                 job_id,
                 job_title,
                 result.result_text,
                 result.status,
                 routing,
             )
+            delivery_status = "ok" if delivered else "failed"
+            if not delivered:
+                logger.warning(
+                    "Cron job %s executed (%s) but delivery failed: %s — result preserved",
+                    job_title,
+                    result.status,
+                    delivery_error,
+                )
 
-        self._manager.update_run_status(job_id, status=result.status)
+        # #160: execution status and delivery status are tracked separately;
+        # on delivery failure the full result text is persisted for resend.
+        self._manager.update_run_status(
+            job_id,
+            status=result.status,
+            delivery_status=delivery_status,
+            delivery_error=delivery_error,
+            result_text=None if delivered else result.result_text,
+        )
         # Refresh our mtime baseline so the file-watcher doesn't treat the
         # run-status write as a user-initiated change and trigger a full
         # reschedule of all other jobs.

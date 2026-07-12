@@ -33,6 +33,12 @@ class CronJob:
     last_run_at: str | None = None
     last_run_status: str | None = None
 
+    # Delivery tracking (#160): execution success and delivery success are
+    # separate. On delivery failure the full result text is kept for resend.
+    last_delivery_status: str | None = None  # "ok" | "failed" | "skipped" | None
+    last_delivery_error: str = ""
+    last_result_text: str | None = None
+
     # Per-task execution overrides
     provider: str | None = None
     model: str | None = None
@@ -84,6 +90,12 @@ class CronJob:
         }
         if self.timezone:
             result["timezone"] = self.timezone
+        if self.last_delivery_status is not None:
+            result["last_delivery_status"] = self.last_delivery_status
+        if self.last_delivery_error:
+            result["last_delivery_error"] = self.last_delivery_error
+        if self.last_result_text is not None:
+            result["last_result_text"] = self.last_result_text
         return result
 
     @classmethod
@@ -100,6 +112,9 @@ class CronJob:
             created_at=data.get("created_at", ""),
             last_run_at=data.get("last_run_at"),
             last_run_status=data.get("last_run_status"),
+            last_delivery_status=data.get("last_delivery_status"),
+            last_delivery_error=data.get("last_delivery_error", ""),
+            last_result_text=data.get("last_result_text"),
             provider=data.get("provider"),
             model=data.get("model"),
             reasoning_effort=data.get("reasoning_effort"),
@@ -178,13 +193,28 @@ class CronManager:
             logger.info("Cron jobs bulk update: enabled=%s changed=%d", enabled, changed)
         return changed
 
-    def update_run_status(self, job_id: str, *, status: str) -> None:
-        """Update last_run_at and last_run_status for a job."""
+    def update_run_status(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        delivery_status: str | None = None,
+        delivery_error: str = "",
+        result_text: str | None = None,
+    ) -> None:
+        """Update last run and delivery tracking for a job (#160).
+
+        *result_text* is only passed on delivery failure so the original
+        output can be resent without re-running the job.
+        """
         job = self.get_job(job_id)
         if job is None:
             return
         job.last_run_at = datetime.now(UTC).isoformat()
         job.last_run_status = status
+        job.last_delivery_status = delivery_status
+        job.last_delivery_error = delivery_error
+        job.last_result_text = result_text
         self._save()
 
     def reload(self) -> None:

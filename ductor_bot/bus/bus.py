@@ -160,6 +160,8 @@ class MessageBus:
                 envelope.origin.value,
                 envelope.chat_id,
             )
+            envelope.delivered = False
+            envelope.delivery_error = "no transports registered"
             return
 
         # BROADCAST goes to all transports unconditionally.
@@ -187,15 +189,19 @@ class MessageBus:
         for transport in matching:
             try:
                 await transport.deliver(envelope)
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Transport delivery failed: origin=%s transport=%s",
                     envelope.origin.value,
                     type(transport).__name__,
                 )
+                envelope.delivered = False
+                envelope.delivery_error = type(exc).__name__
 
         # Cascading fallback: target transport not registered at all.
         if not matching and others:
+            envelope.delivered = False
+            envelope.delivery_error = f"transport '{target_transport}' unavailable"
             logger.warning(
                 "Transport '%s' not available for envelope origin=%s, falling back to %s",
                 target_transport,

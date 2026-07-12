@@ -245,13 +245,15 @@ class TelegramTransport:
             thread_id=env.topic_id,
         )
         try:
-            await send_rich(self._bot.bot_instance, env.chat_id, text, opts)
-        except TelegramAPIError:
+            delivered = await send_rich(self._bot.bot_instance, env.chat_id, text, opts)
+        except TelegramAPIError as exc:
             logger.warning(
                 "Cron '%s' delivery failed for chat %d, falling back to main agent",
                 title,
                 env.chat_id,
             )
+            env.delivered = False
+            env.delivery_error = type(exc).__name__
             target = f"Chat {env.chat_id}"
             if env.topic_id:
                 target += f" / Topic {env.topic_id}"
@@ -267,6 +269,12 @@ class TelegramTransport:
                 fallback_text,
                 SendRichOpts(allowed_roots=self._roots()),
             )
+        else:
+            if not delivered:
+                # send_rich swallowed a network error (#160) — record the miss
+                # so the cron observer can persist the result for resend.
+                env.delivered = False
+                env.delivery_error = "TelegramNetworkError"
 
     # -- Origin handlers (broadcast) ----------------------------------------
 

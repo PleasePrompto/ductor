@@ -22,6 +22,25 @@ class TestSendRich:
         assert call_kwargs["chat_id"] == 1
         assert "Hello world" in call_kwargs["text"]
 
+    async def test_returns_true_on_full_delivery(self) -> None:
+        from ductor_bot.messenger.telegram.sender import send_rich
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        assert await send_rich(bot, 1, "Hello world") is True
+
+    async def test_returns_false_on_network_error(self) -> None:
+        """#160: a swallowed TelegramNetworkError must be reported to the caller."""
+        from aiogram.exceptions import TelegramNetworkError
+
+        from ductor_bot.messenger.telegram.sender import send_rich
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock(
+            side_effect=TelegramNetworkError(method=MagicMock(), message="boom")
+        )
+        assert await send_rich(bot, 1, "Hello world") is False
+
     async def test_file_tags_extracted_and_sent(self, tmp_path: Path) -> None:
         from ductor_bot.messenger.telegram.sender import SendRichOpts, send_rich
 

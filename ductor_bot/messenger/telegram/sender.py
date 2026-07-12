@@ -131,8 +131,12 @@ async def _send_text_chunks(
     *,
     reply_to_message_id: int | None = None,
     thread_id: int | None = None,
-) -> Message | None:
-    """Send *clean_text* as HTML chunks, falling back to plain text on error."""
+) -> tuple[Message | None, bool]:
+    """Send *clean_text* as HTML chunks, falling back to plain text on error.
+
+    Returns ``(last_message, delivered)`` — *delivered* is ``False`` when a
+    network error cut the send short (#160).
+    """
     last_msg: Message | None = None
     html_text = markdown_to_telegram_html(clean_text)
     chunks = split_html_message(html_text)
@@ -158,7 +162,7 @@ async def _send_text_chunks(
                 )
         except TelegramNetworkError:
             logger.debug("Network error sending message (likely shutdown), skipping")
-            return last_msg
+            return last_msg, False
         except TelegramBadRequest:
             logger.warning(
                 "HTML send failed at chunk %d/%d, falling back to plain text", i, len(chunks)
@@ -175,7 +179,7 @@ async def _send_text_chunks(
                     message_thread_id=thread_id,
                 )
             break
-    return last_msg
+    return last_msg, True
 
 
 async def send_rich(
@@ -183,11 +187,15 @@ async def send_rich(
     chat_id: int,
     text: str,
     opts: SendRichOpts | None = None,
-) -> None:
+) -> bool:
     """Parse <file:/path> tags, send text first, then files.
 
     When *opts.reply_markup* is provided it is used directly; otherwise buttons
     are extracted from ``[button:...]`` markers in the text.
+
+    Returns ``True`` when the text was fully delivered, ``False`` when a
+    network error cut it short (#160). File/button failures do not affect
+    the return value.
     """
     o = opts or SendRichOpts()
     file_paths = FILE_PATH_RE.findall(text)
@@ -196,9 +204,10 @@ async def send_rich(
 
     button_markup = o.reply_markup if o.reply_markup is not None else extract_buttons(clean_text)[1]
     last_msg: Message | None = None
+    delivered = True
 
     if clean_text:
-        last_msg = await _send_text_chunks(
+        last_msg, delivered = await _send_text_chunks(
             bot,
             chat_id,
             clean_text,
@@ -226,6 +235,8 @@ async def send_rich(
             allowed_roots=o.allowed_roots,
             thread_id=o.thread_id,
         )
+
+    return delivered
 
 
 async def send_file(

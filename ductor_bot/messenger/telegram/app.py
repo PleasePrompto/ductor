@@ -515,7 +515,7 @@ class TelegramBot:
             return
         from ductor_bot.messenger.telegram.sender import _send_text_chunks
 
-        msg = await _send_text_chunks(self._bot, chat_id, text)
+        msg, _delivered = await _send_text_chunks(self._bot, chat_id, text)
         if msg:
             with contextlib.suppress(TelegramAPIError):
                 await self._bot.pin_chat_message(chat_id, msg.message_id, disable_notification=True)

@@ -213,17 +213,19 @@ class ObserverManager:
                 chat_id: int = 0,
                 topic_id: int | None = None,
                 transport: str = "tg",
-            ) -> None:
-                await bus.submit(
-                    from_cron_result(
-                        title,
-                        result,
-                        status,
-                        chat_id=chat_id,
-                        topic_id=topic_id,
-                        transport=transport,
-                    )
+            ) -> tuple[bool, str]:
+                env = from_cron_result(
+                    title,
+                    result,
+                    status,
+                    chat_id=chat_id,
+                    topic_id=topic_id,
+                    transport=transport,
                 )
+                await bus.submit(env)
+                # #160: report the delivery acknowledgement back to the cron
+                # observer so a swallowed send failure is persisted, not lost.
+                return env.delivered, env.delivery_error
 
             self.cron.set_result_handler(_on_cron)
 

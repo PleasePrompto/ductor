@@ -66,6 +66,13 @@ class Envelope:
     lock_mode: LockMode = LockMode.NONE
     needs_injection: bool = False
 
+    # -- Delivery acknowledgement (#160) --
+    # Transports flip this to False when they swallow a send failure so the
+    # submitter can persist/surface the miss. Best-effort: only the unicast
+    # cron path currently reports it; broadcast stays untracked.
+    delivered: bool = True
+    delivery_error: str = ""
+
     # -- Origin-specific metadata --
     metadata: dict[str, Any] = field(default_factory=dict)
 
