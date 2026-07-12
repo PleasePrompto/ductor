@@ -39,6 +39,9 @@ def test_agent_config_defaults() -> None:
     assert cfg.gemini_api_key is None
     assert cfg.telegram_token == ""
     assert cfg.allowed_user_ids == []
+    assert cfg.cron_preflight.enabled is False
+    assert cfg.cron_preflight.timeout_seconds == 15.0
+    assert cfg.cron_preflight.skip_marker == "HEARTBEAT_OK"
 
 
 def test_agent_config_normalizes_nullish_gemini_api_key() -> None:

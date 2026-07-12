@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -362,6 +364,15 @@ class CronObserver(BaseTaskObserver):
         logger.info("Cron job starting job=%s", job_title)
         t0 = time.monotonic()
 
+        if await self._run_preflight(job_title, task_folder):
+            self._manager.update_run_status(
+                job_id,
+                status="success:preflight",
+                delivery_status="skipped",
+            )
+            await self._watcher.update_mtime()
+            return
+
         overrides = TaskOverrides(
             provider=job.provider if job else None,
             model=job.model if job else None,
@@ -452,6 +463,54 @@ class CronObserver(BaseTaskObserver):
         # run-status write as a user-initiated change and trigger a full
         # reschedule of all other jobs.
         await self._watcher.update_mtime()
+
+    async def _run_preflight(self, job_title: str, task_folder: str) -> bool:
+        """Return true when an enabled task-local preflight safely skips the agent."""
+        preflight = self._config.cron_preflight
+        if not preflight.enabled:
+            return False
+        folder = self._paths.cron_tasks_dir / task_folder
+        script = folder / "scripts" / "preflight.py"
+        if not script.is_file():
+            return False
+
+        env = os.environ.copy()
+        env["DUCTOR_HOME"] = str(self._paths.ductor_home)
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(script),
+            cwd=str(folder),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            async with asyncio.timeout(preflight.timeout_seconds):
+                stdout, stderr = await proc.communicate()
+        except TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            logger.warning("Cron preflight timed out job=%s", job_title)
+            return False
+
+        output = stdout.decode(errors="replace")
+        error = stderr.decode(errors="replace").strip()
+        last_line = next(
+            (line.strip() for line in reversed(output.splitlines()) if line.strip()),
+            "",
+        )
+        if proc.returncode == 0 and last_line == preflight.skip_marker:
+            logger.info("Cron preflight skipped agent job=%s task=%s", job_title, task_folder)
+            return True
+        if proc.returncode not in (0, 2) or error:
+            logger.warning(
+                "Cron preflight failed open job=%s returncode=%s stdout=%d stderr=%d",
+                job_title,
+                proc.returncode,
+                len(stdout),
+                len(stderr),
+            )
+        return False
 
     def _is_quiet_hours(self, job: CronJob | None, job_title: str) -> bool:
         """Return True when the job must be skipped due to quiet-hour settings."""

@@ -259,6 +259,86 @@ class TestCronObserverScheduling:
 class TestCronObserverExecution:
     """Job execution tests."""
 
+    async def test_preflight_skip_avoids_agent_execution(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_job(_make_job("daily"))
+        scripts = paths.cron_tasks_dir / "daily" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "preflight.py").write_text("print('HEARTBEAT_OK')\n")
+        observer = _make_observer(paths, mgr, cron_preflight={"enabled": True})
+
+        preflight_proc = AsyncMock()
+        preflight_proc.returncode = 0
+        preflight_proc.communicate = AsyncMock(return_value=(b"checked\nHEARTBEAT_OK\n", b""))
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=preflight_proc),
+            patch("ductor_bot.cron.observer.execute_in_task_folder") as execute,
+        ):
+            await observer._execute_job("daily", "Do work", "daily")
+
+        execute.assert_not_awaited()
+        job = mgr.get_job("daily")
+        assert job is not None
+        assert job.last_run_status == "success:preflight"
+        assert job.last_delivery_status == "skipped"
+
+    async def test_preflight_is_opt_in(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        scripts = paths.cron_tasks_dir / "daily" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "preflight.py").write_text("print('HEARTBEAT_OK')\n")
+        observer = _make_observer(paths, mgr)
+
+        with patch("asyncio.create_subprocess_exec") as spawn:
+            assert await observer._run_preflight("Daily Report", "daily") is False
+
+        spawn.assert_not_called()
+
+    async def test_preflight_non_skip_result_fails_open(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        scripts = paths.cron_tasks_dir / "daily" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "preflight.py").write_text("raise SystemExit(2)\n")
+        observer = _make_observer(paths, mgr, cron_preflight={"enabled": True})
+        preflight_proc = AsyncMock()
+        preflight_proc.returncode = 2
+        preflight_proc.communicate = AsyncMock(return_value=(b"CONTINUE\n", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=preflight_proc):
+            assert await observer._run_preflight("Daily Report", "daily") is False
+
+    async def test_preflight_timeout_kills_process_and_fails_open(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        scripts = paths.cron_tasks_dir / "daily" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "preflight.py").write_text("pass\n")
+        observer = _make_observer(
+            paths,
+            mgr,
+            cron_preflight={"enabled": True, "timeout_seconds": 0.01},
+        )
+        preflight_proc = AsyncMock()
+        preflight_proc.returncode = -9
+        calls = 0
+
+        async def communicate() -> tuple[bytes, bytes]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                await asyncio.sleep(999)
+            return b"", b""
+
+        preflight_proc.communicate = AsyncMock(side_effect=communicate)
+        preflight_proc.kill = MagicMock()
+        with patch("asyncio.create_subprocess_exec", return_value=preflight_proc):
+            assert await observer._run_preflight("Daily Report", "daily") is False
+
+        preflight_proc.kill.assert_called_once()
+
     async def test_handles_missing_task_folder(self, tmp_path: Path) -> None:
         paths = _make_paths(tmp_path)
         mgr = _make_manager(paths)

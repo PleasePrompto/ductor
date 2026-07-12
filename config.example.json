@@ -137,5 +137,10 @@
         "finished_retention_hours": 168,
         "finished_keep_last": 100
     },
+    "cron_preflight": {
+        "enabled": false,
+        "timeout_seconds": 15.0,
+        "skip_marker": "HEARTBEAT_OK"
+    },
     "interagent_port": 8799
 }

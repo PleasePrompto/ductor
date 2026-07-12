@@ -265,6 +265,14 @@ class TasksConfig(BaseModel):
     finished_keep_last: int = 100
 
 
+class CronPreflightConfig(BaseModel):
+    """Task-local deterministic gate that can skip a cron agent run."""
+
+    enabled: bool = False
+    timeout_seconds: float = Field(default=15.0, gt=0)
+    skip_marker: str = "HEARTBEAT_OK"
+
+
 class TimeoutConfig(BaseModel):
     """Per-execution-path timeout settings."""
 
@@ -463,6 +471,7 @@ class AgentConfig(BaseModel):
     image: ImageConfig = Field(default_factory=ImageConfig)
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    cron_preflight: CronPreflightConfig = Field(default_factory=CronPreflightConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)
