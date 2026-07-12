@@ -2,7 +2,19 @@
 
 from __future__ import annotations
 
-from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse
+from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse, task_id_from_label
+
+# -- task_id_from_label --
+
+
+def test_task_id_from_label_extracts_id() -> None:
+    assert task_id_from_label("task:abc123") == "abc123"
+
+
+def test_task_id_from_label_non_task_labels() -> None:
+    for label in ("main", "ns:build", "interagent:worker", "memory_flush", ""):
+        assert task_id_from_label(label) == ""
+
 
 # -- CLIResponse --
 

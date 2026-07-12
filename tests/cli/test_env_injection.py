@@ -53,6 +53,49 @@ def test_subprocess_env_works_without_env_file(tmp_path: Path) -> None:
     assert "DUCTOR_AGENT_NAME" in env
 
 
+def test_subprocess_env_sets_task_id_for_task_label(tmp_path: Path) -> None:
+    """Background-task labels (task:<id>) expose DUCTOR_TASK_ID to the subprocess."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    config = CLIConfig(working_dir=str(workspace), process_label="task:abc123")
+    clear_cache()
+    env = build_subprocess_env(config)
+
+    assert env is not None
+    assert env["DUCTOR_TASK_ID"] == "abc123"
+
+
+def test_subprocess_env_omits_task_id_for_other_labels(tmp_path: Path) -> None:
+    """Non-task labels (main, ns:*, interagent:*) must not leak DUCTOR_TASK_ID."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    for label in ("main", "ns:build", "interagent:worker"):
+        config = CLIConfig(working_dir=str(workspace), process_label=label)
+        clear_cache()
+        env = build_subprocess_env(config)
+
+        assert env is not None
+        assert "DUCTOR_TASK_ID" not in env
+
+
+def test_docker_wrap_sets_task_id_for_task_label(tmp_path: Path) -> None:
+    """Docker exec gets DUCTOR_TASK_ID as an -e flag for task labels."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    config = CLIConfig(
+        working_dir=str(workspace),
+        docker_container="test-container",
+        process_label="task:abc123",
+    )
+    clear_cache()
+    cmd, _ = docker_wrap(["codex"], config)
+
+    assert "DUCTOR_TASK_ID=abc123" in cmd
+
+
 def test_docker_wrap_injects_secrets(tmp_path: Path) -> None:
     """Docker wrap should include .env secrets as -e flags."""
     workspace = tmp_path / "workspace"

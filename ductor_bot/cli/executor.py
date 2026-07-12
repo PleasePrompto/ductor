@@ -20,7 +20,7 @@ from ductor_bot.cli.base import (
 )
 from ductor_bot.cli.stream_events import ResultEvent, StreamEvent
 from ductor_bot.cli.timeout_controller import TimeoutController
-from ductor_bot.cli.types import CLIResponse
+from ductor_bot.cli.types import CLIResponse, task_id_from_label
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from ductor_bot.infra.process_tree import force_kill_process_tree
 
@@ -58,6 +58,8 @@ def build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
     if config.topic_id:
         env["DUCTOR_TOPIC_ID"] = str(config.topic_id)
     env["DUCTOR_TRANSPORT"] = config.transport
+    if task_id := task_id_from_label(config.process_label):
+        env["DUCTOR_TASK_ID"] = task_id
     if config.transcribe_command:
         env["DUCTOR_TRANSCRIBE_COMMAND"] = config.transcribe_command
     if config.video_transcribe_command:
