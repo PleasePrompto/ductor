@@ -206,7 +206,7 @@ def strip_mention(text: str, bot_username: str | None) -> str:
     return text
 
 
-def build_reply_prompt(message: Message, user_text: str) -> str:
+def build_reply_prompt(message: Message, user_text: str, bot_id: int | None = None) -> str:
     """Prefix *user_text* with the cited message of a Telegram reply (#135).
 
     When the user replies to a message, the quoted text is prepended with
@@ -222,8 +222,12 @@ def build_reply_prompt(message: Message, user_text: str) -> str:
     replied-to body. Returns *user_text* unchanged when the message is not a
     reply or the cited message carries no text — e.g. forum-topic service
     messages or media-only replies without a caption.
+
+    Replies to the bot's *own* previous answer are not re-injected (the CLI
+    session already contains that turn) — unless the user selected a quote
+    fragment, which disambiguates the part they mean.
     """
-    cited = _cited_reply_text(message)
+    cited = _cited_reply_text(message, bot_id)
     if cited is None:
         return user_text
     quoted = "\n".join(f"> {line}" for line in cited.splitlines())
@@ -233,7 +237,7 @@ def build_reply_prompt(message: Message, user_text: str) -> str:
     )
 
 
-def prepend_reply_to_media(message: Message, media_prompt: str) -> str:
+def prepend_reply_to_media(message: Message, media_prompt: str, bot_id: int | None = None) -> str:
     """Prefix a media prompt with the cited reply message (#135).
 
     For non-text replies (voice/photo/video/...), the user's actual reply is the
@@ -241,8 +245,9 @@ def prepend_reply_to_media(message: Message, media_prompt: str) -> str:
     prepended ahead of the ``[INCOMING FILE]`` block — e.g. a voicemail reply to
     a cron brief. Returns *media_prompt* unchanged when the message is not a
     reply or the cited message has no text (forum-topic service messages).
+    Replies to the bot's own message are skipped unless a quote was selected.
     """
-    cited = _cited_reply_text(message)
+    cited = _cited_reply_text(message, bot_id)
     if cited is None:
         return media_prompt
     quoted = "\n".join(f"> {line}" for line in cited.splitlines())
@@ -253,19 +258,28 @@ def prepend_reply_to_media(message: Message, media_prompt: str) -> str:
     )
 
 
-def _cited_reply_text(message: Message) -> str | None:
+def _cited_reply_text(message: Message, bot_id: int | None = None) -> str | None:
     """Return the cited text of a Telegram reply, or ``None`` when absent.
 
     Prefers the user-selected quote fragment over the full replied-to body
     (text or caption); returns ``None`` for non-replies and text-less cited
-    messages (forum-topic service messages, media-only replies).
+    messages (forum-topic service messages, media-only replies). Full-body
+    citations of the bot's own messages are suppressed (the session already
+    knows that turn); explicit quote fragments always pass through.
     """
     quote = message.quote
+    replied = message.reply_to_message
     cited: str | None
     if quote is not None and quote.text:
         cited = quote.text
     else:
-        replied = message.reply_to_message
+        if (
+            bot_id is not None
+            and replied is not None
+            and replied.from_user is not None
+            and replied.from_user.id == bot_id
+        ):
+            return None
         cited = (replied.text or replied.caption) if replied is not None else None
     if not cited or not cited.strip():
         return None
