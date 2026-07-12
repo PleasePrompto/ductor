@@ -243,6 +243,16 @@ class TaskHub:
             msg = f"Task '{task_id}' has no provider recorded"
             raise ValueError(msg)
 
+        # #158: the persisted status can lag behind the actual execution
+        # (e.g. a stale "waiting"/"done" while the subprocess still runs).
+        # Never spawn a second run for the same task_id — _spawn() would
+        # overwrite the in-flight handle and the two runs would race on
+        # status updates and result delivery.
+        inflight = self._in_flight.get(task_id)
+        if inflight and inflight.asyncio_task and not inflight.asyncio_task.done():
+            msg = f"Task '{task_id}' is already running"
+            raise ValueError(msg)
+
         # Reset to running — same entry, same folder, same task_id
         self._registry.update_status(
             task_id,

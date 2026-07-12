@@ -783,6 +783,36 @@ class TestResume:
         with pytest.raises(ValueError, match="still running"):
             hub.resume(entry.task_id, "follow up")
 
+    async def test_resume_rejected_while_execution_in_flight(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        """#158: a stale resumable status must not allow a second overlapping run."""
+
+        async def _hang(_: object) -> MagicMock:
+            await asyncio.sleep(999)
+            return MagicMock()  # never reached
+
+        cli = _make_cli_service()
+        cli.execute = AsyncMock(side_effect=_hang)
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock())
+
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.05)  # execution is now hanging in-flight
+
+        # Simulate a stale persisted status that lags behind the running process.
+        registry.update_status(task_id, "waiting", session_id="sess-1")
+
+        with pytest.raises(ValueError, match="already running"):
+            hub.resume(task_id, "follow up")
+
+        await hub.shutdown()
+
     def test_resume_fails_if_no_provider(self, registry: TaskRegistry, tmp_path: Path) -> None:
         hub = self._hub(registry, tmp_path)
         entry = registry.create(_submit(), "", "")
