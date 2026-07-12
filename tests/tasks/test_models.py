@@ -43,8 +43,14 @@ class TestTaskEntry:
 
     def test_reasoning_effort_roundtrip(self) -> None:
         entry = TaskEntry(
-            task_id="e1", chat_id=1, parent_agent="main", name="t",
-            prompt_preview="p", provider="claude", model="opus", status="running",
+            task_id="e1",
+            chat_id=1,
+            parent_agent="main",
+            name="t",
+            prompt_preview="p",
+            provider="claude",
+            model="opus",
+            status="running",
             reasoning_effort="high",
         )
         restored = TaskEntry.from_dict(entry.to_dict())

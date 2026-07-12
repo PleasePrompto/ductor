@@ -251,9 +251,7 @@ class TestKillByChatTopicAbortMarker:
         named_session = reg.register(
             chat_id=1, process=_mock_process(pid=86), label="ns:review", topic_id=10
         )
-        normal = reg.register(
-            chat_id=1, process=_mock_process(pid=87), label="main", topic_id=10
-        )
+        normal = reg.register(chat_id=1, process=_mock_process(pid=87), label="main", topic_id=10)
 
         with patch(
             "ductor_bot.cli.process_registry._kill_processes",

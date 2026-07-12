@@ -161,6 +161,7 @@ async def test_injection_updates_result_text() -> None:
     assert env.result_text == "Injected response"
     t.deliver.assert_awaited_once()
 
+
 async def test_task_result_injection_uses_task_result_label() -> None:
     bus = MessageBus()
     t = _mock_transport()
