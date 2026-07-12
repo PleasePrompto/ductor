@@ -124,6 +124,12 @@
         "activity_extension": 120.0,
         "max_extensions": 3
     },
-    "tasks": {"enabled": true, "max_parallel": 5, "timeout_seconds": 3600.0},
+    "tasks": {
+        "enabled": true,
+        "max_parallel": 5,
+        "timeout_seconds": 3600.0,
+        "finished_retention_hours": 168,
+        "finished_keep_last": 100
+    },
     "interagent_port": 8799
 }

@@ -195,15 +195,6 @@ class TaskRegistry:
         """Return the path to a task's TASKMEMORY.md."""
         return self.task_folder(task_id) / "TASKMEMORY.md"
 
-    def cleanup_old(self, max_age_hours: int) -> int:
-        """Remove completed/failed tasks older than *max_age_hours*."""
-        cutoff = time.time() - max_age_hours * 3600
-        to_remove: list[str] = []
-        for task_id, entry in self._entries.items():
-            if entry.status in _FINISHED_STATUSES and entry.created_at < cutoff:
-                to_remove.append(task_id)
-        return self._remove_entries(to_remove, "cleanup_old")
-
     def delete(self, task_id: str) -> bool:
         """Delete a single finished task (entry + folder).
 
@@ -236,6 +227,8 @@ class TaskRegistry:
     ) -> int:
         """Prune finished task history by age and count.
 
+        Age and count act as independent limits (union of both removal sets):
+        ``keep_last`` does not protect an entry that exceeds ``max_age_hours``.
         Running/waiting tasks are never removed.  ``completed_at`` is preferred
         for ordering; older entries may lack it, so fall back to ``created_at``.
         """

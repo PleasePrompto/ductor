@@ -103,26 +103,6 @@ class TestListActive:
         assert active[0].name == "B"
 
 
-class TestCleanupOld:
-    def test_removes_old_completed(self, registry: TaskRegistry) -> None:
-        entry = registry.create(_submit(), "claude", "opus")
-        registry.update_status(entry.task_id, "done")
-        # Manually set old timestamp
-        entry.created_at = 0.0
-        registry._persist()
-
-        removed = registry.cleanup_old(max_age_hours=1)
-        assert removed == 1
-        assert registry.get(entry.task_id) is None
-
-    def test_keeps_recent(self, registry: TaskRegistry) -> None:
-        entry = registry.create(_submit(), "claude", "opus")
-        registry.update_status(entry.task_id, "done")
-
-        removed = registry.cleanup_old(max_age_hours=1)
-        assert removed == 0
-
-
 class TestCleanupFinished:
     def test_removes_all_finished(self, registry: TaskRegistry) -> None:
         e1 = registry.create(_submit(name="A"), "claude", "opus")
@@ -211,6 +191,38 @@ class TestCleanupFinishedRetention:
         assert registry.get(entries[1].task_id) is None
         assert registry.get(entries[2].task_id) is not None
         assert registry.get(entries[3].task_id) is not None
+
+    def test_age_limit_overrides_keep_last(self, registry: TaskRegistry) -> None:
+        """Age and count are independent limits: keep_last does not shield old entries."""
+        old = registry.create(_submit(name="old"), "claude", "opus")
+        registry.update_status(old.task_id, "done")
+        old.completed_at = 100.0
+        old.created_at = 100.0
+        registry._persist()
+
+        removed = registry.cleanup_finished_retention(
+            max_age_hours=1,
+            keep_last=100,
+            now=10_000.0,
+        )
+
+        assert removed == 1
+        assert registry.get(old.task_id) is None
+
+    def test_disabled_limits_are_noop(self, registry: TaskRegistry) -> None:
+        entry = registry.create(_submit(name="old"), "claude", "opus")
+        registry.update_status(entry.task_id, "done")
+        entry.completed_at = 1.0
+        registry._persist()
+
+        removed = registry.cleanup_finished_retention(
+            max_age_hours=0,
+            keep_last=0,
+            now=10_000.0,
+        )
+
+        assert removed == 0
+        assert registry.get(entry.task_id) is not None
 
     def test_removes_finished_task_folder(self, registry: TaskRegistry) -> None:
         entry = registry.create(_submit(name="old"), "claude", "opus")

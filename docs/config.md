@@ -200,6 +200,8 @@ Implementation status note:
 | `enabled` | `bool` | `true` | Enables shared delegated task system (`TaskHub`) |
 | `max_parallel` | `int` | `5` | Max concurrent running tasks per chat in `TaskHub` |
 | `timeout_seconds` | `float` | `3600.0` | Timeout per delegated task run |
+| `finished_retention_hours` | `int` | `168` | Age limit for finished task history (done/failed/cancelled); `0` disables age pruning |
+| `finished_keep_last` | `int` | `100` | Max finished tasks kept (newest first); `0` disables count pruning. Age and count are independent limits |
 
 ## Task-Level Automation Overrides
 

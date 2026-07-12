@@ -39,7 +39,7 @@ Startup/maintenance behavior:
 
 - stale `running` entries -> downgraded to `failed`
 - orphan entries/folders are cleaned
-- periodic orphan cleanup runs every 5 hours
+- maintenance (orphan cleanup + finished-task retention pruning via `tasks.finished_retention_hours` / `tasks.finished_keep_last`) runs immediately at startup, then every 5 hours
 
 ## Config (`AgentConfig.tasks`)
 
