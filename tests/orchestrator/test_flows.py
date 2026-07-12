@@ -197,9 +197,7 @@ async def test_normal_recovery_clears_topic_abort_marker(orch: Orchestrator) -> 
 
     object.__setattr__(orch._cli_service, "execute", mock_execute)
     object.__setattr__(orch._process_registry, "kill_by_chat_topic", mock_kill)
-    object.__setattr__(
-        orch._process_registry, "clear_topic_abort", mock_clear_topic_abort
-    )
+    object.__setattr__(orch._process_registry, "clear_topic_abort", mock_clear_topic_abort)
     object.__setattr__(orch._sessions, "reset_provider_session", mock_reset_provider)
 
     result = await normal(orch, key, "Hello")
@@ -982,7 +980,7 @@ async def test_existing_topic_effort_fixed_when_global_default_changes(
     await normal(orch, existing, "first")  # captures "low"
 
     orch._config.reasoning_effort = "high"  # global default changes
-    await normal(orch, existing, "again")   # existing topic must stay "low"
+    await normal(orch, existing, "again")  # existing topic must stay "low"
     fresh = SessionKey(chat_id=1, topic_id=20)
     await normal(orch, fresh, "new topic")  # new topic captures "high"
 

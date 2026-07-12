@@ -9,6 +9,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.types import AgentRequest
 from ductor_bot.tasks.models import (
     TaskEntry,
     TaskInFlight,
@@ -448,6 +449,42 @@ class TaskHub:
         delivery_task.add_done_callback(self._pending_deliveries.discard)
         return delivery_task
 
+    async def _prepare_request(
+        self,
+        entry: TaskEntry,
+        prompt: str,
+        cli: CLIService,
+        resume_session: str | None,
+    ) -> AgentRequest:
+        """Build the CLI request for a task run and pre-resolve provider/model."""
+        agent_paths = self._agent_paths.get(entry.parent_agent, self._paths)
+        files_block = await build_appended_files_block(
+            agent_paths, self._append_system_prompt_files
+        )
+
+        request = AgentRequest(
+            prompt=prompt,
+            append_system_prompt=files_block,
+            model_override=entry.model or None,
+            provider_override=entry.provider or None,
+            effort_override=entry.reasoning_effort or None,
+            chat_id=entry.chat_id,
+            topic_id=entry.thread_id,
+            process_label=f"task:{entry.task_id}",
+            timeout_seconds=self._config.timeout_seconds,
+            resume_session=resume_session,
+        )
+
+        # Pre-resolve effective provider/model so the entry is never empty
+        eff_provider, eff_model = cli.resolve_provider(request)
+        if eff_provider and not entry.provider:
+            self._registry.update_status(
+                entry.task_id, "running", provider=eff_provider, model=eff_model
+            )
+            entry.provider = eff_provider
+            entry.model = eff_model
+        return request
+
     async def _run(
         self,
         entry: TaskEntry,
@@ -457,8 +494,6 @@ class TaskHub:
         resume_session: str | None = None,
     ) -> None:
         """Execute task as CLI subprocess."""
-        from ductor_bot.cli.types import AgentRequest
-
         cli = self._cli_services.get(entry.parent_agent) or self._cli_service
         assert cli is not None
 
@@ -466,33 +501,7 @@ class TaskHub:
         final_delivery_started = False
         try:
             timeout = self._config.timeout_seconds
-            agent_paths = self._agent_paths.get(entry.parent_agent, self._paths)
-            files_block = await build_appended_files_block(
-                agent_paths, self._append_system_prompt_files
-            )
-
-            request = AgentRequest(
-                prompt=prompt,
-                append_system_prompt=files_block,
-                model_override=entry.model or None,
-                provider_override=entry.provider or None,
-                effort_override=entry.reasoning_effort or None,
-                chat_id=entry.chat_id,
-                topic_id=entry.thread_id,
-                process_label=f"task:{entry.task_id}",
-                timeout_seconds=timeout,
-                resume_session=resume_session,
-            )
-
-            # Pre-resolve effective provider/model so the entry is never empty
-            eff_provider, eff_model = cli.resolve_provider(request)
-            if eff_provider and not entry.provider:
-                self._registry.update_status(
-                    entry.task_id, "running", provider=eff_provider, model=eff_model
-                )
-                entry.provider = eff_provider
-                entry.model = eff_model
-
+            request = await self._prepare_request(entry, prompt, cli, resume_session)
             response = await cli.execute(request)
 
             elapsed = time.monotonic() - t0

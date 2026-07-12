@@ -122,8 +122,8 @@ def _build_claude_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotC
         exec_config.permission_mode,
         "--no-session-persistence",
     ]
-    # Add reasoning effort (if not default), mirroring the -p path's --effort.
-    if exec_config.reasoning_effort and exec_config.reasoning_effort != "medium":
+    # Add reasoning effort, mirroring the -p path's --effort gate ("default" = CLI default).
+    if exec_config.reasoning_effort and exec_config.reasoning_effort != "default":
         cmd += ["--effort", exec_config.reasoning_effort]
     # Add extra CLI parameters
     cmd.extend(exec_config.cli_parameters)

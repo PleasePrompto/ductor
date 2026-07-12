@@ -151,8 +151,24 @@ class TestBuildCmdWithTaskExecutionConfig:
         assert result.cmd[result.cmd.index("--effort") + 1] == "max"
         assert "model_reasoning_effort" not in " ".join(result.cmd)
 
-    def test_build_cmd_claude_skips_effort_on_medium(self) -> None:
-        """Claude command omits --effort for the default medium effort."""
+    def test_build_cmd_claude_skips_effort_on_default(self) -> None:
+        """Claude command omits --effort for the "default" sentinel (CLI default)."""
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="default",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
+        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
+            result = build_cmd(exec_config, "task")
+        assert result is not None
+        assert "--effort" not in result.cmd
+
+    def test_build_cmd_claude_emits_explicit_medium(self) -> None:
+        """An explicitly configured medium effort is passed through, not dropped."""
         exec_config = TaskExecutionConfig(
             provider="claude",
             model="opus",
@@ -165,7 +181,7 @@ class TestBuildCmdWithTaskExecutionConfig:
         with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
             result = build_cmd(exec_config, "task")
         assert result is not None
-        assert "--effort" not in result.cmd
+        assert result.cmd[result.cmd.index("--effort") + 1] == "medium"
 
     def test_build_cmd_gemini_emits_no_effort(self) -> None:
         """Gemini command emits neither --effort nor the codex -c flag."""
@@ -302,7 +318,6 @@ class TestBuildCmdWithTaskExecutionConfig:
         assert result.cmd.index("--no-cache") < separator_idx
 
 
-
 class TestResolveToBuildEffortFlow:
     """End-to-end: resolve_cli_config -> build_cmd must deliver effort to the CLI."""
 
@@ -319,9 +334,12 @@ class TestResolveToBuildEffortFlow:
             last_updated="2026-02-10T12:00:00",
             models=[
                 CodexModelInfo(
-                    id="gpt-5.2-codex", display_name="c", description="d",
+                    id="gpt-5.2-codex",
+                    display_name="c",
+                    description="d",
                     supported_efforts=("low", "medium", "high", "xhigh"),
-                    default_effort="medium", is_default=True,
+                    default_effort="medium",
+                    is_default=True,
                 )
             ],
         )
@@ -344,8 +362,9 @@ class TestResolveToBuildEffortFlow:
         cfg = resolve_cli_config(
             self._base(),
             self._codex_cache(),
-            task_overrides=TaskOverrides(provider="codex", model="gpt-5.2-codex",
-                                         reasoning_effort="high"),
+            task_overrides=TaskOverrides(
+                provider="codex", model="gpt-5.2-codex", reasoning_effort="high"
+            ),
         )
         assert cfg.reasoning_effort == "high"
         with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
