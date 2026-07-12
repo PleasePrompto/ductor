@@ -1381,3 +1381,27 @@ class TestForumTopicPropagation:
 
         opts = mock_send.call_args[0][3]
         assert opts.thread_id == 44
+
+
+class TestNotificationService:
+    """TelegramNotificationService fan-out resilience."""
+
+    async def test_notify_all_skips_unreachable_recipient(self) -> None:
+        """A 'chat not found' recipient (never pressed /start) must not abort
+        the fan-out — at startup it used to crash the whole boot."""
+        from ductor_bot.messenger.telegram.app import TelegramNotificationService
+
+        config = _make_config(user_ids=[1, 2])
+        service = TelegramNotificationService(MagicMock(), config)
+        sent: list[int] = []
+
+        async def fake_send_rich(_bot: object, uid: int, _text: str, _opts: object) -> bool:
+            if uid == 1:
+                raise TelegramBadRequest(method=MagicMock(), message="chat not found")
+            sent.append(uid)
+            return True
+
+        with patch("ductor_bot.messenger.telegram.app.send_rich", side_effect=fake_send_rich):
+            await service.notify_all("hello")
+
+        assert sent == [2]

@@ -167,7 +167,13 @@ class TelegramNotificationService:
 
     async def notify_all(self, text: str) -> None:
         for uid in self._config.allowed_user_ids:
-            await send_rich(self._bot, uid, text, None)
+            try:
+                await send_rich(self._bot, uid, text, None)
+            except TelegramAPIError:
+                # An unreachable recipient (e.g. never pressed /start -> "chat
+                # not found") must not abort the notification fan-out — or, at
+                # startup, the whole boot.
+                logger.warning("Notification to user %d failed, skipping", uid)
 
 
 class TelegramBot:
