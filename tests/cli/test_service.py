@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
-from ductor_bot.cli.stream_events import StreamEvent
+from ductor_bot.cli.stream_events import StreamEvent, ToolUseEvent
 from ductor_bot.cli.types import AgentRequest, CLIResponse
 from ductor_bot.config import ModelRegistry
 
@@ -70,9 +70,10 @@ async def test_execute_error_response() -> None:
 async def test_execute_streaming_success() -> None:
     svc = _make_service()
 
-    from ductor_bot.cli.stream_events import AssistantTextDelta, ResultEvent
+    from ductor_bot.cli.stream_events import AssistantTextDelta, ResultEvent, ThinkingEvent
 
     async def fake_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[StreamEvent, None]:
+        yield ThinkingEvent(type="assistant", text="considering")
         yield AssistantTextDelta(type="assistant", text="Hello ")
         yield AssistantTextDelta(type="assistant", text="world!")
         yield ResultEvent(
@@ -84,9 +85,13 @@ async def test_execute_streaming_success() -> None:
         )
 
     deltas: list[str] = []
+    thinking: list[str] = []
 
     async def on_delta(text: str) -> None:
         deltas.append(text)
+
+    async def on_thinking(text: str) -> None:
+        thinking.append(text)
 
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_cli = MagicMock()
@@ -96,10 +101,12 @@ async def test_execute_streaming_success() -> None:
         resp = await svc.execute_streaming(
             AgentRequest(prompt="hello", chat_id=1),
             on_text_delta=on_delta,
+            on_thinking_delta=on_thinking,
         )
 
     assert resp.result == "Hello world!"
     assert resp.session_id == "sess-1"
+    assert thinking == ["considering"]
     assert deltas == ["Hello ", "world!"]
 
 
@@ -160,6 +167,7 @@ async def test_stream_callbacks_dispatches_compact_boundary() -> None:
 
     cbs = _StreamCallbacks(
         on_text=None,
+        on_thinking=None,
         on_tool=None,
         on_status=on_status,
         on_compact_boundary=on_boundary,
@@ -172,3 +180,56 @@ async def test_stream_callbacks_dispatches_compact_boundary() -> None:
     assert text == ""
     assert result is None
     assert order == ["boundary", "status:None"]
+
+
+async def test_stream_callbacks_dispatches_thinking_text() -> None:
+    from ductor_bot.cli.service import _StreamCallbacks
+    from ductor_bot.cli.stream_events import ThinkingEvent
+
+    seen: list[str] = []
+    statuses: list[str | None] = []
+
+    async def on_thinking(text: str) -> None:
+        seen.append(text)
+
+    async def on_status(status: str | None) -> None:
+        statuses.append(status)
+
+    cbs = _StreamCallbacks(
+        on_text=None,
+        on_thinking=on_thinking,
+        on_tool=None,
+        on_status=on_status,
+    )
+    text, result = await cbs.dispatch(ThinkingEvent(type="assistant", text="step 1"))
+
+    assert text == ""
+    assert result is None
+    assert seen == ["step 1"]
+    assert statuses == ["thinking"]
+
+
+async def test_stream_callbacks_dispatch_tool_event() -> None:
+    from ductor_bot.cli.service import _StreamCallbacks
+
+    seen: list[ToolUseEvent] = []
+
+    async def on_tool(event: ToolUseEvent) -> None:
+        seen.append(event)
+
+    cbs = _StreamCallbacks(
+        on_text=None,
+        on_thinking=None,
+        on_tool=on_tool,
+        on_status=None,
+    )
+    event = ToolUseEvent(
+        type="assistant",
+        tool_name="WebFetch",
+        parameters={"url": "https://slack.dev/slack-thinking-steps-ai-agents/"},
+    )
+    text, result = await cbs.dispatch(event)
+
+    assert text == ""
+    assert result is None
+    assert seen == [event]

@@ -72,10 +72,13 @@ class BackgroundObserver:
             prompt=sub.prompt,
             message_id=sub.message_id,
             thread_id=sub.thread_id,
+            transport=sub.transport,
             provider=sub.provider_override if has_session_override else exec_config.provider,
             model=sub.model_override if has_session_override else exec_config.model,
             reasoning_effort=(
-                sub.reasoning_effort_override if has_session_override else exec_config.reasoning_effort
+                sub.reasoning_effort_override
+                if has_session_override
+                else exec_config.reasoning_effort
             ),
             submitted_at=time.monotonic(),
             session_name=sub.session_name,
@@ -150,6 +153,7 @@ class BackgroundObserver:
                     chat_id=bg_task.chat_id,
                     message_id=bg_task.message_id,
                     thread_id=bg_task.thread_id,
+                    transport=bg_task.transport,
                     prompt_preview=bg_task.prompt[:60],
                     result_text=result.result_text,
                     status="error:cli_not_found" if result.execution is None else result.status,
@@ -167,6 +171,7 @@ class BackgroundObserver:
                         chat_id=bg_task.chat_id,
                         message_id=bg_task.message_id,
                         thread_id=bg_task.thread_id,
+                        transport=bg_task.transport,
                         prompt_preview=bg_task.prompt[:60],
                         result_text="",
                         status="aborted",
@@ -186,6 +191,7 @@ class BackgroundObserver:
                         chat_id=bg_task.chat_id,
                         message_id=bg_task.message_id,
                         thread_id=bg_task.thread_id,
+                        transport=bg_task.transport,
                         prompt_preview=bg_task.prompt[:60],
                         result_text=t("tasks.internal_error"),
                         status="error:internal",
@@ -233,6 +239,7 @@ class BackgroundObserver:
                     chat_id=bg_task.chat_id,
                     message_id=bg_task.message_id,
                     thread_id=bg_task.thread_id,
+                    transport=bg_task.transport,
                     prompt_preview=bg_task.prompt[:60],
                     result_text=response.result or "",
                     status=status,
@@ -252,6 +259,7 @@ class BackgroundObserver:
                         chat_id=bg_task.chat_id,
                         message_id=bg_task.message_id,
                         thread_id=bg_task.thread_id,
+                        transport=bg_task.transport,
                         prompt_preview=bg_task.prompt[:60],
                         result_text="",
                         status="aborted",
@@ -274,6 +282,7 @@ class BackgroundObserver:
                         chat_id=bg_task.chat_id,
                         message_id=bg_task.message_id,
                         thread_id=bg_task.thread_id,
+                        transport=bg_task.transport,
                         prompt_preview=bg_task.prompt[:60],
                         result_text=t("tasks.internal_error"),
                         status="error:internal",

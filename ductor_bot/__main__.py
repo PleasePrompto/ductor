@@ -70,7 +70,7 @@ def _is_configured() -> bool:
     except (json.JSONDecodeError, OSError):
         return False
 
-    transports = data.get("transports", [])
+    transports = _normalized_transport_list(data)
     if not transports:
         transports = [data.get("transport", "telegram")]
     for t in transports:
@@ -93,9 +93,42 @@ def _is_configured_matrix(data: dict[str, object]) -> bool:
     return bool(mx.get("homeserver")) and bool(mx.get("user_id"))
 
 
+def _is_configured_slack(data: dict[str, object]) -> bool:
+    slack = data.get("slack", {})
+    if not isinstance(slack, dict):
+        return False
+    has_tokens = bool(slack.get("bot_token")) and bool(slack.get("app_token"))
+    has_targets = bool(slack.get("allowed_users")) or bool(slack.get("allowed_channels"))
+    return has_tokens and has_targets
+
+
+def _normalized_transport_list(data: dict[str, object]) -> list[str]:
+    """Return the normalized transport list from raw config data.
+
+    ``transport`` (singular) is the authoritative primary. A non-empty
+    ``transports`` list is honored whenever the primary is one of its members:
+    the primary is placed first and the remaining configured transports are
+    preserved, so genuine multi-transport setups (e.g. telegram+matrix) are
+    never silently dropped when their ordering differs from ``transport``.
+    Only when the primary is absent from the list is the list treated as stale
+    and collapsed to the primary alone.
+    """
+    primary = data.get("transport", "telegram")
+    if not isinstance(primary, str) or not primary:
+        primary = "telegram"
+    raw_transports = data.get("transports", [])
+    if not isinstance(raw_transports, list):
+        raw_transports = []
+    transports = [t for t in raw_transports if isinstance(t, str) and t]
+    if primary not in transports:
+        return [primary]
+    return [primary, *(t for t in transports if t != primary)]
+
+
 _IS_CONFIGURED_CHECKS: dict[str, Callable[[dict[str, object]], bool]] = {
     "telegram": _is_configured_telegram,
     "matrix": _is_configured_matrix,
+    "slack": _is_configured_slack,
 }
 
 
@@ -138,6 +171,13 @@ def load_config() -> AgentConfig:
     normalized_existing = False
     if user_data.get("gemini_api_key") is None:
         user_data["gemini_api_key"] = DEFAULT_EMPTY_GEMINI_API_KEY
+        normalized_existing = True
+    normalized_transports = _normalized_transport_list(user_data)
+    if user_data.get("transports") != normalized_transports:
+        user_data["transports"] = normalized_transports
+        normalized_existing = True
+    if user_data.get("transport") != normalized_transports[0]:
+        user_data["transport"] = normalized_transports[0]
         normalized_existing = True
 
     defaults = AgentConfig().model_dump(mode="json")
@@ -247,9 +287,20 @@ def _validate_matrix_config(config: AgentConfig) -> None:
         sys.exit(1)
 
 
+def _validate_slack_config(config: AgentConfig) -> None:
+    """Validate Slack transport requirements."""
+    slack = config.slack
+    has_tokens = bool(slack.bot_token) and bool(slack.app_token)
+    has_targets = bool(slack.allowed_users) or bool(slack.allowed_channels)
+    if not has_tokens or not has_targets:
+        _console.print(t_rich("config.incomplete"))
+        sys.exit(1)
+
+
 _TRANSPORT_VALIDATORS: dict[str, Callable[[AgentConfig], None]] = {
     "telegram": _validate_telegram_config,
     "matrix": _validate_matrix_config,
+    "slack": _validate_slack_config,
 }
 
 

@@ -43,6 +43,7 @@ from aiohttp import BodyPartReader, WSMsgType, web
 
 from ductor_bot.api.crypto import E2ESession
 from ductor_bot.bus.lock_pool import LockPool
+from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.files.image_processor import process_image
 from ductor_bot.files.prompt import MediaInfo, build_media_prompt
 from ductor_bot.files.storage import prepare_destination, sanitize_filename
@@ -135,10 +136,10 @@ class _StreamCallbacks:
         if not await self.channel.send({"type": "text_delta", "data": delta}):
             self.disconnected = True
 
-    async def on_tool(self, name: str) -> None:
+    async def on_tool(self, tool: ToolUseEvent | str) -> None:
         if self.disconnected:
             return
-        name = normalize_tool_name(name)
+        name = normalize_tool_name(str(getattr(tool, "tool_name", tool)))
         if not await self.channel.send({"type": "tool_activity", "data": name}):
             self.disconnected = True
 

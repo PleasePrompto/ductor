@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Claude Code, Codex CLI, Gemini CLI, and Antigravity CLI as your coding assistant — on Telegram and Matrix.</strong><br>
+  <strong>Claude Code, Codex CLI, Gemini CLI, and Antigravity CLI as your coding assistant — on Telegram, Matrix, and Slack.</strong><br>
   Uses only official CLIs. Nothing spoofed, nothing proxied. Multi-transport, automation, and sub-agents in one runtime.
 </p>
 
@@ -23,7 +23,7 @@
 
 ---
 
-If you want to control Claude Code, Google's Gemini CLI, OpenAI's Codex CLI, or Antigravity CLI via Telegram or Matrix, build automations, or manage multiple agents easily — ductor is the right tool for you. The messaging layer is modular: Telegram and Matrix ship today, and new transports plug into the same transport-agnostic core.
+If you want to control Claude Code, Google's Gemini CLI, OpenAI's Codex CLI, or Antigravity CLI via Telegram, Matrix, or Slack, build automations, or manage multiple agents easily — ductor is the right tool for you. The messaging layer is modular: Telegram, Matrix, and Slack ship today, and new transports plug into the same transport-agnostic core.
 
 ductor runs on your machine and sends simple console commands as if you were typing them yourself, so you can use your active subscriptions (Claude Max, Google AI Ultra, etc.) directly. No API proxying, no SDK patching, no spoofed headers. Just the official CLIs, executed as subprocesses, with all state kept in plain JSON and Markdown under `~/.ductor/`.
 
@@ -39,14 +39,16 @@ pipx install ductor    # or: uv tool install ductor
 ductor
 ```
 
-The onboarding wizard handles CLI checks, transport setup (Telegram or Matrix), timezone, optional Docker, and optional background service install.
+The onboarding wizard handles CLI checks, transport setup, timezone, optional Docker, and optional background service install.
 
 **Requirements:** Python 3.11+, at least one CLI installed (`claude`, `codex`, `gemini`, or `agy`), and either:
 
 - a Telegram Bot Token from [@BotFather](https://t.me/BotFather), or
-- a Matrix account on a homeserver (homeserver URL, user ID, password/access token)
+- a Matrix account on a homeserver (homeserver URL, user ID, password/access token), or
+- a Slack bot token + Socket Mode app token (plus the Slack app scopes/events listed in [`docs/installation.md#slack-setup`](docs/installation.md#slack-setup))
 
 For Matrix support: `ductor install matrix` — see [Matrix setup guide](docs/matrix-setup.md).
+For Slack support: `pip install "ductor[slack]"`, then follow [`docs/installation.md#slack-setup`](docs/installation.md#slack-setup) and configure `slack.bot_token` + `slack.app_token`.
 
 Detailed setup: [`docs/installation.md`](docs/installation.md)
 
@@ -191,7 +193,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 
 ## Features
 
-- **Multi-transport** — run Telegram and Matrix simultaneously, or pick one
+- **Multi-transport** — run Telegram, Matrix, and Slack simultaneously, or pick any one
 - **Multi-language** — UI in English, Deutsch, Nederlands, Français, Русский, Español, Português
 - **Real-time streaming** — live message edits (Telegram) or segment-based output (Matrix)
 - **Telegram reasoning + tool UX controls** — optional reasoning stream, live tool progress, and separate thinking indicator controls
@@ -220,13 +222,15 @@ Telegram is the primary transport — full feature set, battle-tested, zero extr
 |---|---|---|---|---|
 | **Telegram** | primary | Live message edits | Inline keyboards | `pip install ductor` |
 | **Matrix** | supported | Segment-based (new messages) | Emoji reactions | `ductor install matrix` |
+| **Slack** | supported | Non-streaming | Native threads | `pip install "ductor[slack]"` |
 
 Both transports can run **in parallel** on the same agent:
 
 ```json
 {"transport": "telegram"}
 {"transport": "matrix"}
-{"transports": ["telegram", "matrix"]}
+{"transport": "slack"}
+{"transports": ["telegram", "slack"]}
 ```
 
 ### Modular transport architecture
@@ -284,6 +288,64 @@ Matrix auth uses room and user allowlists in the `matrix` config block:
 
 The bot logs in with password on first start, then persists `access_token` and `device_id` for subsequent runs. E2EE is supported via `matrix-nio[e2e]`.
 
+### Slack
+
+Slack runs through **Socket Mode**, so ductor does not need a public webhook URL.
+
+Create a Slack app, then configure these permissions before installing it to your workspace.
+
+**Bot token scopes**
+
+| Scope | Why ductor needs it |
+|---|---|
+| `chat:write` | send replies as the bot |
+| `app_mentions:read` | detect `@bot` in channels |
+| `channels:history` | read public-channel messages and thread history |
+| `channels:read` | resolve public channel metadata |
+| `groups:history` | read private-channel messages and thread history |
+| `im:history` | read direct messages |
+| `im:read` | access DM metadata |
+| `im:write` | open/manage DMs |
+| `users:read` | resolve user display names for thread backfill/context |
+| `files:read` | download attached files |
+| `files:write` | upload generated files |
+
+**Optional bot token scope**
+
+| Scope | When to add it |
+|---|---|
+| `groups:read` | if you want private-channel metadata lookups beyond history access |
+
+**App-level token scope**
+
+| Scope | Why ductor needs it |
+|---|---|
+| `connections:write` | required for Socket Mode (`xapp-...`) |
+
+**Event subscriptions**
+
+| Event | Required | Purpose |
+|---|---|---|
+| `message.im` | yes | direct messages |
+| `message.channels` | yes | public-channel messages |
+| `message.groups` | recommended | private-channel messages |
+| `app_mention` | yes | mention handling in channels |
+
+Also enable **App Home → Messages Tab** so users can DM the bot, then **Install App to Workspace** and copy:
+
+- **Bot User OAuth Token** → `slack.bot_token` (`xoxb-...`)
+- **App-Level Token** → `slack.app_token` (`xapp-...`)
+
+If you change scopes or subscribed events later, **reinstall the Slack app** so the new permissions take effect.
+
+ductor's Slack allowlist lives in the `slack` config block:
+
+- **`allowed_users`** — Slack member IDs allowed to use the bot
+- **`allowed_channels`** — Slack channel IDs where the bot may respond
+- **`group_mention_only`** — when `true`, channel conversations start on `@bot` and continue in the activated thread
+
+After setup, invite the app into each target channel. Full step-by-step setup is in [`docs/installation.md#slack-setup`](docs/installation.md#slack-setup).
+
 ## Language
 
 ductor's UI (commands, status messages, onboarding) is available in multiple languages:
@@ -332,6 +394,8 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/info` | Version + links |
 
 `/new` is intentionally a factory reset for the current `SessionKey`: it clears the bucket tied to the configured default model/provider for that chat or topic, not whichever provider you last switched to temporarily via `/model`. Use `/reset` when you want to clear the provider bucket that is currently active in that chat or topic.
+
+On Slack, these same commands also work as normal message commands (for example `help`, `status`, or `model`) even though ductor does not register native Slack slash commands.
 
 ## Common CLI commands
 

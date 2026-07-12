@@ -46,3 +46,16 @@ MATRIX_CAPABILITIES = MessengerCapabilities(
     supports_seen_indicator=True,
     max_message_length=40000,
 )
+
+SLACK_CAPABILITIES = MessengerCapabilities(
+    name="slack",
+    supports_inline_buttons=False,
+    supports_reactions=True,
+    supports_message_editing=True,
+    supports_threads=True,
+    supports_typing_indicator=False,
+    supports_file_send=True,
+    supports_streaming_edit=False,
+    supports_seen_indicator=False,
+    max_message_length=40000,
+)

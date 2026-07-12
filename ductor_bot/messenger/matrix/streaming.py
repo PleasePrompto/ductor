@@ -57,9 +57,9 @@ class MatrixStreamEditor:
         """Append text to the current segment buffer."""
         self._buffer += delta
 
-    async def on_tool(self, tool_name: str) -> None:
+    async def on_tool(self, tool: object) -> None:
         """Flush the buffer on tool activity and log the segment."""
-        tool_name = normalize_tool_name(tool_name)
+        tool_name = normalize_tool_name(str(getattr(tool, "tool_name", tool)))
         self._segment_count += 1
         logger.info(
             "Matrix streaming: tool=%s segment=%d buf_len=%d",

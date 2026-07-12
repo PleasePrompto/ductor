@@ -385,7 +385,7 @@ wheels = [
 
 [[package]]
 name = "ductor"
-version = "0.16.2"
+version = "0.18.3"
 source = { editable = "." }
 dependencies = [
     { name = "aiogram" },
@@ -414,6 +414,8 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "ruff" },
+    { name = "slack-bolt" },
+    { name = "slack-sdk" },
     { name = "time-machine" },
 ]
 lint = [
@@ -422,6 +424,10 @@ lint = [
 ]
 matrix = [
     { name = "matrix-nio" },
+]
+slack = [
+    { name = "slack-bolt" },
+    { name = "slack-sdk" },
 ]
 test = [
     { name = "pytest" },
@@ -437,7 +443,7 @@ requires-dist = [
     { name = "aiogram", specifier = ">=3.24.0,<4.0.0" },
     { name = "aiohttp", specifier = ">=3.9.0,<4.0.0" },
     { name = "cronsim", specifier = ">=2.7" },
-    { name = "ductor", extras = ["test", "lint", "api", "matrix"], marker = "extra == 'dev'" },
+    { name = "ductor", extras = ["test", "lint", "api", "matrix", "slack"], marker = "extra == 'dev'" },
     { name = "filetype", specifier = ">=1.2.0" },
     { name = "matrix-nio", marker = "extra == 'matrix'", specifier = ">=0.25.0" },
     { name = "mypy", marker = "extra == 'lint'", specifier = ">=1.19.1" },
@@ -453,10 +459,12 @@ requires-dist = [
     { name = "questionary", specifier = ">=2.1.1" },
     { name = "rich", specifier = ">=14.3.2" },
     { name = "ruff", marker = "extra == 'lint'", specifier = ">=0.15.0" },
+    { name = "slack-bolt", marker = "extra == 'slack'", specifier = ">=1.23.0,<2.0.0" },
+    { name = "slack-sdk", marker = "extra == 'slack'", specifier = ">=3.37.0,<4.0.0" },
     { name = "time-machine", marker = "extra == 'test'", specifier = ">=3.2.0" },
     { name = "tzdata", specifier = ">=2024.1" },
 ]
-provides-extras = ["test", "lint", "api", "matrix", "dev"]
+provides-extras = ["test", "lint", "api", "matrix", "slack", "dev"]
 
 [[package]]
 name = "execnet"
@@ -1688,6 +1696,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/88/3d/1364fcde8656962782aa9ea93c92d98682b1ecec2f184e625a965ad3b4a6/ruff-0.15.9-py3-none-win32.whl", hash = "sha256:bde6ff36eaf72b700f32b7196088970bf8fdb2b917b7accd8c371bfc0fd573ec", size = 10583382, upload-time = "2026-04-02T18:17:04.261Z" },
     { url = "https://files.pythonhosted.org/packages/4c/56/5c7084299bd2cacaa07ae63a91c6f4ba66edc08bf28f356b24f6b717c799/ruff-0.15.9-py3-none-win_amd64.whl", hash = "sha256:45a70921b80e1c10cf0b734ef09421f71b5aa11d27404edc89d7e8a69505e43d", size = 11744969, upload-time = "2026-04-02T18:16:59.611Z" },
     { url = "https://files.pythonhosted.org/packages/03/36/76704c4f312257d6dbaae3c959add2a622f63fcca9d864659ce6d8d97d3d/ruff-0.15.9-py3-none-win_arm64.whl", hash = "sha256:0694e601c028fd97dc5c6ee244675bc241aeefced7ef80cd9c6935a871078f53", size = 11005870, upload-time = "2026-04-02T18:17:15.773Z" },
+]
+
+[[package]]
+name = "slack-bolt"
+version = "1.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "slack-sdk" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/2c/7434f5d8c52eafb1e702012e9f291b013bd05985a5b32bde568b2279a28a/slack_bolt-1.29.0.tar.gz", hash = "sha256:b6271ba0a9b71e319c86b40632e6cb6240aacd0433773615b76b890b9a574762", size = 131151, upload-time = "2026-06-30T20:24:44.11Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/cc/e5f78a80a1775a4cbb2cc41e8ef433602d5e755ff0d829bd43145015740a/slack_bolt-1.29.0-py2.py3-none-any.whl", hash = "sha256:1835b66b778158f3af0da77603aa18d7dfd82fd9b9a985e25c752f95050ab826", size = 235345, upload-time = "2026-06-30T20:24:42.558Z" },
+]
+
+[[package]]
+name = "slack-sdk"
+version = "3.43.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/75/a4964eb771a0c74d79ee7a3bee6fb5d9718909dd1b675e80d62a6a0ad90a/slack_sdk-3.43.0.tar.gz", hash = "sha256:0553152e46c4259eb69f7464cdadc35ba4802ca10f9f5a849c92cf03d6c2ba07", size = 252769, upload-time = "2026-06-30T18:04:41.59Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e4/55/42141b8338d46323d5b3c6095201b044c670c20f898643b322ea9b1543a1/slack_sdk-3.43.0-py2.py3-none-any.whl", hash = "sha256:4b6557c65577fc172f685af218b811f9f3b4909e24cddd839ada09565f10c585", size = 315866, upload-time = "2026-06-30T18:04:39.636Z" },
 ]
 
 [[package]]

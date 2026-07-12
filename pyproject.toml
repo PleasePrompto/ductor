@@ -63,7 +63,11 @@ api = [
 matrix = [
     "matrix-nio>=0.25.0",
 ]
-dev = ["ductor[test,lint,api,matrix]"]
+slack = [
+    "slack-bolt>=1.23.0,<2.0.0",
+    "slack-sdk>=3.37.0,<4.0.0",
+]
+dev = ["ductor[test,lint,api,matrix,slack]"]
 
 [project.urls]
 Homepage = "https://ductor.dev"
@@ -195,6 +199,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["nio.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["slack_bolt.*", "slack_sdk.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

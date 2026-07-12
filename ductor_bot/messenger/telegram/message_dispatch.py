@@ -294,7 +294,8 @@ async def run_streaming_message(  # noqa: C901, PLR0915
     async def on_text(delta: str) -> None:
         await coalescer.feed(delta)
 
-    async def on_tool(tool_name: str) -> None:
+    async def on_tool(tool: object) -> None:
+        tool_name = str(getattr(tool, "tool_name", tool))
         await tracker.set_tool(tool_name)
         await coalescer.flush(force=True)
         if reasoning_coalescer is not None:

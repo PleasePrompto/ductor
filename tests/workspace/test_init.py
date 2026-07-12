@@ -412,6 +412,15 @@ def test_inject_host_notice(tmp_path: Path) -> None:
     assert "NO SANDBOX" in content
 
 
+def test_inject_slack_rules_describe_message_commands(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    init_workspace(paths)
+    inject_runtime_environment(paths, docker_container="", transport="slack")
+    content = (paths.workspace / "CLAUDE.md").read_text()
+    assert "`help` or `/help`" in content
+    assert "Prefer `/` commands" not in content
+
+
 def test_inject_no_duplicate(tmp_path: Path) -> None:
     """Calling inject twice does not duplicate the section."""
     paths = _make_paths(tmp_path)

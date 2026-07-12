@@ -14,6 +14,7 @@ from ductor_bot.background import (
 )
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
+from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.config import AgentConfig
 from ductor_bot.cron.manager import CronManager
 from ductor_bot.errors import (
@@ -80,6 +81,7 @@ logger = logging.getLogger(__name__)
 
 
 _TextCallback = Callable[[str], Awaitable[None]]
+_ToolCallback = Callable[[ToolUseEvent], Awaitable[None]]
 _SystemStatusCallback = Callable[[str | None], Awaitable[None]]
 _ReasoningCallback = Callable[[str], Awaitable[None]]
 
@@ -90,6 +92,7 @@ class NamedSessionRequest:
 
     message_id: int
     thread_id: int | None
+    transport: str = "tg"
     provider_override: str | None = None
     model_override: str | None = None
     reasoning_effort_override: str | None = None
@@ -104,7 +107,8 @@ class _MessageDispatch:
     cmd: str
     streaming: bool = False
     on_text_delta: _TextCallback | None = None
-    on_tool_activity: _TextCallback | None = None
+    on_thinking_delta: _TextCallback | None = None
+    on_tool_activity: _ToolCallback | None = None
     on_system_status: _SystemStatusCallback | None = None
     on_reasoning_delta: _ReasoningCallback | None = None
 
@@ -112,6 +116,7 @@ class _MessageDispatch:
         """Bundle the streaming callbacks into a StreamingCallbacks instance."""
         return StreamingCallbacks(
             on_text_delta=self.on_text_delta,
+            on_thinking_delta=self.on_thinking_delta,
             on_tool_activity=self.on_tool_activity,
             on_system_status=self.on_system_status,
             on_reasoning_delta=self.on_reasoning_delta,
@@ -171,9 +176,10 @@ class Orchestrator:
             topic_id: int | None = None,
             prompt: str | None = None,
             ack_token: str | None = None,
+            transport: str = "tg",
         ) -> str | None:
             return await self.handle_heartbeat(
-                SessionKey(chat_id=chat_id, topic_id=topic_id),
+                SessionKey.for_transport(transport, chat_id, topic_id),
                 prompt=prompt,
                 ack_token=ack_token,
             )
@@ -311,7 +317,8 @@ class Orchestrator:
         text: str,
         *,
         on_text_delta: _TextCallback | None = None,
-        on_tool_activity: _TextCallback | None = None,
+        on_thinking_delta: _TextCallback | None = None,
+        on_tool_activity: _ToolCallback | None = None,
         on_system_status: _SystemStatusCallback | None = None,
         on_reasoning_delta: _ReasoningCallback | None = None,
     ) -> OrchestratorResult:
@@ -322,6 +329,7 @@ class Orchestrator:
             cmd=text.strip().lower(),
             streaming=True,
             on_text_delta=on_text_delta,
+            on_thinking_delta=on_thinking_delta,
             on_tool_activity=on_tool_activity,
             on_system_status=on_system_status,
             on_reasoning_delta=on_reasoning_delta,
@@ -588,7 +596,12 @@ class Orchestrator:
         if effort and _validate_reasoning_effort(self, model_name, effort) is not None:
             effort = "medium"
         ns = self._named_sessions.create(
-            chat_id, provider_name, model_name, prompt, reasoning_effort=effort
+            chat_id,
+            provider_name,
+            model_name,
+            prompt,
+            reasoning_effort=effort,
+            key=SessionKey.for_transport(request.transport, chat_id, request.thread_id),
         )
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
         sub = BackgroundSubmit(
@@ -596,6 +609,7 @@ class Orchestrator:
             prompt=prompt,
             message_id=request.message_id,
             thread_id=request.thread_id,
+            transport=request.transport,
             session_name=ns.name,
             provider_override=provider_name,
             model_override=model_name,
@@ -630,7 +644,13 @@ class Orchestrator:
             msg = f"Session '{session_name}' is still processing"
             raise ValueError(msg)
 
-        self._named_sessions.mark_running(chat_id, session_name, prompt)
+        self._named_sessions.mark_running(
+            chat_id,
+            session_name,
+            prompt,
+            transport=ns.transport,
+            topic_id=thread_id,
+        )
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
         # Follow-up keeps the session's provider/model; defensively re-validate
         # the carried-over effort against ns.model (resets a stale/unsupported
@@ -638,13 +658,17 @@ class Orchestrator:
         from ductor_bot.orchestrator.selectors.model_selector import _validate_reasoning_effort
 
         followup_effort = ns.reasoning_effort
-        if followup_effort and _validate_reasoning_effort(self, ns.model, followup_effort) is not None:
+        if (
+            followup_effort
+            and _validate_reasoning_effort(self, ns.model, followup_effort) is not None
+        ):
             followup_effort = "medium"
         sub = BackgroundSubmit(
             chat_id=chat_id,
             prompt=prompt,
             message_id=message_id,
-            thread_id=thread_id,
+            thread_id=thread_id if thread_id is not None else ns.topic_id,
+            transport=ns.transport,
             session_name=session_name,
             resume_session_id=ns.session_id,
             provider_override=ns.provider,

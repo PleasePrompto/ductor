@@ -11,6 +11,10 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+def _as_dict(value: Any) -> dict[str, Any] | None:
+    return value if isinstance(value, dict) else None
+
+
 class StreamEvent(BaseModel):
     """Base event from the Claude CLI stream-json output."""
 
@@ -178,7 +182,14 @@ def _parse_assistant_content(data: dict[str, Any]) -> list[StreamEvent]:
         elif block_type == "tool_use":
             name = block.get("name", "")
             if name:
-                events.append(ToolUseEvent(type="assistant", tool_name=name))
+                events.append(
+                    ToolUseEvent(
+                        type="assistant",
+                        tool_name=name,
+                        tool_id=block.get("id"),
+                        parameters=_as_dict(block.get("input") or block.get("parameters")),
+                    )
+                )
 
         elif block_type == "thinking":
             events.append(

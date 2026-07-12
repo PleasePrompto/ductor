@@ -24,6 +24,7 @@ from nacl.exceptions import CryptoError
 
 from ductor_bot.api.crypto import E2ESession
 from ductor_bot.api.server import ApiServer
+from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.config import ApiConfig
 
 # ---------------------------------------------------------------------------
@@ -272,7 +273,13 @@ class TestEncryptedMessages:
             on_system_status: Any,
         ) -> SimpleNamespace:
             await on_system_status("Thinking")
-            await on_tool_activity("Reading file")
+            await on_tool_activity(
+                ToolUseEvent(
+                    type="assistant",
+                    tool_name="WebFetch",
+                    parameters={"url": "https://slack.dev/slack-thinking-steps-ai-agents/"},
+                )
+            )
             await on_text_delta("chunk1")
             await on_text_delta("chunk2")
             return SimpleNamespace(text="chunk1chunk2", stream_fallback=False)
@@ -300,6 +307,8 @@ class TestEncryptedMessages:
         assert "tool_activity" in types
         assert "text_delta" in types
         assert types[-1] == "result"
+        tool_events = [e["data"] for e in events if e["type"] == "tool_activity"]
+        assert tool_events == ["Web fetch"]
 
         deltas = [e["data"] for e in events if e["type"] == "text_delta"]
         assert deltas == ["chunk1", "chunk2"]

@@ -241,6 +241,51 @@ class TestIsConfiguredExtended:
         with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
             assert _is_configured() is False
 
+    def test_configured_with_slack(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _is_configured
+
+        paths = _make_paths(tmp_path)
+        _write_config(
+            paths,
+            {
+                "transport": "slack",
+                "transports": ["slack"],
+                "slack": {
+                    "bot_token": "xoxb-token",
+                    "app_token": "xapp-token",
+                    "allowed_users": ["U0123456789"],
+                    "allowed_channels": [],
+                },
+            },
+        )
+        with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
+            assert _is_configured() is True
+
+    def test_configured_with_stale_transports_is_normalized(self, tmp_path: Path) -> None:
+        from ductor_bot.__main__ import _is_configured, load_config
+
+        paths = _make_paths(tmp_path)
+        _write_config(
+            paths,
+            {
+                "transport": "slack",
+                "transports": ["telegram"],
+                "telegram_token": "",
+                "allowed_user_ids": [],
+                "slack": {
+                    "bot_token": "xoxb-token",
+                    "app_token": "xapp-token",
+                    "allowed_users": ["U0123456789"],
+                    "allowed_channels": [],
+                },
+            },
+        )
+        with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
+            assert _is_configured() is True
+            config = load_config()
+        assert config.transport == "slack"
+        assert config.transports == ["slack"]
+
 
 class TestIsConfiguredMultiTransport:
     def test_configured_multi_transport_both_valid(self, tmp_path: Path) -> None:
@@ -290,6 +335,64 @@ class TestIsConfiguredMultiTransport:
         )
         with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
             assert _is_configured() is False
+
+    def test_multi_transport_not_dropped_when_primary_not_first(self, tmp_path: Path) -> None:
+        """A telegram+matrix setup must survive even when the list ordering
+        differs from the ``transport`` primary (regression for the guard that
+        collapsed non-matching lists to the primary alone)."""
+        from ductor_bot.__main__ import _is_configured, load_config
+
+        paths = _make_paths(tmp_path)
+        _write_config(
+            paths,
+            {
+                "transport": "matrix",
+                "transports": ["telegram", "matrix"],
+                "telegram_token": "123:ABC",
+                "allowed_user_ids": [1],
+                "matrix": {"homeserver": "https://mx.test", "user_id": "@bot:test"},
+            },
+        )
+        with patch("ductor_bot.__main__.resolve_paths", return_value=paths):
+            assert _is_configured() is True
+            with patch("ductor_bot.__main__.init_workspace"):
+                config = load_config()
+        assert set(config.transports) == {"telegram", "matrix"}
+        assert config.transport == "matrix"
+
+
+class TestNormalizedTransportList:
+    def test_empty_falls_back_to_primary(self) -> None:
+        from ductor_bot.__main__ import _normalized_transport_list
+
+        assert _normalized_transport_list({"transport": "matrix"}) == ["matrix"]
+
+    def test_defaults_to_telegram(self) -> None:
+        from ductor_bot.__main__ import _normalized_transport_list
+
+        assert _normalized_transport_list({}) == ["telegram"]
+
+    def test_multi_transport_preserved_with_primary_first(self) -> None:
+        from ductor_bot.__main__ import _normalized_transport_list
+
+        result = _normalized_transport_list(
+            {"transport": "matrix", "transports": ["telegram", "matrix"]}
+        )
+        assert result == ["matrix", "telegram"]
+
+    def test_stale_single_list_collapses_to_primary(self) -> None:
+        from ductor_bot.__main__ import _normalized_transport_list
+
+        result = _normalized_transport_list({"transport": "slack", "transports": ["telegram"]})
+        assert result == ["slack"]
+
+    def test_non_string_entries_ignored(self) -> None:
+        from ductor_bot.__main__ import _normalized_transport_list
+
+        result = _normalized_transport_list(
+            {"transport": "telegram", "transports": ["telegram", 123, "matrix"]}
+        )
+        assert result == ["telegram", "matrix"]
 
 
 class TestStopBot:

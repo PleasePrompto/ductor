@@ -71,12 +71,18 @@ def test_parse_assistant_text() -> None:
 def test_parse_assistant_tool_use() -> None:
     data = {
         "type": "assistant",
-        "message": {"content": [{"type": "tool_use", "name": "Read"}]},
+        "message": {
+            "content": [
+                {"type": "tool_use", "name": "Read", "id": "tool-1", "input": {"path": "a.txt"}}
+            ]
+        },
     }
     events = parse_stream_line(json.dumps(data))
     assert len(events) == 1
     assert isinstance(events[0], ToolUseEvent)
     assert events[0].tool_name == "Read"
+    assert events[0].tool_id == "tool-1"
+    assert events[0].parameters == {"path": "a.txt"}
 
 
 def test_parse_assistant_thinking() -> None:

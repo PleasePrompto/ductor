@@ -9,8 +9,9 @@
    - Codex CLI: `npm install -g @openai/codex && codex auth`
    - Gemini CLI: `npm install -g @google/gemini-cli` and authenticate in `gemini`
 4. One of these messaging transports:
-   - **Telegram**: Bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
-   - **Matrix**: install Matrix support first (`ductor install matrix` or `pip install \"ductor[matrix]\"`), then provide homeserver URL, user ID, and password/access token
+    - **Telegram**: Bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
+    - **Matrix**: install Matrix support first (`ductor install matrix` or `pip install \"ductor[matrix]\"`), then provide homeserver URL, user ID, and password/access token
+    - **Slack**: install Slack support first (`pip install "ductor[slack]"`), then create a Slack app with Socket Mode, the bot/app scopes below, and provide bot/app tokens plus Slack member/channel IDs for the allowlist
 5. Docker optional (recommended for sandboxing)
 
 ## Install
@@ -45,18 +46,129 @@ ductor
 On first run, onboarding does:
 
 - checks Claude/Codex/Gemini/Antigravity auth status,
-- asks which transport to use (Telegram or Matrix),
+- asks which transport to use (Telegram, Matrix, or Slack),
 - collects transport credentials,
 - asks timezone,
 - offers Docker sandboxing (with optional AI/ML package selection),
 - offers service install,
 - writes config and seeds `~/.ductor/`.
 
-Multiple transports can run in parallel (e.g. Telegram + Matrix
+Multiple transports can run in parallel (e.g. Telegram + Slack
 simultaneously). After initial setup, configure the `transports` array
 in `config.json`. See [config.md](config.md) for details.
 
 If service install succeeds, onboarding returns without starting foreground bot.
+
+## Slack setup
+
+ductor's Slack transport follows the same modern pattern Hermes uses: **Slack Bolt + Socket Mode**. That means no public webhook URL is needed.
+
+### 1. Install the Slack extra
+
+```bash
+pip install "ductor[slack]"
+```
+
+### 2. Create a Slack app
+
+1. Go to <https://api.slack.com/apps>
+2. Click **Create New App**
+3. Choose **From scratch**
+4. Pick a name and workspace
+
+### 3. Add bot token scopes
+
+In **OAuth & Permissions → Scopes → Bot Token Scopes**, add:
+
+| Scope | Required | Purpose |
+|---|---|---|
+| `chat:write` | yes | send bot replies |
+| `app_mentions:read` | yes | detect `@bot` in channels |
+| `channels:history` | yes | read public-channel messages and thread history |
+| `channels:read` | yes | resolve public channel metadata |
+| `groups:history` | recommended | read private-channel messages and thread history |
+| `im:history` | yes | read DMs |
+| `im:read` | yes | access DM metadata |
+| `im:write` | yes | open/manage DMs |
+| `users:read` | yes | resolve Slack user names |
+| `files:read` | yes | download attached files |
+| `files:write` | yes | upload files back to Slack |
+| `groups:read` | optional | resolve private-channel metadata |
+
+Without `channels:history` / `message.channels`, the bot will work in DMs but not in public channels. Without `groups:history` / `message.groups`, it will not work in private channels.
+
+### 4. Enable Socket Mode
+
+In **Settings → Socket Mode**:
+
+1. Turn Socket Mode on
+2. Create an app-level token
+3. Grant it the `connections:write` scope
+4. Copy the resulting `xapp-...` token
+
+This token goes into `slack.app_token`.
+
+### 5. Subscribe to Slack events
+
+In **Event Subscriptions → Subscribe to bot events**, add:
+
+| Event | Required | Purpose |
+|---|---|---|
+| `message.im` | yes | direct messages |
+| `message.channels` | yes | public-channel messages |
+| `message.groups` | recommended | private-channel messages |
+| `app_mention` | yes | mention handling in channels |
+
+### 6. Enable direct messages
+
+In **App Home**:
+
+1. Turn on **Messages Tab**
+2. Enable **Allow users to send Slash commands and messages from the messages tab**
+
+Without this, users cannot DM the bot even if the tokens and scopes are correct.
+
+ductor does not register native Slack slash commands. Instead, its command keywords work in Slack as normal messages (for example `help`, `status`, or `model`) and also accept a leading `/`.
+
+### 7. Install or reinstall the app to the workspace
+
+In **Install App**, click **Install to Workspace** and authorize the app. Copy the **Bot User OAuth Token** (`xoxb-...`) into `slack.bot_token`.
+
+If you change scopes or event subscriptions later, reinstall the app so Slack applies the new permissions.
+
+### 8. Collect Slack IDs for the allowlist
+
+- **User IDs** (`U...`) go into `slack.allowed_users`
+- **Channel IDs** (`C...` / `G...`) go into `slack.allowed_channels`
+
+You can get them from Slack's profile/channel details UI.
+
+### 9. Configure ductor
+
+```json
+{
+  "transport": "slack",
+  "group_mention_only": true,
+  "slack": {
+    "bot_token": "xoxb-your-slack-bot-token",
+    "app_token": "xapp-your-slack-app-token",
+    "allowed_channels": ["C0123456789"],
+    "allowed_users": ["U0123456789"]
+  }
+}
+```
+
+Then invite the app into each target channel:
+
+```text
+/invite @your-bot-name
+```
+
+Behavior summary:
+
+- **DMs**: the bot responds to every allowed user message
+- **Channels**: with `group_mention_only=true`, a channel conversation starts from a top-level `@bot` mention or an `@bot` inside an existing thread
+- **Activated threads**: once a thread is activated, follow-up replies in that thread continue the same session without another mention
 
 ## Platform notes
 

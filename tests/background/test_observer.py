@@ -20,8 +20,21 @@ from ductor_bot.infra.task_runner import TaskResult
 from ductor_bot.workspace.paths import DuctorPaths
 
 
-def _sub(chat_id: int = 123, prompt: str = "", message_id: int = 1) -> BackgroundSubmit:
-    return BackgroundSubmit(chat_id=chat_id, prompt=prompt, message_id=message_id, thread_id=None)
+def _sub(
+    chat_id: int = 123,
+    prompt: str = "",
+    message_id: int = 1,
+    *,
+    thread_id: int | None = None,
+    transport: str = "tg",
+) -> BackgroundSubmit:
+    return BackgroundSubmit(
+        chat_id=chat_id,
+        prompt=prompt,
+        message_id=message_id,
+        thread_id=thread_id,
+        transport=transport,
+    )
 
 
 def _make_paths(tmp_path: Path) -> DuctorPaths:
@@ -50,9 +63,7 @@ def _make_exec_config(**overrides: Any) -> TaskExecutionConfig:
 def _make_observer(
     paths: DuctorPaths, timeout: float = 300.0, config: AgentConfig | None = None
 ) -> BackgroundObserver:
-    return BackgroundObserver(
-        paths, timeout_seconds=timeout, config=config or AgentConfig()
-    )
+    return BackgroundObserver(paths, timeout_seconds=timeout, config=config or AgentConfig())
 
 
 def _success_task_result(text: str = "") -> TaskResult:
@@ -165,6 +176,23 @@ class TestExecution:
         assert bg_result.chat_id == 123
         assert bg_result.message_id == 42
         assert bg_result.prompt_preview == "say hello"
+        assert bg_result.transport == "tg"
+
+    async def test_preserves_transport_and_thread_target(
+        self, observer: BackgroundObserver
+    ) -> None:
+        config = _make_exec_config()
+        handler = AsyncMock()
+        observer.set_result_handler(handler)
+
+        result = _success_task_result("Hello thread")
+        with patch("ductor_bot.background.observer.run_oneshot_task", return_value=result):
+            observer.submit(_sub(prompt="say hello", thread_id=77, transport="sl"), config)
+            await asyncio.sleep(0.05)
+
+        bg_result: BackgroundResult = handler.call_args[0][0]
+        assert bg_result.thread_id == 77
+        assert bg_result.transport == "sl"
 
     async def test_cli_not_found(self, observer: BackgroundObserver) -> None:
         config = _make_exec_config()

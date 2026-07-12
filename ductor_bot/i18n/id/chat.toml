@@ -306,6 +306,7 @@ header = "**ductor.dev**"
 version = "Versi: `{version}`"
 telegram_description = "Agen AI coding (Claude, Codex, Gemini) di Telegram.\nSesi bernama, memori persisten, cron job, webhook, streaming langsung."
 matrix_description = "Agen AI coding (Claude, Codex, Gemini) di Matrix.\nSesi bernama, memori persisten, cron job, webhook, streaming langsung."
+slack_description = "Agen AI coding (Claude, Codex, Gemini) di Slack.\nSesi bernama, memori persisten, cron job, webhook, streaming langsung."
 
 # -- Help (categories) --------------------------------------------------------
 
@@ -318,6 +319,7 @@ cat_browse = "Jelajah & Info"
 cat_maintenance = "Pemeliharaan"
 footer = "Kirim pesan apa pun untuk mulai bekerja dengan agen Anda."
 matrix_footer = "Gunakan awalan `!` atau `/`. Kirim pesan apa pun untuk memulai."
+slack_footer = "Gunakan perintah seperti `help` atau `/help`. Kirim pesan lain untuk memulai."
 
 # -- Multi-agent ---------------------------------------------------------------
 

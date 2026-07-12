@@ -196,6 +196,13 @@ def test_transport_matrix_backward_compat() -> None:
     assert cfg.transport == "matrix"
 
 
+def test_transport_slack_backward_compat() -> None:
+    """transport='slack' with empty transports normalizes correctly."""
+    cfg = AgentConfig(transport="slack")
+    assert cfg.transports == ["slack"]
+    assert cfg.transport == "slack"
+
+
 def test_transports_multi_sets_primary_transport() -> None:
     """Explicit multi-transport sets ``transport`` to first entry."""
     cfg = AgentConfig(transports=["telegram", "matrix"])

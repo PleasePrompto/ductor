@@ -227,6 +227,16 @@ class TestTransportName:
         t = MatrixTransport(bot)
         assert t.transport_name == "mx"
 
+    async def test_slack_transport_name(self) -> None:
+        """SlackTransport.transport_name returns 'sl'."""
+        from unittest.mock import MagicMock
+
+        from ductor_bot.messenger.slack.transport import SlackTransport
+
+        bot = MagicMock()
+        t = SlackTransport(bot)
+        assert t.transport_name == "sl"
+
 
 # -- Adapter transport parameter --
 

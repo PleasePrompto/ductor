@@ -165,17 +165,18 @@ class TestWireIntegration:
         assert env.chat_id == 99
         assert env.topic_id is None
         assert env.result_text == "Alert text"
+        assert env.transport == "tg"
 
     async def test_heartbeat_callback_submits_topic_id_to_bus(self) -> None:
         mgr = _make_observers()
         bus = MessageBus()
         transport = AsyncMock()
-        transport.transport_name = "tg"
+        transport.transport_name = "sl"
         bus.register_transport(transport)
         mgr.wire_to_bus(bus)
 
         handler = mgr.heartbeat.set_result_handler.call_args[0][0]
-        await handler(-1001, "Group alert", 42)
+        await handler(-1001, "Group alert", 42, "sl")
 
         transport.deliver.assert_awaited_once()
         env = transport.deliver.call_args[0][0]
@@ -183,13 +184,14 @@ class TestWireIntegration:
         assert env.chat_id == -1001
         assert env.topic_id == 42
         assert env.result_text == "Group alert"
+        assert env.transport == "sl"
 
     async def test_cron_callback_submits_to_bus(self) -> None:
         mgr = _make_observers()
         mgr.cron = MagicMock()
         bus = MessageBus()
         transport = AsyncMock()
-        transport.transport_name = "tg"
+        transport.transport_name = "sl"
         bus.register_transport(transport)
         mgr.wire_to_bus(bus)
 
@@ -206,7 +208,7 @@ class TestWireIntegration:
         mgr.background = MagicMock()
         bus = MessageBus()
         transport = AsyncMock()
-        transport.transport_name = "tg"
+        transport.transport_name = "sl"
         bus.register_transport(transport)
         mgr.wire_to_bus(bus)
 
@@ -218,7 +220,8 @@ class TestWireIntegration:
         bg_result.result_text = "done"
         bg_result.status = "success"
         bg_result.message_id = 1
-        bg_result.thread_id = None
+        bg_result.thread_id = 77
+        bg_result.transport = "sl"
         bg_result.elapsed_seconds = 5.0
         bg_result.provider = "claude"
         bg_result.model = "sonnet"
@@ -231,3 +234,5 @@ class TestWireIntegration:
         env = transport.deliver.call_args[0][0]
         assert env.origin == Origin.BACKGROUND
         assert env.chat_id == 42
+        assert env.topic_id == 77
+        assert env.transport == "sl"
