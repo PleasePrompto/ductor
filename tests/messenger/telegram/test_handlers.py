@@ -52,6 +52,27 @@ class TestHandleAbort:
         assert result is True
         orchestrator.abort.assert_called_once_with(42, topic_id=None)
 
+    async def test_abort_zero_killed_sends_nothing_text(self) -> None:
+        from ductor_bot.messenger.telegram.handlers import handle_abort
+        from ductor_bot.text.response_format import stop_text
+
+        orchestrator = MagicMock()
+        orchestrator.abort = AsyncMock(return_value=0)
+        orchestrator.active_provider_name = "Claude"
+        bot = MagicMock()
+        msg = _make_message(chat_id=42)
+
+        with patch(
+            "ductor_bot.messenger.telegram.handlers.send_rich",
+            new_callable=AsyncMock,
+        ) as send_rich:
+            result = await handle_abort(orchestrator, bot, chat_id=42, message=msg)
+
+        assert result is True
+        send_rich.assert_awaited_once()
+        assert send_rich.call_args.args[2] == stop_text(False, "Claude")
+        assert "Nothing running right now." in send_rich.call_args.args[2]
+
     async def test_abort_no_orchestrator(self) -> None:
         from ductor_bot.messenger.telegram.handlers import handle_abort
 

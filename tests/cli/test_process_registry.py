@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ductor_bot.cli.process_registry import ProcessRegistry, TrackedProcess
+from ductor_bot.cli.process_registry import (
+    _PRESERVED_LABEL_PREFIXES,
+    ProcessRegistry,
+    TrackedProcess,
+)
 
 
 def _mock_process(*, pid: int = 1, returncode: int | None = None) -> MagicMock:
@@ -235,6 +239,122 @@ class TestKillByChatTopicAbortMarker:
         assert reg.has_active(1, topic_id=10) is False
         assert reg.has_active(1, topic_id=20) is True
         assert proc_b.returncode is None
+
+    async def test_kill_by_chat_topic_preserves_protected_labels(self) -> None:
+        reg = ProcessRegistry()
+        task = reg.register(
+            chat_id=1, process=_mock_process(pid=84), label="task:AAAAAAAA", topic_id=10
+        )
+        task_result = reg.register(
+            chat_id=1, process=_mock_process(pid=85), label="task_result:BBBBBBBB", topic_id=10
+        )
+        named_session = reg.register(
+            chat_id=1, process=_mock_process(pid=86), label="ns:review", topic_id=10
+        )
+        normal = reg.register(
+            chat_id=1, process=_mock_process(pid=87), label="main", topic_id=10
+        )
+
+        with patch(
+            "ductor_bot.cli.process_registry._kill_processes",
+            new_callable=AsyncMock,
+            return_value=1,
+        ):
+            killed = await reg.kill_by_chat_topic(1, 10)
+
+        assert killed == 1
+        remaining_ids = {id(t) for t in reg._processes[1]}
+        assert id(normal) not in remaining_ids
+        assert {id(task), id(task_result), id(named_session)} <= remaining_ids
+
+        with patch(
+            "ductor_bot.cli.process_registry._kill_processes",
+            new_callable=AsyncMock,
+            return_value=1,
+        ):
+            task_killed = await reg.kill_for_task("AAAAAAAA")
+
+        assert task_killed == 1
+        remaining_ids = {id(t) for t in reg._processes[1]}
+        assert id(task) not in remaining_ids
+        assert {id(task_result), id(named_session)} <= remaining_ids
+
+    async def test_kill_by_chat_topic_protected_only_returns_zero(self) -> None:
+        reg = ProcessRegistry()
+        reg.register(chat_id=1, process=_mock_process(pid=88), label="task:AAAAAAAA", topic_id=10)
+        reg.register(chat_id=1, process=_mock_process(pid=89), label="ns:review", topic_id=10)
+
+        killed = await reg.kill_by_chat_topic(1, 10)
+
+        assert killed == 0
+        assert reg.was_aborted_topic(1, 10) is False
+        assert reg.has_active(1, topic_id=10) is True
+        assert len(reg._processes[1]) == 2
+
+    async def test_kill_all_sweeps_protected_labels(self) -> None:
+        reg = ProcessRegistry()
+        reg.register(chat_id=1, process=_mock_process(pid=90), label="task:AAAAAAAA", topic_id=10)
+        reg.register(
+            chat_id=1, process=_mock_process(pid=91), label="task_result:BBBBBBBB", topic_id=10
+        )
+        reg.register(chat_id=1, process=_mock_process(pid=92), label="ns:review", topic_id=10)
+
+        with patch(
+            "ductor_bot.cli.process_registry._kill_processes",
+            new_callable=AsyncMock,
+            return_value=3,
+        ):
+            killed = await reg.kill_all(1)
+
+        assert killed == 3
+        assert reg.has_active(1) is False
+        assert 1 not in reg._processes
+
+    def test_preserved_prefixes_pinned(self) -> None:
+        assert _PRESERVED_LABEL_PREFIXES == ("task:", "task_result:", "ns:")
+
+    async def test_kill_by_chat_topic_preserves_other_topics(self) -> None:
+        reg = ProcessRegistry()
+        proc_topic_a = _mock_process(pid=93)
+        proc_topic_b = _mock_process(pid=94)
+        reg.register(chat_id=1, process=proc_topic_a, label="main", topic_id=10)
+        reg.register(chat_id=1, process=proc_topic_b, label="main", topic_id=20)
+
+        with patch(
+            "ductor_bot.cli.process_registry._kill_processes",
+            new_callable=AsyncMock,
+            return_value=1,
+        ):
+            killed = await reg.kill_by_chat_topic(1, 20)
+
+        assert killed == 1
+        assert reg.has_active(1, topic_id=10) is True
+        assert reg.has_active(1, topic_id=20) is False
+        assert proc_topic_a.returncode is None
+
+    async def test_kill_by_chat_topic_none_topic_flat_chat(self) -> None:
+        reg = ProcessRegistry()
+        flat_normal = reg.register(
+            chat_id=1, process=_mock_process(pid=95), label="main", topic_id=None
+        )
+        flat_task = reg.register(
+            chat_id=1, process=_mock_process(pid=96), label="task:AAAAAAAA", topic_id=None
+        )
+        topic_normal = reg.register(
+            chat_id=1, process=_mock_process(pid=97), label="main", topic_id=10
+        )
+
+        with patch(
+            "ductor_bot.cli.process_registry._kill_processes",
+            new_callable=AsyncMock,
+            return_value=1,
+        ):
+            killed = await reg.kill_by_chat_topic(1, None)
+
+        assert killed == 1
+        remaining_ids = {id(t) for t in reg._processes[1]}
+        assert id(flat_normal) not in remaining_ids
+        assert {id(flat_task), id(topic_normal)} <= remaining_ids
 
 
 async def test_kill_stale_handles_already_exited() -> None:

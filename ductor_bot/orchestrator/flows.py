@@ -198,7 +198,7 @@ async def _reset_on_error(
     cli_detail: str = "",
 ) -> OrchestratorResult:
     """Kill processes, preserve session, return user-facing error."""
-    await orch._process_registry.kill_all(key.chat_id)
+    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     logger.warning("Session error preserved model=%s provider=%s", model_name, provider_name)
     return OrchestratorResult(
         text=session_error_text(model_name, cli_detail),
@@ -218,7 +218,7 @@ async def _handle_timeout(
     so that the next user message can ``--resume`` the timed-out session.
     """
     model_name, _provider_name = _request_target(orch, request)
-    await orch._process_registry.kill_all(key.chat_id)
+    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
 
     # Persist the session_id captured from SystemInitEvent so resume works.
     if response.session_id and response.session_id != session.session_id:
@@ -382,8 +382,8 @@ async def _recover_session(
     logger.warning("recovery.%s chat=%s action=retry", ctx.reason, key.chat_id)
     model_name = ctx.model_override or orch._config.model
     provider_name = orch.models.provider_for(model_name)
-    await orch._process_registry.kill_all(key.chat_id)
-    orch._process_registry.clear_abort(key.chat_id)
+    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
+    orch._process_registry.clear_topic_abort(key.chat_id, key.topic_id)
     await orch._sessions.reset_provider_session(key, provider=provider_name, model=model_name)
 
     cb = ctx.cbs
