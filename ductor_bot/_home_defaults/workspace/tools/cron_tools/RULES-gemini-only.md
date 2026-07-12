@@ -9,10 +9,10 @@ Scripts for creating, editing, listing, and removing scheduled jobs.
 1. **Which model?**
    - `gemini-2.5-pro` - Balanced, most capable (recommended)
    - `gemini-2.5-flash` - Fast and cost-effective
-   - `gemini-2.5-flash-lite` - Cheapest, fastest
    - `gemini-3-pro-preview` - Next-gen preview
-   - `gemini-3-flash-preview` - Next-gen fast preview
-   - `gemini-3.1-pro-preview` - Latest preview
+   - `gemini-3.1-pro-preview` - Latest pro preview
+   - `gemini-3.1-flash-lite` - Lightweight fast preview
+   - `gemini-3.5-flash` - Latest fast model
 
 2. **Should this job respect quiet hours?**
    - Ask: "Should this job skip execution during specific hours (e.g., at night)?"

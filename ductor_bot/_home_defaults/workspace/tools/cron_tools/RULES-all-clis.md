@@ -20,17 +20,17 @@ Scripts for creating, editing, listing, and removing scheduled jobs.
      - `opus[1m]` - Opus with Claude Code 1M-context beta
      - `fable` - Latest Fable alias when supported by Claude Code
    - **If Codex:**
-     - `gpt-5.4` - Latest frontier agentic coding model (recommended)
+     - `gpt-5.5` - Newest/recommended frontier agentic coding model
+     - `gpt-5.4` - Frontier agentic coding model
      - `gpt-5.4-mini` - Smaller, faster frontier coding model
-     - `gpt-5.3-codex` - Frontier Codex-optimized coding model
-     - `gpt-5.2` - Optimized for long-running agent work
+     - `gpt-5.3-codex-spark` - Codex-optimized coding model
    - **If Gemini:**
      - `gemini-2.5-pro` - Balanced, most capable (recommended)
      - `gemini-2.5-flash` - Fast and cost-effective
-     - `gemini-2.5-flash-lite` - Cheapest, fastest
      - `gemini-3-pro-preview` - Next-gen preview
-     - `gemini-3-flash-preview` - Next-gen fast preview
-     - `gemini-3.1-pro-preview` - Latest preview
+     - `gemini-3.1-pro-preview` - Latest pro preview
+     - `gemini-3.1-flash-lite` - Lightweight fast preview
+     - `gemini-3.5-flash` - Latest fast model
 
 3. **If Codex: Which thinking level?**
    - `low` - Fast, surface-level reasoning

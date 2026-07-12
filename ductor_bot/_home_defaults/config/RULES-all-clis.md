@@ -19,26 +19,24 @@ Edit only when the user asks for behavior changes.
 - `model`: default model id
   - Claude models: `haiku`, `sonnet`, `sonnet[1m]`, `opus`, `opus[1m]`, `fable`
   - Codex models:
-    - `gpt-5.2-codex` - Frontier agentic coding model
-    - `gpt-5.3-codex` - Latest frontier agentic coding model
-    - `gpt-5.1-codex-max` - Codex-optimized for deep and fast reasoning
-    - `gpt-5.2` - Latest frontier model
-    - `gpt-5.1-codex-mini` - Cheaper, faster (limited reasoning)
+    - `gpt-5.5` - Newest/recommended frontier agentic coding model
+    - `gpt-5.4` - Frontier agentic coding model
+    - `gpt-5.4-mini` - Smaller, faster frontier coding model
+    - `gpt-5.3-codex-spark` - Codex-optimized coding model
   - Gemini models:
     - `gemini-2.5-pro` - Balanced, most capable
     - `gemini-2.5-flash` - Fast and cost-effective
-    - `gemini-2.5-flash-lite` - Cheapest, fastest
     - `gemini-3-pro-preview` - Next-gen preview
-    - `gemini-3-flash-preview` - Next-gen fast preview
-    - `gemini-3.1-pro-preview` - Latest preview
+    - `gemini-3.1-pro-preview` - Latest pro preview
+    - `gemini-3.1-flash-lite` - Lightweight fast preview
+    - `gemini-3.5-flash` - Latest fast model
   - Antigravity models:
     - `antigravity-default` - Let `agy` choose the provider-level default
     - Display names from `config/antigravity_models.json` may be known at runtime,
       but the chat model selector currently exposes only `antigravity-default`
       because `agy` model selection is not reliable there
 - `reasoning_effort`: `low|medium|high|xhigh` (Codex only)
-  - Most models support: `low`, `medium`, `high`, `xhigh`
-  - `gpt-5.1-codex-mini` only: `medium`, `high`
+  - Supported values: `low`, `medium`, `high`, `xhigh`
 - `permission_mode`: CLI permission behavior
 
 ### Time and Scheduling
