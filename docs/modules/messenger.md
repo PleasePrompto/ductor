@@ -3,7 +3,7 @@
 Transport abstraction layer: protocols, capabilities, registry, and
 multi-transport adapter. Everything in this package is
 transport-agnostic. Concrete transports live in sub-packages
-(`messenger/telegram/`, `messenger/matrix/`).
+(`messenger/telegram/`, `messenger/matrix/`, `messenger/slack/`).
 
 For transport-specific details see [bot.md](bot.md) (Telegram) and
 [matrix.md](matrix.md) (Matrix).
@@ -45,7 +45,7 @@ Required surface:
 | `on_task_question(...)` | async | Deliver background task question |
 | `file_roots(paths)` | method | Allowed root directories for file sends |
 
-Both `TelegramBot` and `MatrixBot` implement this protocol.
+`TelegramBot`, `MatrixBot`, and `SlackBot` implement this protocol.
 
 ## MessengerCapabilities
 
@@ -71,6 +71,7 @@ Two presets are shipped:
 |---|---|
 | `TELEGRAM_CAPABILITIES` | inline buttons, message editing, threads, streaming edit, seen indicator, 4096 char limit |
 | `MATRIX_CAPABILITIES` | reactions (no inline buttons), no message editing, no threads, seen indicator, 40000 char limit |
+| `SLACK_CAPABILITIES` | threads, message editing, file send, 40000 char limit |
 
 Orchestrator and delivery code queries capabilities at runtime to
 decide between streaming-edit vs. segment-based streaming, inline
@@ -97,6 +98,7 @@ names to lazy-import factory functions:
 _TRANSPORT_FACTORIES: dict[str, _Factory] = {
     "telegram": _create_telegram,
     "matrix": _create_matrix,
+    "slack": _create_slack,
 }
 ```
 

@@ -22,6 +22,7 @@ class TestHeartbeatTargetConfig:
 
     def test_target_falls_back_to_none(self) -> None:
         target = HeartbeatTarget(chat_id=123)
+        assert target.transport == "tg"
         assert target.prompt is None
         assert target.ack_token is None
         assert target.interval_minutes is None
@@ -189,7 +190,12 @@ class TestPerTargetQuietHours:
 class TestPerTargetPromptAckInTick:
     async def test_tick_passes_target_prompt_and_ack(self) -> None:
         """Group target with per-target prompt/ack should pass them to handler."""
-        target = HeartbeatTarget(chat_id=-1001, prompt="Check servers", ack_token="SERVER_OK")
+        target = HeartbeatTarget(
+            chat_id=-1001,
+            transport="sl",
+            prompt="Check servers",
+            ack_token="SERVER_OK",
+        )
         config = AgentConfig(
             heartbeat=HeartbeatConfig(
                 enabled=True,
@@ -206,7 +212,7 @@ class TestPerTargetPromptAckInTick:
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        handler.assert_awaited_once_with(-1001, None, "Check servers", "SERVER_OK")
+        handler.assert_awaited_once_with(-1001, None, "Check servers", "SERVER_OK", "sl")
 
     async def test_tick_passes_none_for_default_user_targets(self) -> None:
         """User targets (allowed_user_ids) use None prompt/ack (global fallback)."""
@@ -225,7 +231,17 @@ class TestPerTargetPromptAckInTick:
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        handler.assert_awaited_once_with(100, None, None, None)
+        handler.assert_awaited_once_with(100, None, None, None, "tg")
+
+    async def test_run_for_chat_passes_transport_to_result_handler(self) -> None:
+        obs = _make_observer(targets=[])
+        obs.set_heartbeat_handler(AsyncMock(return_value="alert"))
+        result_handler = AsyncMock()
+        obs.set_result_handler(result_handler)
+
+        await obs._run_for_chat(-1001, topic_id=7, transport="sl")
+
+        result_handler.assert_awaited_once_with(-1001, "alert", 7, "sl")
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +271,7 @@ class TestHeartbeatValidation:
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()
 
-        handler.assert_awaited_once_with(100, None, None, None)
+        handler.assert_awaited_once_with(100, None, None, None, "tg")
 
     async def test_cache_expires_after_one_hour(self) -> None:
         validator = AsyncMock(return_value=True)
@@ -320,7 +336,7 @@ class TestPerTargetInterval:
         obs.set_heartbeat_handler(handler)
         obs._start_target_loops()
 
-        assert (-1001, None) in obs._target_tasks
+        assert ("tg", -1001, None) in obs._target_tasks
 
         with time_machine.travel(datetime(2026, 1, 15, 14, 0, tzinfo=UTC)):
             await obs._tick()

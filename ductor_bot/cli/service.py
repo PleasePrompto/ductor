@@ -33,19 +33,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_ToolCallback = Callable[[ToolUseEvent], Awaitable[None]]
+
 
 class _StreamCallbacks:
     """Dispatch stream events to the appropriate callbacks."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         on_text: Callable[[str], Awaitable[None]] | None,
-        on_tool: Callable[[str], Awaitable[None]] | None,
+        on_thinking: Callable[[str], Awaitable[None]] | None,
+        on_tool: _ToolCallback | None,
         on_status: Callable[[str | None], Awaitable[None]] | None,
         on_reasoning: Callable[[str], Awaitable[None]] | None = None,
         on_compact_boundary: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._on_text = on_text
+        self._on_thinking = on_thinking
         self._on_tool = on_tool
         self._on_status = on_status
         self._on_reasoning = on_reasoning
@@ -62,12 +66,14 @@ class _StreamCallbacks:
                 await self._on_text(event.text)
             return event.text, None
         if isinstance(event, ThinkingEvent):
+            if event.text and self._on_thinking is not None:
+                await self._on_thinking(event.text)
             if self._on_reasoning is not None and event.text:
                 await self._on_reasoning(event.text)
             elif self._on_status is not None:
                 await self._on_status("thinking")
         elif isinstance(event, ToolUseEvent) and self._on_tool is not None:
-            await self._on_tool(event.tool_name)
+            await self._on_tool(event)
         elif isinstance(event, SystemStatusEvent) and self._on_status is not None:
             await self._on_status(event.status)
         elif isinstance(event, CompactBoundaryEvent):
@@ -191,7 +197,8 @@ class CLIService:
         self,
         request: AgentRequest,
         on_text_delta: Callable[[str], Awaitable[None]] | None = None,
-        on_tool_activity: Callable[[str], Awaitable[None]] | None = None,
+        on_thinking_delta: Callable[[str], Awaitable[None]] | None = None,
+        on_tool_activity: _ToolCallback | None = None,
         on_system_status: Callable[[str | None], Awaitable[None]] | None = None,
         on_reasoning_delta: Callable[[str], Awaitable[None]] | None = None,
         on_compact_boundary: Callable[[], Awaitable[None]] | None = None,
@@ -210,6 +217,7 @@ class CLIService:
 
         callbacks = _StreamCallbacks(
             on_text_delta,
+            on_thinking_delta,
             on_tool_activity,
             on_system_status,
             on_reasoning_delta,

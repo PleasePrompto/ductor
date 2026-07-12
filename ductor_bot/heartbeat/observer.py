@@ -18,11 +18,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Callback signature: (chat_id, alert_text, topic_id)
-HeartbeatResultCallback = Callable[[int, str, int | None], Awaitable[None]]
+# Callback signature: (chat_id, alert_text, topic_id, transport)
+HeartbeatResultCallback = Callable[[int, str, int | None, str], Awaitable[None]]
 
-# Handler signature: (chat_id, topic_id, prompt_override, ack_token_override)
-HeartbeatHandler = Callable[[int, int | None, str | None, str | None], Awaitable[str | None]]
+# Handler signature: (chat_id, topic_id, prompt_override, ack_token_override, transport)
+HeartbeatHandler = Callable[[int, int | None, str | None, str | None, str], Awaitable[str | None]]
 
 # Validator signature: (chat_id) -> is_accessible
 ChatValidator = Callable[[int], Awaitable[bool]]
@@ -48,7 +48,7 @@ class HeartbeatObserver(BaseObserver):
         self._chat_validator: ChatValidator | None = None
         self._valid_targets: dict[int, float] = {}
         self._target_last_run: dict[tuple[int, int | None], float] = {}
-        self._target_tasks: dict[tuple[int | None, int | None], asyncio.Task[None]] = {}
+        self._target_tasks: dict[tuple[str, int | None, int | None], asyncio.Task[None]] = {}
 
     @property
     def _hb(self) -> HeartbeatConfig:
@@ -111,7 +111,7 @@ class HeartbeatObserver(BaseObserver):
             interval = target.interval_minutes or self._hb.interval_minutes
             if interval == self._hb.interval_minutes and target.interval_minutes is None:
                 continue  # No custom interval → runs with global tick
-            key = (target.chat_id, target.topic_id)
+            key = (target.transport, target.chat_id, target.topic_id)
             task = asyncio.create_task(self._target_loop(target, interval))
             task.add_done_callback(lambda _: None)
             self._target_tasks[key] = task
@@ -140,6 +140,7 @@ class HeartbeatObserver(BaseObserver):
                 await self._run_for_chat(
                     target.chat_id,
                     target.topic_id,
+                    transport=target.transport,
                     prompt=prompt,
                     ack_token=ack_token,
                     quiet_start=quiet_start,
@@ -269,7 +270,7 @@ class HeartbeatObserver(BaseObserver):
             if not target.enabled or target.chat_id is None:
                 continue
             # Targets with custom intervals run in their own loop
-            if (target.chat_id, target.topic_id) in self._target_tasks:
+            if (target.transport, target.chat_id, target.topic_id) in self._target_tasks:
                 continue
             if not await self._validate_target(target.chat_id):
                 continue
@@ -278,6 +279,7 @@ class HeartbeatObserver(BaseObserver):
             await self._run_for_chat(
                 target.chat_id,
                 target.topic_id,
+                transport=target.transport,
                 prompt=prompt,
                 ack_token=ack_token,
                 quiet_start=quiet_start,
@@ -306,6 +308,7 @@ class HeartbeatObserver(BaseObserver):
         chat_id: int,
         topic_id: int | None = None,
         *,
+        transport: str = "tg",
         prompt: str | None = None,
         ack_token: str | None = None,
         quiet_start: int | None = None,
@@ -325,7 +328,9 @@ class HeartbeatObserver(BaseObserver):
             return
 
         try:
-            alert_text = await self._handle_heartbeat(chat_id, topic_id, prompt, ack_token)
+            alert_text = await self._handle_heartbeat(
+                chat_id, topic_id, prompt, ack_token, transport
+            )
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -337,7 +342,7 @@ class HeartbeatObserver(BaseObserver):
 
         if self._on_result:
             try:
-                await self._on_result(chat_id, alert_text, topic_id)
+                await self._on_result(chat_id, alert_text, topic_id, transport)
             except asyncio.CancelledError:
                 raise
             except Exception:

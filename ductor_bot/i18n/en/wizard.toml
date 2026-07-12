@@ -41,7 +41,8 @@ title = "[bold]Messaging Transport[/bold]"
 body = """\
 [bold]Choose how users will talk to the bot:[/bold]\n
   [bold cyan]Telegram[/bold cyan]  — Requires a bot token from @BotFather
-  [bold cyan]Matrix[/bold cyan]    — Requires a Matrix account on a homeserver (e.g. Element)"""
+  [bold cyan]Matrix[/bold cyan]    — Requires a Matrix account on a homeserver (e.g. Element)
+  [bold cyan]Slack[/bold cyan]     — Requires Slack bot/app tokens and the Slack extra"""
 prompt = "Select transport:"
 
 [telegram.token]
@@ -105,6 +106,44 @@ body = """\
 prompt = "Your Matrix user ID:"
 error = "[red]Invalid format. Expected: @user:domain (e.g. @nik:matrix.org)[/red]"
 
+[slack.bot_token]
+title = "[bold]Slack Bot Token[/bold]"
+body = """\
+[bold]Enter your Slack bot token.[/bold]\n
+  Copy the [bold cyan]Bot User OAuth Token[/bold cyan] from your Slack app.\n
+[dim]Format: xoxb-...[/dim]"""
+prompt = "Bot token:"
+error = "[red]Invalid bot token. Expected a token starting with xoxb-[/red]"
+
+[slack.app_token]
+title = "[bold]Slack App Token[/bold]"
+body = """\
+[bold]Enter your Slack app-level token.[/bold]\n
+  Enable Socket Mode in your Slack app and create an app token with
+  the [bold cyan]connections:write[/bold cyan] scope.\n
+[dim]Format: xapp-...[/dim]"""
+prompt = "App token:"
+error = "[red]Invalid app token. Expected a token starting with xapp-[/red]"
+
+[slack.allowed_channels]
+title = "[bold]Allowed Channels[/bold]"
+body = """\
+[bold]Which Slack channels should the bot accept messages from?[/bold]\n
+  Enter one or more channel IDs separated by commas or spaces.\n
+  Leave blank to allow any channel the bot is invited into.\n
+[dim]Examples: C0123456789, G0123456789[/dim]"""
+prompt = "Allowed channel IDs (optional):"
+error = "[red]Invalid Slack channel ID. Use C... or G... IDs separated by commas/spaces.[/red]"
+
+[slack.allowed_users]
+title = "[bold]Allowed Users[/bold]"
+body = """\
+[bold]Which Slack users should be allowed to talk to the bot?[/bold]\n
+  Enter one or more Slack user IDs separated by commas or spaces.\n
+[dim]Example: U0123456789[/dim]"""
+prompt = "Allowed user IDs:"
+error = "[red]Invalid Slack user ID. Use one or more U... IDs separated by commas/spaces.[/red]"
+
 [docker]
 title = "[bold]Docker Sandboxing[/bold]"
 found_body = """\
@@ -126,7 +165,7 @@ col_size = "Size"
 prompt = "Select extras (Space to toggle, Enter to confirm):"
 hint = """\
 [dim]These packages are optional and increase image build time.
-You can change this later with [cyan]ductor docker extras-add / extras-remove[/cyan].[/dim]"""
+You can change this later with [cyan]ductor-slack docker extras-add / extras-remove[/cyan].[/dim]"""
 auto_deps = "[dim]Auto-added dependencies: {names}[/dim]"
 
 [timezone]
@@ -141,7 +180,7 @@ error = "[red]Unknown timezone: {tz}[/red]"
 [service]
 title = "[bold]Background Service[/bold]"
 body = """\
-[bold]Run ductor as a background service?[/bold]\n
+[bold]Run ductor-slack as a background service?[/bold]\n
 This creates a {mechanism} that:\n
   - Starts ductor on {trigger}
   - Restarts automatically on crash

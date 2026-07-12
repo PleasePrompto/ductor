@@ -18,6 +18,18 @@ from ductor_bot.cli.stream_events import (
 logger = logging.getLogger(__name__)
 
 
+def _tool_parameters(item: dict[str, Any]) -> dict[str, Any] | None:
+    for key in ("arguments", "parameters", "input"):
+        value = item.get(key)
+        if isinstance(value, dict):
+            return value
+    if isinstance(item.get("command"), str):
+        return {"command": item["command"]}
+    if isinstance(item.get("path"), str):
+        return {"path": item["path"]}
+    return None
+
+
 def parse_codex_jsonl(raw: str) -> tuple[str, str | None, dict[str, Any] | None]:
     """Parse Codex JSONL output into (result_text, thread_id, usage)."""
     lines = raw.strip().splitlines()
@@ -241,9 +253,27 @@ def _parse_tool_item(item: dict[str, Any], item_type: str, event_type: str) -> l
         return []
     if item_type == "mcp_tool_call":
         name = item.get("name") or item.get("tool_name") or "MCP"
-        return [ToolUseEvent(type="assistant", tool_name=str(name))]
+        return [
+            ToolUseEvent(
+                type="assistant",
+                tool_name=str(name),
+                tool_id=item.get("id"),
+                parameters=_tool_parameters(item),
+            )
+        ]
     tool_name = _CODEX_ITEM_TOOL_MAP.get(item_type)
-    return [ToolUseEvent(type="assistant", tool_name=tool_name)] if tool_name else []
+    return (
+        [
+            ToolUseEvent(
+                type="assistant",
+                tool_name=tool_name,
+                tool_id=item.get("id"),
+                parameters=_tool_parameters(item),
+            )
+        ]
+        if tool_name
+        else []
+    )
 
 
 class CodexThinkingFilter:

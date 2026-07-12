@@ -27,6 +27,8 @@ def from_background_result(result: BackgroundResult) -> Envelope:
     return Envelope(
         origin=Origin.BACKGROUND,
         chat_id=result.chat_id,
+        topic_id=result.thread_id,
+        transport=result.transport,
         prompt_preview=result.prompt_preview,
         result_text=result.result_text,
         status=result.status,

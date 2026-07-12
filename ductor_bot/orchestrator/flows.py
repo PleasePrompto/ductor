@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.cli.timeout_controller import TimeoutConfig as TCConfig
 from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import AgentRequest, AgentResponse
@@ -35,7 +36,8 @@ class StreamingCallbacks:
     """Bundle of optional streaming callbacks passed through flow functions."""
 
     on_text_delta: Callable[[str], Awaitable[None]] | None = field(default=None)
-    on_tool_activity: Callable[[str], Awaitable[None]] | None = field(default=None)
+    on_thinking_delta: Callable[[str], Awaitable[None]] | None = field(default=None)
+    on_tool_activity: Callable[[ToolUseEvent], Awaitable[None]] | None = field(default=None)
     on_system_status: Callable[[str | None], Awaitable[None]] | None = field(default=None)
     on_reasoning_delta: Callable[[str], Awaitable[None]] | None = field(default=None)
 
@@ -408,6 +410,7 @@ async def _recover_session(
         response = await orch._cli_service.execute_streaming(
             request,
             on_text_delta=cb.on_text_delta,
+            on_thinking_delta=cb.on_thinking_delta,
             on_tool_activity=cb.on_tool_activity,
             on_system_status=cb.on_system_status,
         )
@@ -563,6 +566,7 @@ async def normal_streaming(  # noqa: PLR0911
         response = await orch._cli_service.execute_streaming(
             request,
             on_text_delta=cb.on_text_delta,
+            on_thinking_delta=cb.on_thinking_delta,
             on_tool_activity=cb.on_tool_activity,
             on_system_status=cb.on_system_status,
             on_reasoning_delta=cb.on_reasoning_delta,
@@ -739,7 +743,13 @@ async def named_session_flow(
         return OrchestratorResult(text=t("session.still_running", name=session_name))
 
     tag = f"**[{session_name} | {ns.provider}]**\n"
-    orch._named_sessions.mark_running(key.chat_id, session_name, text)
+    orch._named_sessions.mark_running(
+        key.chat_id,
+        session_name,
+        text,
+        transport=key.transport,
+        topic_id=key.topic_id,
+    )
     files_block = await build_appended_files_block(
         orch.paths, orch._config.append_system_prompt_files
     )
@@ -795,7 +805,13 @@ async def named_session_streaming(
 
     cb = cbs or StreamingCallbacks()
     tag = f"**[{session_name} | {ns.provider}]**\n"
-    orch._named_sessions.mark_running(key.chat_id, session_name, text)
+    orch._named_sessions.mark_running(
+        key.chat_id,
+        session_name,
+        text,
+        transport=key.transport,
+        topic_id=key.topic_id,
+    )
     files_block = await build_appended_files_block(
         orch.paths, orch._config.append_system_prompt_files
     )
@@ -827,6 +843,7 @@ async def named_session_streaming(
     response = await orch._cli_service.execute_streaming(
         request,
         on_text_delta=_tagged_text_delta,
+        on_thinking_delta=cb.on_thinking_delta,
         on_tool_activity=cb.on_tool_activity,
         on_system_status=cb.on_system_status,
         on_reasoning_delta=cb.on_reasoning_delta,

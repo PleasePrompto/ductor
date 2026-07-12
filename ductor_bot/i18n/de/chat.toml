@@ -307,6 +307,7 @@ header = "**ductor.dev**"
 version = "Version: `{version}`"
 telegram_description = "KI-Coding-Agents (Claude, Codex, Gemini) auf Telegram.\nBenannte Sessions, persistentes Gedächtnis, Cron-Jobs, Webhooks, Live-Streaming."
 matrix_description = "KI-Coding-Agents (Claude, Codex, Gemini) auf Matrix.\nBenannte Sessions, persistentes Gedächtnis, Cron-Jobs, Webhooks, Live-Streaming."
+slack_description = "KI-Coding-Agents (Claude, Codex, Gemini) auf Slack.\nBenannte Sessions, persistentes Gedächtnis, Cron-Jobs, Webhooks, Live-Streaming."
 
 # -- Hilfe (Kategorien) -------------------------------------------------------
 
@@ -319,6 +320,7 @@ cat_browse = "Dateien & Info"
 cat_maintenance = "Wartung"
 footer = "Schick einfach eine Nachricht, um loszulegen."
 matrix_footer = "Nutze `!` oder `/` als Prefix. Schick eine Nachricht zum Starten."
+slack_footer = "Nutze Befehle wie `help` oder `/help`. Schick eine andere Nachricht zum Starten."
 
 # -- Multi-Agent ---------------------------------------------------------------
 

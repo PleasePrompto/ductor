@@ -189,13 +189,20 @@ def test_stream_mcp_tool_call() -> None:
     line = json.dumps(
         {
             "type": "item.started",
-            "item": {"type": "mcp_tool_call", "name": "search_docs"},
+            "item": {
+                "type": "mcp_tool_call",
+                "name": "search_docs",
+                "id": "mcp-1",
+                "arguments": {"query": "slack plan block"},
+            },
         }
     )
     events = parse_codex_stream_event(line)
     assert len(events) == 1
     assert isinstance(events[0], ToolUseEvent)
     assert events[0].tool_name == "search_docs"
+    assert events[0].tool_id == "mcp-1"
+    assert events[0].parameters == {"query": "slack plan block"}
 
 
 def test_stream_unknown_type_returns_empty() -> None:

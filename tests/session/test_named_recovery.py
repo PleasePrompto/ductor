@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from ductor_bot.session.key import SessionKey
 from ductor_bot.session.named import NamedSessionRegistry
 
 
@@ -15,17 +16,27 @@ def _make_registry(tmp_path: Path) -> NamedSessionRegistry:
 class TestLastPrompt:
     def test_created_session_has_empty_last_prompt(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
-        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
+        ns = reg.create(
+            chat_id=1,
+            provider="claude",
+            model="opus",
+            prompt_preview="hello",
+            key=SessionKey.for_transport("sl", 1, 77),
+        )
         assert ns.last_prompt == ""
+        assert ns.transport == "sl"
+        assert ns.topic_id == 77
 
     def test_mark_running_stores_prompt(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
         ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="hello")
-        reg.mark_running(1, ns.name, "full prompt text here")
+        reg.mark_running(1, ns.name, "full prompt text here", transport="sl", topic_id=42)
         updated = reg.get(1, ns.name)
         assert updated is not None
         assert updated.status == "running"
         assert updated.last_prompt == "full prompt text here"
+        assert updated.transport == "sl"
+        assert updated.topic_id == 42
 
     def test_mark_running_truncates_at_4000(self, tmp_path: Path) -> None:
         reg = _make_registry(tmp_path)
@@ -49,6 +60,8 @@ class TestRecoveredRunning:
         name: str = "boldowl",
         chat_id: int = 42,
         last_prompt: str = "do stuff",
+        topic_id: int | None = 77,
+        transport: str = "sl",
     ) -> Path:
         """Write a JSON file with a running session for reload testing."""
         import json
@@ -59,6 +72,7 @@ class TestRecoveredRunning:
                 {
                     "name": name,
                     "chat_id": chat_id,
+                    "topic_id": topic_id,
                     "provider": "claude",
                     "model": "opus",
                     "session_id": "sid-123",
@@ -67,6 +81,7 @@ class TestRecoveredRunning:
                     "created_at": time.time(),
                     "message_count": 3,
                     "last_prompt": last_prompt,
+                    "transport": transport,
                 },
             ],
         }
@@ -88,6 +103,8 @@ class TestRecoveredRunning:
         assert recovered[0].name == "boldowl"
         assert recovered[0].status == "idle"
         assert recovered[0].last_prompt == "do stuff"
+        assert recovered[0].transport == "sl"
+        assert recovered[0].topic_id == 77
 
     def test_pop_clears_recovered(self, tmp_path: Path) -> None:
         path = self._persist_running_session(tmp_path)
@@ -102,6 +119,12 @@ class TestRecoveredRunning:
         reg = NamedSessionRegistry(path)
         assert len(reg.pop_recovered_running(chat_id=99)) == 0
         assert len(reg.pop_recovered_running(chat_id=42)) == 1
+
+    def test_pop_filtered_by_transport(self, tmp_path: Path) -> None:
+        path = self._persist_running_session(tmp_path, transport="sl")
+        reg = NamedSessionRegistry(path)
+        assert len(reg.pop_recovered_running(transport="tg")) == 0
+        assert len(reg.pop_recovered_running(transport="sl")) == 1
 
     def test_ia_sessions_excluded(self, tmp_path: Path) -> None:
         path = self._persist_running_session(tmp_path, name="ia-sub1")

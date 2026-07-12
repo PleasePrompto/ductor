@@ -26,6 +26,7 @@ class _FakeBackgroundResult:
     chat_id: int = 100
     message_id: int = 42
     thread_id: int | None = None
+    transport: str = "tg"
     prompt_preview: str = "do something"
     result_text: str = "done"
     status: str = "success"
@@ -87,6 +88,8 @@ def test_from_background_result() -> None:
     env = from_background_result(_FakeBackgroundResult())
     assert env.origin == Origin.BACKGROUND
     assert env.chat_id == 100
+    assert env.topic_id is None
+    assert env.transport == "tg"
     assert env.delivery == DeliveryMode.UNICAST
     assert env.lock_mode == LockMode.NONE
     assert not env.needs_injection
@@ -99,6 +102,13 @@ def test_from_background_result() -> None:
 def test_from_background_result_error() -> None:
     env = from_background_result(_FakeBackgroundResult(status="error:timeout"))
     assert env.is_error
+
+
+def test_from_background_result_preserves_transport_and_thread_target() -> None:
+    env = from_background_result(_FakeBackgroundResult(thread_id=9, transport="sl"))
+    assert env.topic_id == 9
+    assert env.thread_id == 9
+    assert env.transport == "sl"
 
 
 def test_from_cron_result() -> None:
@@ -141,6 +151,13 @@ def test_from_heartbeat_with_topic_id() -> None:
     assert env.topic_id == 42
     assert env.delivery == DeliveryMode.UNICAST
     assert env.result_text == "group alert"
+
+
+def test_from_heartbeat_preserves_transport() -> None:
+    env = from_heartbeat(200, "alert text", topic_id=7, transport="sl")
+    assert env.chat_id == 200
+    assert env.topic_id == 7
+    assert env.transport == "sl"
 
 
 def test_from_webhook_cron_result() -> None:

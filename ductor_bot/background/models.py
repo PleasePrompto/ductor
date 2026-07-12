@@ -14,6 +14,7 @@ class BackgroundSubmit:
     prompt: str
     message_id: int
     thread_id: int | None
+    transport: str = "tg"
     session_name: str = ""
     resume_session_id: str = ""
     provider_override: str = ""
@@ -30,6 +31,7 @@ class BackgroundTask:
     prompt: str
     message_id: int
     thread_id: int | None
+    transport: str
     provider: str
     model: str
     reasoning_effort: str
@@ -47,6 +49,7 @@ class BackgroundResult:
     chat_id: int
     message_id: int
     thread_id: int | None
+    transport: str
     prompt_preview: str
     result_text: str
     status: str

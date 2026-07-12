@@ -307,6 +307,7 @@ header = "**ductor.dev**"
 version = "Versão: `{version}`"
 telegram_description = "Agentes de código IA (Claude, Codex, Gemini) no Telegram.\nSessões nomeadas, memória persistente, cron jobs, webhooks, streaming ao vivo."
 matrix_description = "Agentes de código IA (Claude, Codex, Gemini) no Matrix.\nSessões nomeadas, memória persistente, cron jobs, webhooks, streaming ao vivo."
+slack_description = "Agentes de código IA (Claude, Codex, Gemini) no Slack.\nSessões nomeadas, memória persistente, cron jobs, webhooks, streaming ao vivo."
 
 # -- Ajuda (categorias) -------------------------------------------------------
 
@@ -319,6 +320,7 @@ cat_browse = "Arquivos & Info"
 cat_maintenance = "Manutenção"
 footer = "Envie qualquer mensagem para começar a trabalhar com seu agente."
 matrix_footer = "Use o prefixo `!` ou `/`. Envie qualquer mensagem para começar."
+slack_footer = "Use comandos como `help` ou `/help`. Envie qualquer outra mensagem para começar."
 
 # -- Multi-agent ---------------------------------------------------------------
 

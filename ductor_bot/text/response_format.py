@@ -7,11 +7,20 @@ from ductor_bot.i18n import t
 SEP = "\u2500\u2500\u2500"
 
 _SHELL_TOOLS = frozenset({"bash", "powershell", "cmd", "sh", "zsh", "shell"})
+_TOOL_LABELS = {
+    "toolsearch": "Search",
+    "searchtool": "Search",
+    "webfetch": "Web fetch",
+    "websearch": "Web search",
+}
 
 
 def normalize_tool_name(name: str) -> str:
     """Normalize shell-related tool names to 'Shell' for display."""
-    return "Shell" if name.lower() in _SHELL_TOOLS else name
+    lower = name.lower()
+    if lower in _SHELL_TOOLS:
+        return "Shell"
+    return _TOOL_LABELS.get(lower, name)
 
 
 def fmt(*blocks: str) -> str:

@@ -11,6 +11,7 @@ from rich.console import Console
 
 from ductor_bot.cli.auth import AuthResult, AuthStatus
 from ductor_bot.cli.init_wizard import (
+    _ask_transport,
     _check_clis,
     _WizardConfig,
     _write_config,
@@ -79,6 +80,54 @@ def test_write_config_normalizes_existing_null_gemini_api_key(tmp_path: Path) ->
     assert data["gemini_api_key"] == "null"
 
 
+def test_write_config_writes_slack_section(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+    paths.config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with (
+        patch("ductor_bot.cli.init_wizard.resolve_paths", return_value=paths),
+        patch("ductor_bot.cli.init_wizard.init_workspace"),
+    ):
+        _write_config(
+            _WizardConfig(
+                transport="slack",
+                slack_bot_token="xoxb-test-bot-token",
+                slack_app_token="xapp-test-app-token",
+                slack_allowed_channels=["C0123456789", "G0123456789"],
+                slack_allowed_users=["U0123456789"],
+                user_timezone="UTC",
+                docker_enabled=False,
+            )
+        )
+
+    data = json.loads(paths.config_path.read_text(encoding="utf-8"))
+    assert data["transport"] == "slack"
+    assert data["transports"] == ["slack"]
+    assert data["slack"]["bot_token"] == "xoxb-test-bot-token"
+    assert data["slack"]["app_token"] == "xapp-test-app-token"
+    assert data["slack"]["allowed_channels"] == ["C0123456789", "G0123456789"]
+    assert data["slack"]["allowed_users"] == ["U0123456789"]
+
+
+def test_ask_transport_offers_slack() -> None:
+    captured: dict[str, object] = {}
+
+    class _FakePrompt:
+        def ask(self) -> str:
+            return "Slack"
+
+    def _fake_select(prompt: str, *, choices: list[str]) -> _FakePrompt:
+        captured["prompt"] = prompt
+        captured["choices"] = choices
+        return _FakePrompt()
+
+    console = Console(record=True, width=120)
+    with patch("ductor_bot.cli.init_wizard.questionary.select", side_effect=_fake_select):
+        assert _ask_transport(console) == "slack"
+
+    assert captured["choices"] == ["Telegram", "Matrix", "Slack"]
+
+
 def test_run_onboarding_returns_false_when_service_install_fails(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
 
@@ -117,6 +166,46 @@ def test_run_onboarding_returns_true_when_service_install_succeeds(tmp_path: Pat
         patch("ductor_bot.infra.service.install_service", return_value=True),
     ):
         assert run_onboarding() is True
+
+
+def test_run_onboarding_collects_slack_config(tmp_path: Path) -> None:
+    paths = _make_paths(tmp_path)
+
+    with (
+        patch("ductor_bot.cli.init_wizard._show_banner"),
+        patch("ductor_bot.cli.init_wizard._check_clis"),
+        patch("ductor_bot.cli.init_wizard._show_disclaimer"),
+        patch("ductor_bot.cli.init_wizard._ask_transport", return_value="slack"),
+        patch(
+            "ductor_bot.cli.init_wizard._ask_slack_bot_token",
+            return_value="xoxb-test-bot-token",
+        ),
+        patch(
+            "ductor_bot.cli.init_wizard._ask_slack_app_token",
+            return_value="xapp-test-app-token",
+        ),
+        patch(
+            "ductor_bot.cli.init_wizard._ask_slack_allowed_channels",
+            return_value=["C0123456789"],
+        ),
+        patch(
+            "ductor_bot.cli.init_wizard._ask_slack_allowed_users",
+            return_value=["U0123456789"],
+        ),
+        patch("ductor_bot.cli.init_wizard._ask_docker", return_value=False),
+        patch("ductor_bot.cli.init_wizard._ask_timezone", return_value="UTC"),
+        patch("ductor_bot.cli.init_wizard.resolve_paths", return_value=paths),
+        patch("ductor_bot.cli.init_wizard._offer_service_install", return_value=False),
+        patch("ductor_bot.cli.init_wizard._write_config", return_value=paths.config_path) as write_config,
+    ):
+        assert run_onboarding() is False
+
+    submitted = write_config.call_args.args[0]
+    assert submitted["transport"] == "slack"
+    assert submitted["slack_bot_token"] == "xoxb-test-bot-token"
+    assert submitted["slack_app_token"] == "xapp-test-app-token"
+    assert submitted["slack_allowed_channels"] == ["C0123456789"]
+    assert submitted["slack_allowed_users"] == ["U0123456789"]
 
 
 # --- Regression tests for non-fatal CLI auth-check failures (#109 / P1-BUG-01) ---

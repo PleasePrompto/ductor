@@ -12,7 +12,7 @@ from ductor_bot.cli.auth import AuthResult, AuthStatus
 from ductor_bot.cli.types import AgentResponse
 from ductor_bot.config import AgentConfig
 from ductor_bot.errors import CLIError, CronError, SessionError, StreamError, WorkspaceError
-from ductor_bot.orchestrator.core import Orchestrator
+from ductor_bot.orchestrator.core import NamedSessionRequest, Orchestrator
 from ductor_bot.session.key import SessionKey
 from ductor_bot.workspace.paths import DuctorPaths
 
@@ -568,6 +568,55 @@ async def test_handle_heartbeat_returns_none_on_ack(orch: Orchestrator) -> None:
         result = await orch.handle_heartbeat(SessionKey(chat_id=42))
 
     assert result is None
+
+
+async def test_submit_named_session_persists_transport_and_topic(orch: Orchestrator) -> None:
+    orch._observers.background = MagicMock()
+    orch._observers.background.submit.return_value = "task-1"
+
+    with patch(
+        "ductor_bot.cli.param_resolver.resolve_cli_config",
+        new=MagicMock(return_value=MagicMock()),
+    ):
+        task_id, session_name = orch.submit_named_session(
+            42,
+            "hello",
+            NamedSessionRequest(message_id=7, thread_id=99, transport="sl"),
+        )
+
+    assert task_id == "task-1"
+    session = orch.named_sessions.get(42, session_name)
+    assert session is not None
+    assert session.transport == "sl"
+    assert session.topic_id == 99
+    sub = orch._observers.background.submit.call_args.args[0]
+    assert sub.transport == "sl"
+    assert sub.thread_id == 99
+
+
+async def test_submit_named_followup_bg_reuses_saved_transport_and_topic(orch: Orchestrator) -> None:
+    orch._observers.background = MagicMock()
+    orch._observers.background.submit.return_value = "task-2"
+    session = orch.named_sessions.create(
+        42,
+        "claude",
+        "opus",
+        "hello",
+        key=SessionKey.for_transport("sl", 42, 88),
+    )
+    session.status = "idle"
+    session.session_id = "sid-1"
+
+    with patch(
+        "ductor_bot.cli.param_resolver.resolve_cli_config",
+        new=MagicMock(return_value=MagicMock()),
+    ):
+        task_id = orch.submit_named_followup_bg(42, session.name, "follow up", message_id=7, thread_id=None)
+
+    assert task_id == "task-2"
+    sub = orch._observers.background.submit.call_args.args[0]
+    assert sub.transport == "sl"
+    assert sub.thread_id == 88
 
 
 async def test_handle_heartbeat_waits_for_shared_session_lock(orch: Orchestrator) -> None:

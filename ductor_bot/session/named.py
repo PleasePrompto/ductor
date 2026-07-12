@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ductor_bot.infra.json_store import atomic_json_save, load_json
+from ductor_bot.session.key import SessionKey
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,7 @@ class NamedSession:
     last_prompt: str = ""
     transport: str = "tg"
     reasoning_effort: str = ""
+    topic_id: int | None = None
 
 
 def _session_from_dict(data: dict[str, Any]) -> NamedSession:
@@ -151,6 +153,7 @@ def _session_from_dict(data: dict[str, Any]) -> NamedSession:
     return NamedSession(
         name=str(data.get("name", "")),
         chat_id=int(data.get("chat_id", 0)),
+        topic_id=int(data["topic_id"]) if data.get("topic_id") is not None else None,
         provider=str(data.get("provider", "")),
         model=str(data.get("model", "")),
         session_id=str(data.get("session_id", "")),
@@ -194,6 +197,7 @@ class NamedSessionRegistry:
                 self._recovered_running[(ns.chat_id, ns.name)] = NamedSession(
                     name=ns.name,
                     chat_id=ns.chat_id,
+                    topic_id=ns.topic_id,
                     provider=ns.provider,
                     model=ns.model,
                     session_id=ns.session_id,
@@ -221,6 +225,7 @@ class NamedSessionRegistry:
         model: str,
         prompt_preview: str,
         reasoning_effort: str = "",
+        key: SessionKey | None = None,
     ) -> NamedSession:
         """Create a new named session. Raises ValueError if limit exceeded."""
         active = self.active_names(chat_id)
@@ -229,9 +234,10 @@ class NamedSessionRegistry:
             raise ValueError(msg)
 
         name = generate_name(active)
+        session_key = key or SessionKey.telegram(chat_id)
         session = NamedSession(
             name=name,
-            chat_id=chat_id,
+            chat_id=session_key.chat_id,
             provider=provider,
             model=model,
             session_id="",
@@ -239,6 +245,8 @@ class NamedSessionRegistry:
             status="running",
             created_at=time.time(),
             reasoning_effort=reasoning_effort,
+            transport=session_key.transport,
+            topic_id=session_key.topic_id,
         )
         self._sessions[(chat_id, name)] = session
         self._persist()
@@ -310,25 +318,42 @@ class NamedSessionRegistry:
         self._sessions[(session.chat_id, session.name)] = session
         self._persist()
 
-    def mark_running(self, chat_id: int, name: str, prompt: str) -> None:
+    def mark_running(
+        self,
+        chat_id: int,
+        name: str,
+        prompt: str,
+        *,
+        transport: str | None = None,
+        topic_id: int | None = None,
+    ) -> None:
         """Mark a session as running and store the prompt for recovery."""
         ns = self._sessions.get((chat_id, name))
         if ns is None:
             return
         ns.status = "running"
         ns.last_prompt = prompt[:4000]
+        if transport:
+            ns.transport = transport
+        if topic_id is not None:
+            ns.topic_id = topic_id
         self._persist()
 
-    def pop_recovered_running(self, chat_id: int | None = None) -> list[NamedSession]:
+    def pop_recovered_running(
+        self, chat_id: int | None = None, *, transport: str | None = None
+    ) -> list[NamedSession]:
         """Return sessions that were running at last shutdown, then clear them.
 
         If *chat_id* is given, only return sessions for that chat.
+        If *transport* is given, only return sessions for that transport.
         Excludes inter-agent sessions (``ia-`` prefix).
         """
         results: list[NamedSession] = []
         to_remove: list[tuple[int, str]] = []
         for key, ns in self._recovered_running.items():
             if chat_id is not None and ns.chat_id != chat_id:
+                continue
+            if transport is not None and ns.transport != transport:
                 continue
             if ns.name.startswith("ia-"):
                 continue
