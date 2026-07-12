@@ -98,6 +98,7 @@ class TaskHub:
         # per-agent lookups take precedence via ``_agent_process_registries``.
         self._process_registry = process_registry
         self._agent_process_registries: dict[str, ProcessRegistry] = {}
+        self._pending_deliveries: set[asyncio.Task[None]] = set()
 
     def start_maintenance(self) -> None:
         """Start periodic orphan cleanup (call once after bot startup)."""
@@ -349,6 +350,7 @@ class TaskHub:
         """
         inflight = self._in_flight.get(task_id)
         if inflight is None or inflight.asyncio_task is None or inflight.asyncio_task.done():
+            logger.info("Cancel requested for non-running task id=%s", task_id)
             return False
         registry = self._resolve_process_registry(inflight.entry.parent_agent)
         if registry is not None:
@@ -356,6 +358,7 @@ class TaskHub:
         inflight.asyncio_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await inflight.asyncio_task
+        logger.info("Task cancel accepted id=%s name='%s'", task_id, inflight.entry.name)
         return True
 
     async def cancel_all(self, chat_id: int) -> int:
@@ -385,6 +388,7 @@ class TaskHub:
         for atask in cancelled:
             atask.cancel()
         await asyncio.gather(*cancelled, return_exceptions=True)
+        logger.info("Task cancel accepted for %d task(s) chat=%s", len(cancelled), chat_id)
         return len(cancelled)
 
     def active_tasks(self, chat_id: int | None = None) -> list[TaskEntry]:
@@ -414,6 +418,8 @@ class TaskHub:
         if cancelled:
             await asyncio.gather(*cancelled, return_exceptions=True)
         self._in_flight.clear()
+        if self._pending_deliveries:
+            await asyncio.gather(*self._pending_deliveries, return_exceptions=True)
 
     async def _maintenance_loop(self) -> None:
         """Periodically clean orphaned task entries/folders (every 5 hours)."""
@@ -428,6 +434,12 @@ class TaskHub:
                     logger.exception("Task maintenance failed (continuing)")
         except asyncio.CancelledError:
             pass
+
+    def _start_final_delivery(self, result: TaskResult) -> asyncio.Task[None]:
+        delivery_task = asyncio.create_task(self._deliver(result))
+        self._pending_deliveries.add(delivery_task)
+        delivery_task.add_done_callback(self._pending_deliveries.discard)
+        return delivery_task
 
     async def _run(
         self,
@@ -444,6 +456,7 @@ class TaskHub:
         assert cli is not None
 
         t0 = time.monotonic()
+        final_delivery_started = False
         try:
             timeout = self._config.timeout_seconds
 
@@ -505,27 +518,36 @@ class TaskHub:
                     f'python3 tools/task_tools/resume_task.py {entry.task_id} "your follow-up"'
                 )
 
-            await self._deliver(
-                TaskResult(
-                    task_id=entry.task_id,
-                    chat_id=entry.chat_id,
-                    parent_agent=entry.parent_agent,
-                    name=entry.name,
-                    prompt_preview=entry.prompt_preview,
-                    result_text=result_text,
-                    status=status,
-                    elapsed_seconds=elapsed,
-                    provider=entry.provider,
-                    model=entry.model,
-                    session_id=session_id,
-                    error=error,
-                    task_folder=str(self._registry.task_folder(entry.task_id)),
-                    original_prompt=entry.original_prompt,
-                    thread_id=entry.thread_id,
+            final_delivery_started = True
+            await asyncio.shield(
+                self._start_final_delivery(
+                    TaskResult(
+                        task_id=entry.task_id,
+                        chat_id=entry.chat_id,
+                        parent_agent=entry.parent_agent,
+                        name=entry.name,
+                        prompt_preview=entry.prompt_preview,
+                        result_text=result_text,
+                        status=status,
+                        elapsed_seconds=elapsed,
+                        provider=entry.provider,
+                        model=entry.model,
+                        session_id=session_id,
+                        error=error,
+                        task_folder=str(self._registry.task_folder(entry.task_id)),
+                        original_prompt=entry.original_prompt,
+                        thread_id=entry.thread_id,
+                    )
                 )
             )
 
         except asyncio.CancelledError:
+            if final_delivery_started:
+                logger.info(
+                    "Task %s cancelled after completion — finished result preserved",
+                    entry.task_id,
+                )
+                raise
             elapsed = time.monotonic() - t0
             self._registry.update_status(
                 entry.task_id,

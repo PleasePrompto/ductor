@@ -421,6 +421,12 @@ class InternalAgentAPI:
                 )
 
         cancelled = await self._task_hub.cancel(task_id)
+        logger.info(
+            "Task cancel via API id=%s from=%s success=%s",
+            task_id,
+            sender or "?",
+            cancelled,
+        )
         return web.json_response({"success": cancelled})
 
     async def _handle_task_delete(  # noqa: PLR0911
