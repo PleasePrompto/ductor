@@ -93,8 +93,9 @@ def test_main_agent_codex_parameters() -> None:
     assert "--codex-flag" in params_before_separator
     assert "codex-value" in params_before_separator
 
-    # Verify prompt comes after separator
-    assert cmd[separator_idx + 1] == "test prompt"
+    # Verify prompt is read from stdin after the separator.
+    assert cmd[separator_idx + 1] == "-"
+    assert "test prompt" not in cmd
 
 
 def test_parameter_isolation() -> None:

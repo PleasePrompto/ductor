@@ -10,7 +10,6 @@ from shutil import which
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.base import (
-    _IS_WINDOWS,
     BaseCLI,
     CLIConfig,
     docker_wrap,
@@ -108,9 +107,7 @@ class CodexCLI(BaseCLI):
             return ["--full-auto"]
         return ["--sandbox", cfg.sandbox_mode]
 
-    def _build_resume_command(
-        self, final_prompt: str, session_id: str, *, json_output: bool
-    ) -> list[str]:
+    def _build_resume_command(self, session_id: str, *, json_output: bool) -> list[str]:
         """Build command to resume an existing Codex session."""
         cfg = self._config
         cmd = [self._cli, "exec", "resume"]
@@ -125,7 +122,7 @@ class CodexCLI(BaseCLI):
         if cfg.reasoning_effort and cfg.reasoning_effort != "default":
             cmd += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
         cmd += ["--", session_id]
-        cmd.append("-" if _IS_WINDOWS else final_prompt)
+        cmd.append("-")
         return cmd
 
     def _build_command(
@@ -136,10 +133,9 @@ class CodexCLI(BaseCLI):
         json_output: bool = True,
     ) -> list[str]:
         cfg = self._config
-        final_prompt = self._compose_prompt(prompt)
 
         if resume_session:
-            return self._build_resume_command(final_prompt, resume_session, json_output=json_output)
+            return self._build_resume_command(resume_session, json_output=json_output)
 
         cmd = [self._cli, "exec"]
         if json_output:
@@ -162,18 +158,17 @@ class CodexCLI(BaseCLI):
             cmd.extend(cfg.cli_parameters)
 
         cmd.append("--")
-        # On Windows, .CMD wrappers mangle arguments with special characters.
-        # Use "-" so Codex reads stdin without emitting the "Reading prompt..."
-        # notice as a stdout prelude before JSONL.
-        cmd.append("-" if _IS_WINDOWS else final_prompt)
+        # Keep large composed prompts out of argv; Linux enforces per-arg and
+        # total argv/env limits before Codex can even start.
+        cmd.append("-")
         return cmd
 
     def _docker_wrap(self, cmd: list[str]) -> tuple[list[str], str | None]:
-        """Keep stdin open for Dockerized Codex on Windows so prompts reach the CLI."""
+        """Keep stdin open for Dockerized Codex so piped prompts reach the CLI."""
         return docker_wrap(
             cmd,
             self._config,
-            interactive=_IS_WINDOWS,
+            interactive=True,
         )
 
     async def send(
@@ -187,12 +182,20 @@ class CodexCLI(BaseCLI):
         """Send a prompt and return the final result."""
         if continue_session:
             logger.debug("continue_session is not supported by Codex CLI, ignoring")
+        final_prompt = self._compose_prompt(prompt)
         cmd = self._build_command(prompt, resume_session, json_output=True)
         exec_cmd, use_cwd = self._docker_wrap(cmd)
         _log_cmd(exec_cmd)
         return await run_oneshot_subprocess(
             config=self._config,
-            spec=SubprocessSpec(exec_cmd, use_cwd, prompt, timeout_seconds, timeout_controller),
+            spec=SubprocessSpec(
+                exec_cmd,
+                use_cwd,
+                prompt,
+                timeout_seconds,
+                timeout_controller,
+                stdin_text=final_prompt,
+            ),
             parse_output=self._parse_output,
             provider_label="Codex",
         )
@@ -206,6 +209,7 @@ class CodexCLI(BaseCLI):
         timeout_controller: TimeoutController | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Send a prompt and yield stream events as they arrive."""
+        final_prompt = self._compose_prompt(prompt)
         cmd = self._build_command(prompt, resume_session, json_output=True)
         exec_cmd, use_cwd = self._docker_wrap(cmd)
         _log_cmd(exec_cmd, streaming=True)
@@ -234,7 +238,14 @@ class CodexCLI(BaseCLI):
 
         async for event in run_streaming_subprocess(
             config=self._config,
-            spec=SubprocessSpec(exec_cmd, use_cwd, prompt, timeout_seconds, timeout_controller),
+            spec=SubprocessSpec(
+                exec_cmd,
+                use_cwd,
+                prompt,
+                timeout_seconds,
+                timeout_controller,
+                stdin_text=final_prompt,
+            ),
             line_handler=line_handler,
             provider_label="Codex",
             post_handler=post_handler,
