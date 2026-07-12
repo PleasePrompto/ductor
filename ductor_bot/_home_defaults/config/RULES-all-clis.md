@@ -76,6 +76,13 @@ For user-facing schedules, set `user_timezone` explicitly.
 - `cleanup.output_to_user_days`
 - `cleanup.check_hour`
 
+### System Prompt
+
+- `append_system_prompt_files`: list of workspace-relative filenames whose
+  contents are appended to the system prompt on every agent-driven turn
+  (e.g. `["GLOSSARY.md", "STYLE_GUIDE.md"]`). Empty (default) injects nothing.
+  Each agent reads its own workspace copy; missing files are skipped.
+
 ### File Sending Scope
 
 - `file_access` controls what can be sent via `<file:...>`:

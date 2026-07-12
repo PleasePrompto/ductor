@@ -16,6 +16,7 @@ from ductor_bot.cli.types import AgentRequest
 from ductor_bot.orchestrator.flows import _is_invalid_session, _update_session
 from ductor_bot.session.key import SessionKey
 from ductor_bot.session.named import NamedSession
+from ductor_bot.workspace.loader import build_appended_files_block
 
 if TYPE_CHECKING:
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
@@ -54,8 +55,12 @@ async def _inject_prompt(  # noqa: PLR0913
     active = await orch._sessions.get_active(key)
     resume_id = active.session_id if active else None
 
+    files_block = await build_appended_files_block(
+        orch.paths, orch._config.append_system_prompt_files
+    )
     request = AgentRequest(
         prompt=prompt,
+        append_system_prompt=files_block,
         chat_id=chat_id,
         topic_id=topic_id,
         transport=transport,
@@ -193,8 +198,12 @@ async def handle_interagent_message(
     )
 
     ns.status = "running"
+    files_block = await build_appended_files_block(
+        orch.paths, orch._config.append_system_prompt_files
+    )
     request = AgentRequest(
         prompt=prompt,
+        append_system_prompt=files_block,
         chat_id=chat_id,
         transport=transport,
         process_label=f"interagent:{sender}",
@@ -230,8 +239,12 @@ async def handle_interagent_message(
         orch._named_sessions.end_session(chat_id, ns.name)
         ns, _, _ = _get_or_create_interagent_session(orch, sender, new_session=True)
         ns.status = "running"
+        files_block = await build_appended_files_block(
+            orch.paths, orch._config.append_system_prompt_files
+        )
         retry_request = AgentRequest(
             prompt=prompt,
+            append_system_prompt=files_block,
             chat_id=chat_id,
             transport=transport,
             process_label=f"interagent:{sender}",

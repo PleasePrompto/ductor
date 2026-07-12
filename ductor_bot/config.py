@@ -436,6 +436,7 @@ class AgentConfig(BaseModel):
     cli_timeout: float = 1800.0
     reasoning_effort: str = "medium"
     file_access: str = "all"
+    append_system_prompt_files: list[str] = Field(default_factory=list)
     gemini_api_key: str | None = None
     streaming: StreamingConfig = Field(default_factory=StreamingConfig)
     docker: DockerConfig = Field(default_factory=DockerConfig)

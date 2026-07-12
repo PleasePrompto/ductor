@@ -16,6 +16,7 @@ from ductor_bot.tasks.models import (
     TaskSubmit,
     normalise_priority,
 )
+from ductor_bot.workspace.loader import build_appended_files_block
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -71,13 +72,14 @@ class TaskHub:
     question handling → result delivery.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         registry: TaskRegistry,
         paths: DuctorPaths,
         *,
         cli_service: CLIService | None = None,
         config: TasksConfig,
+        append_system_prompt_files: list[str] | None = None,
         process_registry: ProcessRegistry | None = None,
     ) -> None:
         self._registry = registry
@@ -85,6 +87,8 @@ class TaskHub:
         self._cli_service = cli_service
         self._cli_services: dict[str, CLIService] = {}
         self._agent_tasks_dirs: dict[str, Path] = {}
+        self._agent_paths: dict[str, DuctorPaths] = {}
+        self._append_system_prompt_files = append_system_prompt_files or []
         self._config = config
         self._in_flight: dict[str, TaskInFlight] = {}
         self._result_handlers: dict[str, TaskResultCallback] = {}
@@ -146,6 +150,7 @@ class TaskHub:
     def set_agent_paths(self, agent_name: str, paths: DuctorPaths) -> None:
         """Register per-agent paths for task folder isolation."""
         self._agent_tasks_dirs[agent_name] = paths.tasks_dir
+        self._agent_paths[agent_name] = paths
 
     def set_agent_chat_id(self, agent_name: str, chat_id: int) -> None:
         """Register the primary chat_id for an agent (for resolving CLI-submitted tasks)."""
@@ -459,9 +464,14 @@ class TaskHub:
         final_delivery_started = False
         try:
             timeout = self._config.timeout_seconds
+            agent_paths = self._agent_paths.get(entry.parent_agent, self._paths)
+            files_block = await build_appended_files_block(
+                agent_paths, self._append_system_prompt_files
+            )
 
             request = AgentRequest(
                 prompt=prompt,
+                append_system_prompt=files_block,
                 model_override=entry.model or None,
                 provider_override=entry.provider or None,
                 chat_id=entry.chat_id,

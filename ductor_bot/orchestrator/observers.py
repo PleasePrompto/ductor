@@ -114,7 +114,10 @@ class ObserverManager:
         config, paths = self._config, self._paths
         self.codex_cache = codex_cache
         self.background = BackgroundObserver(
-            paths, timeout_seconds=config.timeouts.background, cli_service=cli_service
+            paths,
+            timeout_seconds=config.timeouts.background,
+            cli_service=cli_service,
+            config=config,
         )
         self.cron = CronObserver(paths, cron_manager, config=config, codex_cache=codex_cache)
         self.webhook = WebhookObserver(

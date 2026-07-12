@@ -13,10 +13,12 @@ from typing import TYPE_CHECKING
 from ductor_bot.background.models import BackgroundResult, BackgroundSubmit, BackgroundTask
 from ductor_bot.i18n import t
 from ductor_bot.infra.task_runner import TaskRunOptions, run_oneshot_task
+from ductor_bot.workspace.loader import build_appended_files_block
 
 if TYPE_CHECKING:
     from ductor_bot.cli.param_resolver import TaskExecutionConfig
     from ductor_bot.cli.service import CLIService
+    from ductor_bot.config import AgentConfig
     from ductor_bot.workspace.paths import DuctorPaths
 
 logger = logging.getLogger(__name__)
@@ -35,10 +37,12 @@ class BackgroundObserver:
         *,
         timeout_seconds: float,
         cli_service: CLIService | None = None,
+        config: AgentConfig,
     ) -> None:
         self._paths = paths
         self._timeout_seconds = timeout_seconds
         self._cli_service = cli_service
+        self._config = config
         self._on_result: BgResultCallback | None = None
         self._tasks: dict[str, BackgroundTask] = {}
 
@@ -197,8 +201,12 @@ class BackgroundObserver:
         t0 = time.monotonic()
         process_label = f"ns:{bg_task.session_name}"
         try:
+            files_block = await build_appended_files_block(
+                self._paths, self._config.append_system_prompt_files
+            )
             request = AgentRequest(
                 prompt=bg_task.prompt,
+                append_system_prompt=files_block,
                 model_override=bg_task.model or None,
                 provider_override=bg_task.provider or None,
                 chat_id=bg_task.chat_id,

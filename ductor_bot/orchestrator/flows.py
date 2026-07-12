@@ -22,7 +22,7 @@ from ductor_bot.orchestrator.hooks import HookContext
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.session import SessionData, SessionKey
 from ductor_bot.text.response_format import session_error_text, timeout_error_text
-from ductor_bot.workspace.loader import read_mainmemory
+from ductor_bot.workspace.loader import build_appended_files_block, read_mainmemory
 
 if TYPE_CHECKING:
     from ductor_bot.orchestrator.core import Orchestrator
@@ -126,6 +126,12 @@ async def _prepare_normal(
         roster = _build_agent_roster(orch)
         if roster:
             append_prompt = f"{append_prompt}\n\n{roster}" if append_prompt else roster
+
+    files_block = await build_appended_files_block(
+        orch.paths, orch._config.append_system_prompt_files
+    )
+    if files_block:
+        append_prompt = f"{append_prompt}\n\n{files_block}" if append_prompt else files_block
 
     hook_ctx = HookContext(
         chat_id=key.chat_id,
@@ -729,8 +735,12 @@ async def named_session_flow(
 
     tag = f"**[{session_name} | {ns.provider}]**\n"
     orch._named_sessions.mark_running(key.chat_id, session_name, text)
+    files_block = await build_appended_files_block(
+        orch.paths, orch._config.append_system_prompt_files
+    )
     request = AgentRequest(
         prompt=text,
+        append_system_prompt=files_block,
         model_override=ns.model,
         provider_override=ns.provider,
         chat_id=key.chat_id,
@@ -780,8 +790,12 @@ async def named_session_streaming(
     cb = cbs or StreamingCallbacks()
     tag = f"**[{session_name} | {ns.provider}]**\n"
     orch._named_sessions.mark_running(key.chat_id, session_name, text)
+    files_block = await build_appended_files_block(
+        orch.paths, orch._config.append_system_prompt_files
+    )
     request = AgentRequest(
         prompt=text,
+        append_system_prompt=files_block,
         model_override=ns.model,
         provider_override=ns.provider,
         chat_id=key.chat_id,
