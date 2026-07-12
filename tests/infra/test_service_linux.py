@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from ductor_bot.infra.service_linux import (
     _SERVICE_NAME,
+    _enable_linger,
     _generate_service_unit,
     is_service_available,
     is_service_running,
@@ -43,6 +44,76 @@ class TestGenerateServiceUnit:
         home = tmp_path.as_posix()
         assert f"{home}/.nvm/versions/node/v24.0.0/bin" in unit
         assert f"{home}/.nvm/versions/node/v22.0.0/bin" in unit
+
+
+class TestEnableLinger:
+    @patch("ductor_bot.infra.service_linux.subprocess.run")
+    @patch("ductor_bot.infra.service_linux.os.geteuid", return_value=0)
+    def test_root_runs_loginctl_without_sudo(
+        self,
+        _euid: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        mock_run.return_value = make_completed(0)
+        assert _enable_linger("root") is True
+        mock_run.assert_called_once_with(
+            ["loginctl", "enable-linger", "root"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("ductor_bot.infra.service_linux.subprocess.run")
+    @patch("ductor_bot.infra.service_linux.shutil.which", return_value="/usr/bin/sudo")
+    @patch("ductor_bot.infra.service_linux.os.geteuid", return_value=1000)
+    def test_non_root_prefixes_sudo(
+        self,
+        _euid: MagicMock,
+        _which: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        mock_run.return_value = make_completed(0)
+        assert _enable_linger("alice") is True
+        mock_run.assert_called_once_with(
+            ["sudo", "loginctl", "enable-linger", "alice"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @patch("ductor_bot.infra.service_linux.subprocess.run")
+    @patch("ductor_bot.infra.service_linux.shutil.which", return_value=None)
+    @patch("ductor_bot.infra.service_linux.os.geteuid", return_value=1000)
+    def test_missing_sudo_degrades_gracefully(
+        self,
+        _euid: MagicMock,
+        _which: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        assert _enable_linger("alice") is False
+        mock_run.assert_not_called()
+
+    @patch(
+        "ductor_bot.infra.service_linux.subprocess.run",
+        side_effect=FileNotFoundError("loginctl"),
+    )
+    @patch("ductor_bot.infra.service_linux.os.geteuid", return_value=0)
+    def test_missing_loginctl_degrades_gracefully(
+        self,
+        _euid: MagicMock,
+        _run: MagicMock,
+    ) -> None:
+        assert _enable_linger("root") is False
+
+    @patch("ductor_bot.infra.service_linux.subprocess.run")
+    @patch("ductor_bot.infra.service_linux.os.geteuid", return_value=0)
+    def test_nonzero_exit_reports_failure(
+        self,
+        _euid: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        mock_run.return_value = make_completed(1, stderr="boom")
+        assert _enable_linger("root") is False
 
 
 class TestIsServiceAvailable:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import getpass
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -52,6 +53,20 @@ def _has_linger() -> bool:
     user = getpass.getuser()
     linger_dir = Path(f"/var/lib/systemd/linger/{user}")
     return linger_dir.exists()
+
+
+def _enable_linger(user: str) -> bool:
+    """Enable loginctl linger for *user*, using sudo only when needed and available."""
+    cmd = ["loginctl", "enable-linger", user]
+    if os.geteuid() != 0:
+        if shutil.which("sudo") is None:
+            return False
+        cmd = ["sudo", *cmd]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError:
+        return False
+    return result.returncode == 0
 
 
 def _run_systemctl(*args: str, user: bool = True) -> subprocess.CompletedProcess[str]:
@@ -147,13 +162,7 @@ def install_service(console: Console | None = None) -> bool:
     if not _has_linger():
         console.print(f"\n{t_rich('service.linux.linger_warning')}")
         user = getpass.getuser()
-        result = subprocess.run(
-            ["sudo", "loginctl", "enable-linger", user],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
+        if _enable_linger(user):
             console.print(t_rich("service.linux.linger_enabled"))
         else:
             console.print(t_rich("service.linux.linger_manual", user=user))
