@@ -35,6 +35,7 @@ class TaskSubmit:
     provider_override: str = ""
     model_override: str = ""
     thinking_override: str = ""
+    reasoning_effort_override: str = ""
     priority: str = _DEFAULT_PRIORITY
 
 
@@ -61,6 +62,7 @@ class TaskEntry:
     last_question: str = ""
     original_prompt: str = ""
     thinking: str = ""
+    reasoning_effort: str = ""
     tasks_dir: str = ""  # Agent's tasks directory (for per-agent folder resolution)
     thread_id: int | None = None  # Forum topic ID (for routing results back to topic)
     priority: str = _DEFAULT_PRIORITY  # #79: interactive | background | batch
@@ -90,6 +92,7 @@ class TaskEntry:
             "num_turns": self.num_turns,
             "last_question": self.last_question,
             "thinking": self.thinking,
+            "reasoning_effort": self.reasoning_effort,
             "tasks_dir": self.tasks_dir,
             "priority": self.priority,
         }
@@ -121,6 +124,7 @@ class TaskEntry:
             # files written before the original_prompt field was persisted.
             original_prompt=d.get("original_prompt", ""),
             thinking=d.get("thinking", ""),
+            reasoning_effort=d.get("reasoning_effort", ""),
             tasks_dir=d.get("tasks_dir", ""),
             thread_id=d.get("thread_id"),
             priority=normalise_priority(d.get("priority")),

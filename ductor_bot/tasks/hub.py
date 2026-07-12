@@ -195,6 +195,7 @@ class TaskHub:
         provider = submit.provider_override or ""
         model = submit.model_override or ""
         thinking = submit.thinking_override or ""
+        reasoning_effort = submit.reasoning_effort_override or ""
 
         # Resolve per-agent tasks_dir for folder isolation
         agent_tasks_dir = self._agent_tasks_dirs.get(submit.parent_agent)
@@ -203,6 +204,7 @@ class TaskHub:
             provider,
             model,
             thinking=thinking,
+            reasoning_effort=reasoning_effort,
             tasks_dir=agent_tasks_dir,
             priority=priority,
         )
@@ -474,6 +476,7 @@ class TaskHub:
                 append_system_prompt=files_block,
                 model_override=entry.model or None,
                 provider_override=entry.provider or None,
+                effort_override=entry.reasoning_effort or None,
                 chat_id=entry.chat_id,
                 topic_id=entry.thread_id,
                 process_label=f"task:{entry.task_id}",

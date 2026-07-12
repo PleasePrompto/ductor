@@ -62,7 +62,7 @@ def test_resolve_execution_config_no_overrides(
 
     assert exec_config.provider == "claude"
     assert exec_config.model == "sonnet"
-    assert exec_config.reasoning_effort == ""
+    assert exec_config.reasoning_effort == "medium"  # claude carries global default
     assert exec_config.cli_parameters == []
 
 

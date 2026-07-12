@@ -94,19 +94,23 @@ async def _prepare_normal(
     """
     requested_model = model_override or orch._config.model
     req_model, req_provider = orch.resolve_runtime_target(requested_model)
+    requested_effort = orch._config.reasoning_effort
 
     session, is_new = await orch._sessions.resolve_session(
         key,
         provider=req_provider,
         model=req_model,
+        reasoning_effort=requested_effort,
         preserve_existing_target=model_override is None,
     )
     req_model = session.model
     req_provider = session.provider
+    req_effort = session.reasoning_effort
     await orch._sessions.sync_session_target(
         session,
         provider=req_provider,
         model=req_model,
+        reasoning_effort=req_effort,
     )
     if session.session_id:
         set_log_context(session_id=session.session_id)
@@ -148,6 +152,7 @@ async def _prepare_normal(
         append_system_prompt=append_prompt,
         model_override=req_model,
         provider_override=req_provider,
+        effort_override=req_effort,
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,
@@ -743,6 +748,7 @@ async def named_session_flow(
         append_system_prompt=files_block,
         model_override=ns.model,
         provider_override=ns.provider,
+        effort_override=ns.reasoning_effort or None,
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,
@@ -798,6 +804,7 @@ async def named_session_streaming(
         append_system_prompt=files_block,
         model_override=ns.model,
         provider_override=ns.provider,
+        effort_override=ns.reasoning_effort or None,
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,
@@ -901,6 +908,7 @@ async def heartbeat_flow(
         prompt=effective_prompt,
         model_override=req_model,
         provider_override=req_provider,
+        effort_override=session.reasoning_effort or None,
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,

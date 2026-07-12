@@ -74,6 +74,9 @@ class BackgroundObserver:
             thread_id=sub.thread_id,
             provider=sub.provider_override if has_session_override else exec_config.provider,
             model=sub.model_override if has_session_override else exec_config.model,
+            reasoning_effort=(
+                sub.reasoning_effort_override if has_session_override else exec_config.reasoning_effort
+            ),
             submitted_at=time.monotonic(),
             session_name=sub.session_name,
             resume_session_id=sub.resume_session_id,
@@ -209,6 +212,7 @@ class BackgroundObserver:
                 append_system_prompt=files_block,
                 model_override=bg_task.model or None,
                 provider_override=bg_task.provider or None,
+                effort_override=bg_task.reasoning_effort or None,
                 chat_id=bg_task.chat_id,
                 process_label=process_label,
                 resume_session=bg_task.resume_session_id or None,

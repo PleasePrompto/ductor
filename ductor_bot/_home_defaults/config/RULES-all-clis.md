@@ -35,8 +35,10 @@ Edit only when the user asks for behavior changes.
     - Display names from `config/antigravity_models.json` may be known at runtime,
       but the chat model selector currently exposes only `antigravity-default`
       because `agy` model selection is not reliable there
-- `reasoning_effort`: `low|medium|high|xhigh` (Codex only)
-  - Supported values: `low`, `medium`, `high`, `xhigh`
+- `reasoning_effort`: reasoning depth for Codex and Claude
+  - Codex: `low`, `medium`, `high`, `xhigh`
+  - Claude: `low`, `medium`, `high`, `xhigh`, `max`
+  - Change it for the active provider with the `/effort` command
 - `permission_mode`: CLI permission behavior
 
 ### Time and Scheduling

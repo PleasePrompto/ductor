@@ -106,6 +106,7 @@ header = "**Status**"
 no_session = "Tidak ada sesi aktif."
 model_line = "Model: {model}"
 model_line_configured = "Model: {model} (dikonfigurasi: {configured})"
+effort_line = "Upaya: {effort}"
 topic_line = "Topik: {topic}"
 session_line = "Sesi: `{sid}`"
 messages_line = "Pesan: {count}"
@@ -217,7 +218,7 @@ model_line = "Model: {model}"
 model_change = "Model: {old} -> {new}"
 provider_change = "Provider: {old} -> {new}"
 reasoning_line = "Penalaran: {effort}"
-effort_updated = "Upaya penalaran diperbarui."
+effort_updated = "Upaya penalaran disetel ke {effort}."
 already_running = "Sudah menggunakan {model}. Tidak ada perubahan."
 
 resume_hint = """\
@@ -449,3 +450,7 @@ changelog_header = "**Catatan Rilis v{version}**"
 
 [multiagent]
 async_task_received = "📥 **Tugas async diterima** dari `{sender}`\nSesi: `{session}` · ID Tugas: `{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "Pilih upaya penalaran untuk {model}:"
+unsupported = "Upaya penalaran tidak dapat diatur untuk penyedia `{provider}`."

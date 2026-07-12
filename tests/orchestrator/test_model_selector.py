@@ -263,12 +263,31 @@ async def test_callback_provider_antigravity(orch: Orchestrator) -> None:
 # -- handle_model_callback: model selection --
 
 
-async def test_callback_model_claude_switches(orch: Orchestrator) -> None:
-    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+async def test_callback_model_claude_shows_reasoning(orch: Orchestrator) -> None:
+    """Picking a Claude model offers the effort sub-selector (incl. max)."""
     resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:m:sonnet")
-    assert "sonnet" in resp.text
+    assert "Thinking level" in resp.text
+    assert resp.buttons is not None
+    labels = [btn.text for row in resp.buttons.rows for btn in row]
+    assert "Low" in labels
+    assert "Max" in labels  # Claude-only top level
+    callbacks = [btn.callback_data for row in resp.buttons.rows for btn in row]
+    assert "ms:r:max:sonnet" in callbacks
+    assert "ms:b:claude" in callbacks  # back to the Claude model list
+    # Model is not switched until an effort is chosen.
+    assert orch._config.model == "opus"
+
+
+async def test_callback_claude_reasoning_applies_via_picker(orch: Orchestrator) -> None:
+    """Selecting a Claude effort in the picker applies it via the shared path."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    # Step 1: pick the claude model -> effort sub-selector.
+    await handle_model_callback(orch, SessionKey(chat_id=1), "ms:m:sonnet")
+    # Step 2: pick an effort -> same ms:r path codex/_effort use.
+    resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:r:max:sonnet")
     assert resp.buttons is None
     assert orch._config.model == "sonnet"
+    assert orch._config.reasoning_effort == "max"
 
 
 async def test_callback_model_antigravity_switches_without_reasoning_step(
@@ -433,7 +452,7 @@ async def test_switch_reasoning_only(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_by_chat_topic", mock_kill)
     object.__setattr__(orch._sessions, "reset_provider_session", mock_reset)
     result = await switch_model(orch, SessionKey(chat_id=1), "opus", reasoning_effort="high")
-    assert "Reasoning effort updated" in result
+    assert "high" in result  # effort value shown in the message
     mock_kill.assert_not_called()
     mock_reset.assert_not_called()
 
@@ -472,3 +491,807 @@ async def test_switch_model_rejects_invalid_codex_reasoning_effort(orch: Orchest
 
     assert "Invalid reasoning effort" in result
     assert "gpt-4o-mini" in result
+
+
+# -- Claude effort + provider-aware validation ------------------------------
+
+
+async def test_switch_model_claude_accepts_max(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    result = await switch_model(orch, SessionKey(chat_id=1), "opus", reasoning_effort="max")
+    assert "Invalid reasoning effort" not in result
+    assert orch._config.reasoning_effort == "max"
+
+
+async def test_switch_model_codex_rejects_max_with_cache(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    with _with_codex_cache(orch):
+        result = await switch_model(
+            orch, SessionKey(chat_id=1), "gpt-5.2-codex", reasoning_effort="max"
+        )
+    assert "Invalid reasoning effort" in result
+    assert "max" in result
+
+
+async def test_switch_model_codex_rejects_max_no_cache(orch: Orchestrator) -> None:
+    """Even without a Codex cache, the fallback set rejects ``max``."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._observers.codex_cache_obs = None
+    result = await switch_model(
+        orch, SessionKey(chat_id=1), "gpt-5.2-codex", reasoning_effort="max"
+    )
+    assert "Invalid reasoning effort" in result
+
+
+async def test_provider_switch_resets_invalid_effort_to_medium(orch: Orchestrator) -> None:
+    """Claude+max then /model to Codex must reset effort to medium (max not sent)."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "opus", reasoning_effort="max")
+    assert orch._config.reasoning_effort == "max"
+
+    orch._observers.codex_cache_obs = None  # exercise the fallback path
+    await switch_model(orch, SessionKey(chat_id=1), "gpt-5.2-codex")
+    assert orch._config.reasoning_effort == "medium"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["reasoning_effort"] == "medium"
+
+
+async def test_provider_switch_keeps_valid_effort(orch: Orchestrator) -> None:
+    """A carried-over effort valid for the new provider is left untouched."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "opus", reasoning_effort="high")
+    orch._observers.codex_cache_obs = None
+    await switch_model(orch, SessionKey(chat_id=1), "gpt-5.2-codex")
+    assert orch._config.reasoning_effort == "high"
+
+
+# -- /effort selector -------------------------------------------------------
+
+
+async def test_effort_selector_claude_shows_max(orch: Orchestrator) -> None:
+    from ductor_bot.orchestrator.selectors.model_selector import effort_selector_start
+
+    resp = await effort_selector_start(orch, SessionKey(chat_id=1))  # default model: opus (claude)
+    assert resp.buttons is not None
+    labels = [b.text for row in resp.buttons.rows for b in row]
+    assert "Max" in labels
+    callbacks = [b.callback_data for row in resp.buttons.rows for b in row]
+    # /effort uses the dedicated per-session ms:e callback (no model in payload).
+    assert "ms:e:max" in callbacks
+
+
+async def test_effort_selector_codex_no_max(orch: Orchestrator) -> None:
+    from ductor_bot.orchestrator.selectors.model_selector import effort_selector_start
+
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "gpt-5.2-codex")
+    orch._observers.codex_cache_obs = None
+    resp = await effort_selector_start(orch, SessionKey(chat_id=1))
+    assert resp.buttons is not None
+    labels = [b.text for row in resp.buttons.rows for b in row]
+    assert "Max" not in labels
+
+
+async def test_effort_selector_unsupported_provider_info_only(orch: Orchestrator) -> None:
+    from ductor_bot.orchestrator.selectors.model_selector import effort_selector_start
+
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    await switch_model(orch, SessionKey(chat_id=1), "gemini-2.5-pro")
+    resp = await effort_selector_start(orch, SessionKey(chat_id=1))
+    assert resp.buttons is None  # info message only, no UI
+    assert "gemini" in resp.text.lower()
+
+
+async def test_effort_selector_main_scopes_to_active_session_model(orch: Orchestrator) -> None:
+    """/effort in main/DM scopes to the ACTIVE session model (opus -> Max range),
+    independent of the configured default model."""
+    from ductor_bot.orchestrator.selectors.model_selector import effort_selector_start
+
+    orch._config.model = "gpt-5.2-codex"  # configured default differs from session
+    session, _ = await orch._sessions.resolve_session(
+        SessionKey(chat_id=1), provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+
+    resp = await effort_selector_start(orch, SessionKey(chat_id=1))
+
+    labels = [b.text for row in resp.buttons.rows for b in row]
+    assert "Max" in labels  # opus (claude) range, not codex's config default
+    callbacks = [b.callback_data for row in resp.buttons.rows for b in row]
+    assert "ms:e:max" in callbacks
+
+
+async def test_effort_in_main_changes_session_only_not_config(orch: Orchestrator) -> None:
+    """End-to-end: /effort in main changes only the active session's effort;
+    config.model and config.reasoning_effort (the configured default) stay put."""
+    orch._config.model = "opus"
+    orch._config.reasoning_effort = "medium"
+    session, _ = await orch._sessions.resolve_session(
+        SessionKey(chat_id=1), provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+    model_mock = MagicMock()
+    effort_mock = MagicMock()
+    object.__setattr__(orch._cli_service, "update_default_model", model_mock)
+    object.__setattr__(orch._cli_service, "update_reasoning_effort", effort_mock)
+
+    result = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:e:high")
+
+    # Active session effort changed; configured default untouched.
+    active = await orch._sessions.get_active(SessionKey(chat_id=1))
+    assert active is not None
+    assert active.reasoning_effort == "high"
+    assert orch._config.model == "opus"
+    assert orch._config.reasoning_effort == "medium"  # configured default unchanged
+    model_mock.assert_not_called()
+    effort_mock.assert_not_called()
+    assert "high" in result.text  # applied effort value shown
+
+
+async def test_effort_no_active_session_creates_session_no_config_change(
+    orch: Orchestrator,
+) -> None:
+    """/effort on a fresh chat (no active session) records effort on a NEW
+    session and never mutates the configured default (regression guard)."""
+    orch._config.model = "opus"
+    orch._config.reasoning_effort = "medium"
+    model_mock = MagicMock()
+    effort_mock = MagicMock()
+    object.__setattr__(orch._cli_service, "update_default_model", model_mock)
+    object.__setattr__(orch._cli_service, "update_reasoning_effort", effort_mock)
+    assert await orch._sessions.get_active(SessionKey(chat_id=1)) is None  # fresh
+
+    result = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:e:high")
+
+    # Configured default untouched.
+    assert orch._config.model == "opus"
+    assert orch._config.reasoning_effort == "medium"
+    model_mock.assert_not_called()
+    effort_mock.assert_not_called()
+    # A session was created and carries the chosen effort.
+    session = await orch._sessions.get_active(SessionKey(chat_id=1))
+    assert session is not None
+    assert session.reasoning_effort == "high"
+    assert "high" in result.text  # applied effort value shown
+
+
+async def test_effort_in_main_resets_unsupported_for_session_provider(
+    orch: Orchestrator,
+) -> None:
+    """/effort applied to a codex session rejects a claude-only level (max->medium)."""
+    session, _ = await orch._sessions.resolve_session(
+        SessionKey(chat_id=1), provider="codex", model="gpt-5.2-codex"
+    )
+    await orch._sessions.update_session(session)
+    orch._observers.codex_cache_obs = None  # codex fallback set (no max)
+
+    await handle_model_callback(orch, SessionKey(chat_id=1), "ms:e:max")
+
+    active = await orch._sessions.get_active(SessionKey(chat_id=1))
+    assert active is not None
+    assert active.reasoning_effort == "medium"
+
+
+# -- topic-session effort apply (Gate D) ------------------------------------
+
+
+async def test_topic_effort_change_is_session_scoped(orch: Orchestrator) -> None:
+    """`/effort` in a TOPIC updates only that topic's session, not the global default."""
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    update_mock = MagicMock()
+    object.__setattr__(orch._cli_service, "update_reasoning_effort", update_mock)
+    global_before = orch._config.reasoning_effort
+
+    await switch_model(orch, key, "opus", reasoning_effort="high")
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.reasoning_effort == "high"          # topic session updated
+    assert orch._config.reasoning_effort == global_before  # global default unchanged
+    update_mock.assert_not_called()                    # no global update from a topic
+
+
+async def test_topic_provider_switch_resets_invalid_effort_in_session(
+    orch: Orchestrator,
+) -> None:
+    """Topic claude+max -> codex resets the SESSION effort to medium (global unchanged)."""
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    global_before = orch._config.reasoning_effort
+
+    await switch_model(orch, key, "opus", reasoning_effort="max")
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.reasoning_effort == "max"
+
+    orch._observers.codex_cache_obs = None  # exercise the fallback
+    await switch_model(orch, key, "gpt-5.2-codex")
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.reasoning_effort == "medium"            # session reset
+    assert orch._config.reasoning_effort == global_before  # global default unchanged
+
+
+# -- per-session effort isolation (regression coverage for #161) --------------
+
+
+async def test_topic_effort_isolated_from_other_topics_and_main(orch: Orchestrator) -> None:
+    """Changing effort in topic A must not affect topic B, topic C, or main."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    a = SessionKey(chat_id=1, topic_id=10)
+    b = SessionKey(chat_id=1, topic_id=20)
+    main = SessionKey(chat_id=1)
+    for k in (a, b, main):
+        await orch._sessions.resolve_session(k, provider="claude", model="opus")
+
+    await switch_model(orch, a, "opus", reasoning_effort="high")
+
+    sa = await orch._sessions.get_active(a)
+    sb = await orch._sessions.get_active(b)
+    sm = await orch._sessions.get_active(main)
+    assert sa is not None
+    assert sa.reasoning_effort == "high"
+    # B/C/main keep their captured default (not "high")
+    assert sb is not None
+    assert sb.reasoning_effort != "high"
+    assert sm is not None
+    assert sm.reasoning_effort != "high"
+    assert orch._config.reasoning_effort != "high"
+
+
+async def test_main_effort_change_sets_global_default(orch: Orchestrator) -> None:
+    """Main/DM effort change updates the global default + service config."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    update_mock = MagicMock()
+    object.__setattr__(orch._cli_service, "update_reasoning_effort", update_mock)
+    main = SessionKey(chat_id=1)
+    await orch._sessions.resolve_session(main, provider="claude", model="opus")
+
+    await switch_model(orch, main, "opus", reasoning_effort="high")
+
+    assert orch._config.reasoning_effort == "high"
+    update_mock.assert_called_once_with("high")
+
+
+# -- /effort response shows the applied effort value --------------------------
+
+
+async def test_effort_message_shows_applied_value_after_reset(
+    orch: Orchestrator,
+) -> None:
+    """The /effort response shows the value actually applied to the session,
+    i.e. the post-validation value (max -> medium on codex), not the request.
+    """
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        key, provider="codex", model="gpt-5.2-codex"
+    )
+    await orch._sessions.update_session(session)
+
+    orch._observers.codex_cache_obs = None  # codex fallback: max unsupported
+    result = await handle_model_callback(orch, key, "ms:e:max")
+
+    active = await orch._sessions.get_active(key)
+    assert active is not None
+    assert active.reasoning_effort == "medium"   # max reset to codex-valid
+    assert "medium" in result.text                # applied value shown
+    assert "max" not in result.text               # not the rejected request
+
+
+def test_effort_updated_locales_have_effort_placeholder() -> None:
+    """Every locale defining model.effort_updated must include the {effort}
+    placeholder so the applied value renders (i18n consistency)."""
+    import tomllib
+    from pathlib import Path
+
+    i18n_dir = Path(__file__).resolve().parents[2] / "ductor_bot" / "i18n"
+    found = 0
+    for chat_toml in sorted(i18n_dir.glob("*/chat.toml")):
+        data = tomllib.loads(chat_toml.read_text(encoding="utf-8"))
+        template = data.get("model", {}).get("effort_updated")
+        if template is None:
+            continue
+        found += 1
+        assert "{effort}" in template, (
+            f"{chat_toml.parent.name}/chat.toml effort_updated missing {{effort}}: {template!r}"
+        )
+    assert found > 0, "no locale defines model.effort_updated"
+
+
+# -- /effort drops the pooled interactive REPL so the new effort takes hold ---
+
+
+async def test_effort_kills_interactive_repl_when_available(
+    orch: Orchestrator,
+) -> None:
+    """/effort must drop a pooled interactive REPL so the next message respawns
+    it with the new effort (the REPL would otherwise keep its spawn-time
+    effort). cli_service.kill_interactive_repl is called with the session key.
+    """
+    orch._config.model = "opus"
+    key = SessionKey(chat_id=42, topic_id=7)
+    session, _ = await orch._sessions.resolve_session(
+        key, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+    repl_kill = MagicMock()
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    await handle_model_callback(orch, key, "ms:e:high")
+
+    repl_kill.assert_called_once_with(key.transport, key.chat_id, key.topic_id)
+
+
+async def test_effort_skips_repl_kill_when_unavailable(orch: Orchestrator) -> None:
+    """When cli_service has no kill_interactive_repl (base predating #156),
+    /effort still applies the effort without error (guarded no-op)."""
+    orch._config.model = "opus"
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        key, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+    # Ensure the attribute is absent on this cli_service instance.
+    if hasattr(orch._cli_service, "kill_interactive_repl"):
+        delattr(orch._cli_service, "kill_interactive_repl")
+    assert not hasattr(orch._cli_service, "kill_interactive_repl")
+
+    result = await handle_model_callback(orch, key, "ms:e:high")
+
+    active = await orch._sessions.get_active(key)
+    assert active is not None
+    assert active.reasoning_effort == "high"   # effort applied, no AttributeError
+    assert result is not None
+
+
+async def test_effort_no_session_kills_interactive_repl_when_available(
+    orch: Orchestrator,
+) -> None:
+    """The no-active-session /effort path also drops a pooled REPL when present."""
+    orch._config.model = "opus"
+    key = SessionKey(chat_id=99)
+    assert await orch._sessions.get_active(key) is None
+    repl_kill = MagicMock()
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    await handle_model_callback(orch, key, "ms:e:high")
+
+    repl_kill.assert_called_once_with(key.transport, key.chat_id, key.topic_id)
+
+
+# -- /effort & /model header show the session-first effort (display parity) ---
+
+
+async def test_status_line_shows_session_effort_not_config(orch: Orchestrator) -> None:
+    """The header reads the effective (session-first) effort, matching /status
+    and the runtime — not config.reasoning_effort.
+
+    Session opus/high, config medium -> header shows "high", not "medium".
+    """
+    from ductor_bot.orchestrator.selectors.model_selector import _status_line
+
+    orch._config.reasoning_effort = "medium"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus", reasoning_effort="high"
+    )
+    await orch._sessions.update_session(session)
+
+    header = await _status_line(orch, main)
+
+    assert "high" in header
+    assert "(medium)" not in header
+
+
+async def test_status_line_falls_back_to_config_without_session(
+    orch: Orchestrator,
+) -> None:
+    """Without an active session the header shows the config default effort."""
+    from ductor_bot.orchestrator.selectors.model_selector import _status_line
+
+    orch._config.reasoning_effort = "high"
+    assert await orch._sessions.get_active(SessionKey(chat_id=1)) is None
+
+    header = await _status_line(orch, SessionKey(chat_id=1))
+
+    assert "high" in header
+
+
+async def test_status_line_topic_shows_session_effort(orch: Orchestrator) -> None:
+    """In a topic the header shows that topic session's effort."""
+    from ductor_bot.orchestrator.selectors.model_selector import _status_line
+
+    orch._config.reasoning_effort = "medium"
+    key = SessionKey(chat_id=1, topic_id=7)
+    session, _ = await orch._sessions.resolve_session(
+        key, provider="claude", model="opus", reasoning_effort="high"
+    )
+    await orch._sessions.update_session(session)
+
+    header = await _status_line(orch, key)
+
+    assert "high" in header
+    assert "(medium)" not in header
+
+
+# -- session effort reset must not leak into a valid config default -----------
+
+
+async def test_session_effort_reset_does_not_overwrite_valid_config(
+    orch: Orchestrator,
+) -> None:
+    """A session-only effort reset (max -> medium on a provider switch) must not
+    clobber an already-valid config default.
+
+    config gpt-5.2-codex/codex/high (valid), session opus/claude/max.
+    /model gpt-5.2-codex (no explicit effort): the session resets max->medium,
+    but config.reasoning_effort must stay high (codex-valid), not become medium.
+    """
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    orch._config.reasoning_effort = "high"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus", reasoning_effort="max"
+    )
+    await orch._sessions.update_session(session)
+
+    with _with_codex_cache(orch):
+        await switch_model(orch, main, "gpt-5.2-codex")
+
+    # config default unchanged -> not rewritten (in-memory state is the guard).
+    assert orch._config.reasoning_effort == "high"   # valid config default kept
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.reasoning_effort == "medium"        # session reset (max invalid)
+
+
+async def test_main_model_explicit_effort_sets_config(orch: Orchestrator) -> None:
+    """An explicit effort (/model wizard reasoning step) sets the config
+    default to exactly that value."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "opus"
+    orch._config.provider = "claude"
+    orch._config.reasoning_effort = "medium"
+    main = SessionKey(chat_id=1)
+    await orch._sessions.resolve_session(main, provider="claude", model="opus")
+
+    await switch_model(orch, main, "sonnet", reasoning_effort="high")
+
+    assert orch._config.reasoning_effort == "high"
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["reasoning_effort"] == "high"
+
+
+# -- main /model keeps config.reasoning_effort consistent with config.model ---
+
+
+async def test_main_model_resets_invalid_config_effort(orch: Orchestrator) -> None:
+    """Main /model re-validates config.reasoning_effort against the new default
+    model. config opus/claude/max, session gpt-5.2-codex; /model gpt-5.2-codex
+    -> config becomes gpt-5.2-codex/codex/medium (max is codex-invalid).
+
+    provider_changed is False here (session is already codex), so the session
+    effort path leaves effort=None; the config block must still fix its own
+    stale max independently.
+    """
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "opus"
+    orch._config.provider = "claude"
+    orch._config.reasoning_effort = "max"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="codex", model="gpt-5.2-codex", reasoning_effort="medium"
+    )
+    await orch._sessions.update_session(session)
+
+    orch._observers.codex_cache_obs = None  # exercise the fallback efforts
+    await switch_model(orch, main, "gpt-5.2-codex")
+
+    assert orch._config.model == "gpt-5.2-codex"
+    assert orch._config.provider == "codex"
+    assert orch._config.reasoning_effort == "medium"   # max reset to codex-valid
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["reasoning_effort"] == "medium"
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.model == "gpt-5.2-codex"
+    assert synced.reasoning_effort == "medium"          # session unchanged
+
+
+async def test_main_model_keeps_valid_config_effort(orch: Orchestrator) -> None:
+    """Main /model keeps config.reasoning_effort when it stays valid for the new
+    default model. config codex/medium, session opus/claude/max; /model opus ->
+    config becomes opus/claude/max (claude supports max, carried)."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    orch._config.reasoning_effort = "max"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus", reasoning_effort="max"
+    )
+    await orch._sessions.update_session(session)
+
+    await switch_model(orch, main, "opus")
+
+    assert orch._config.model == "opus"
+    assert orch._config.provider == "claude"
+    assert orch._config.reasoning_effort == "max"   # claude supports max -> carried
+
+
+async def test_topic_model_does_not_touch_config_effort(orch: Orchestrator) -> None:
+    """Topic /model never mutates the global config.reasoning_effort."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "opus"
+    orch._config.provider = "claude"
+    orch._config.reasoning_effort = "max"
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="codex", model="gpt-5.2-codex")
+
+    with _with_codex_cache(orch):
+        await switch_model(orch, key, "gpt-5.2-codex")
+
+    assert orch._config.reasoning_effort == "max"   # untouched from a topic
+    assert orch._config.model == "opus"
+
+
+# -- main /model keeps config.model and config.provider consistent ------------
+
+
+async def test_main_model_realign_fixes_stale_provider(orch: Orchestrator) -> None:
+    """Main /model re-aligns config.provider to the model's provider even when
+    provider_changed is False (session-based) because config had diverged.
+
+    Session opus/claude, config gpt-5.2-codex/codex; /model opus -> config.model
+    AND config.provider must both land on opus/claude (no claude-model + codex-
+    provider mismatch).
+    """
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+
+    await switch_model(orch, main, "opus")
+
+    assert orch._config.model == "opus"
+    assert orch._config.provider == "claude"   # provider realigned, not stale codex
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["model"] == "opus"
+    assert saved["provider"] == "claude"       # persisted consistently
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.model == "opus"
+
+
+async def test_main_model_normal_provider_switch_updates_both(
+    orch: Orchestrator,
+) -> None:
+    """Main /model with session == config across providers updates config.model
+    and config.provider (unchanged behavior)."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "opus"
+    orch._config.provider = "claude"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+
+    await switch_model(orch, main, "o3")
+
+    assert orch._config.model == "o3"
+    assert orch._config.provider == "codex"
+
+
+async def test_topic_model_does_not_touch_config_provider(
+    orch: Orchestrator,
+) -> None:
+    """Topic /model never mutates the global config.provider."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+
+    await switch_model(orch, key, "sonnet")
+
+    assert orch._config.provider == "codex"   # untouched from a topic
+    assert orch._config.model == "gpt-5.2-codex"
+
+
+# -- main /model re-aligns the global default to a diverged session model -----
+
+
+async def test_main_model_realigns_default_to_session_model(
+    orch: Orchestrator,
+) -> None:
+    """Main /model <session's model> updates the global default even when the
+    session already runs that model (config.model had diverged).
+
+    Session opus, config gpt-5.2-codex; /model opus is not a no-op in the main
+    chat because it still re-aligns config.model to opus.
+    """
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+
+    result = await switch_model(orch, main, "opus")
+
+    assert "Already running" not in result
+    assert orch._config.model == "opus"          # global default re-aligned
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.model == "opus"                # session unchanged
+
+
+async def test_main_model_same_as_config_is_noop(orch: Orchestrator) -> None:
+    """Main /model when session == config == model is a real no-op."""
+    orch._config.model = "opus"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+
+    result = await switch_model(orch, main, "opus")
+
+    assert "Already running" in result
+
+
+async def test_topic_model_same_model_is_noop(orch: Orchestrator) -> None:
+    """Topic /model with the session's current model is a no-op regardless of
+    config.model (is_topic short-circuits on same_model alone)."""
+    orch._config.model = "gpt-5.2-codex"
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+
+    result = await switch_model(orch, key, "opus")
+
+    assert "Already running" in result
+    assert orch._config.model == "gpt-5.2-codex"  # config untouched from a topic
+
+
+# -- main provider switch re-validates the SESSION effort (current_effort) -----
+
+
+async def test_main_provider_switch_resets_diverged_session_effort(
+    orch: Orchestrator,
+) -> None:
+    """Main /model provider switch re-validates the active session's effort, not
+    just config's. Session claude/opus+max, config codex/medium; /model gpt-5.2-codex
+    must reset the session effort to a codex-valid value (max is unsupported).
+
+    Guards the is_topic gate on ``current_effort``: without it the session ``max``
+    would survive into a codex session and reach the CLI as invalid.
+    """
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    orch._config.reasoning_effort = "medium"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus", reasoning_effort="max"
+    )
+    await orch._sessions.update_session(session)
+
+    orch._observers.codex_cache_obs = None  # exercise the fallback efforts
+    await switch_model(orch, main, "gpt-5.2-codex")
+
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.model == "gpt-5.2-codex"
+    assert synced.reasoning_effort == "medium"  # max reset to a codex-valid value
+
+
+async def test_main_same_provider_switch_carries_session_effort(
+    orch: Orchestrator,
+) -> None:
+    """Main /model within the same provider (claude->claude) carries the session's
+    effort unchanged (no provider switch -> no re-validation)."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "opus"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus", reasoning_effort="max"
+    )
+    await orch._sessions.update_session(session)
+
+    await switch_model(orch, main, "sonnet")
+
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.model == "sonnet"
+    assert synced.reasoning_effort == "max"  # carried, still claude-valid
+
+
+# -- /model re-aligns a diverged main session (old computed from session) ------
+
+
+async def test_main_model_realigns_diverged_session(orch: Orchestrator) -> None:
+    """Main /model when the session model has diverged from config.model still
+    syncs the session and keeps config.model at the requested target.
+
+    Repro: session opus, config gpt-5.2-codex; /model gpt-5.2-codex must sync the
+    session to gpt-5.2-codex (old is the session model, so not same_model) rather
+    than no-op because old happened to equal config.model.
+    """
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "gpt-5.2-codex"
+    orch._config.provider = "codex"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+
+    result = await switch_model(orch, main, "gpt-5.2-codex")
+
+    assert "Already running" not in result
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.model == "gpt-5.2-codex"          # session re-aligned
+    assert orch._config.model == "gpt-5.2-codex"    # global default preserved
+
+
+async def test_main_model_normal_switch_changes_both(orch: Orchestrator) -> None:
+    """Main /model with session == config switches both the session and the
+    global default (unchanged upstream behavior)."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "opus"
+    main = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(
+        main, provider="claude", model="opus"
+    )
+    await orch._sessions.update_session(session)
+
+    await switch_model(orch, main, "sonnet")
+
+    synced = await orch._sessions.get_active(main)
+    assert synced is not None
+    assert synced.model == "sonnet"             # session changed
+    assert orch._config.model == "sonnet"       # global default changed
+
+
+async def test_topic_model_unchanged_by_old_fix(orch: Orchestrator) -> None:
+    """Topic /model still syncs the topic session and never touches config."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    orch._config.model = "opus"
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="claude", model="opus")
+
+    await switch_model(orch, key, "sonnet")
+
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.model == "sonnet"        # topic session synced
+    assert orch._config.model == "opus"     # global default untouched
+
+
+async def test_codex_topic_effort_is_session_scoped(orch: Orchestrator) -> None:
+    """Codex effort change in a topic is session-scoped too (not just claude)."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    key = SessionKey(chat_id=1, topic_id=7)
+    await orch._sessions.resolve_session(key, provider="codex", model="gpt-5.2-codex")
+    global_before = orch._config.reasoning_effort
+    with _with_codex_cache(orch):
+        await switch_model(orch, key, "gpt-5.2-codex", reasoning_effort="high")
+    session = await orch._sessions.get_active(key)
+    assert session is not None
+    assert session.reasoning_effort == "high"
+    assert orch._config.reasoning_effort == global_before

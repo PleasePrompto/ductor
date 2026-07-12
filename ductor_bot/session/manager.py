@@ -94,6 +94,7 @@ class SessionData:
     topic_name: str | None
     provider: str
     model: str
+    reasoning_effort: str
     created_at: str
     last_active: str
     provider_sessions: dict[str, ProviderSessionData] = field(default_factory=dict)
@@ -105,6 +106,7 @@ class SessionData:
         topic_name = _as_optional_str(raw.pop("topic_name", None))
         provider = _as_str(raw.pop("provider", "claude"), default="claude")
         model = _as_str(raw.pop("model", "opus"), default="opus")
+        reasoning_effort = _as_str(raw.pop("reasoning_effort", ""), default="")
         created_at = _as_str(raw.pop("created_at", ""), default="")
         last_active = _as_str(raw.pop("last_active", ""), default="")
         provider_sessions = _as_mapping(raw.pop("provider_sessions", None))
@@ -121,6 +123,7 @@ class SessionData:
         self.topic_name = topic_name
         self.provider = provider
         self.model = model
+        self.reasoning_effort = reasoning_effort
 
         now = datetime.now(UTC).isoformat()
         self.created_at = created_at or now
@@ -284,12 +287,39 @@ class SessionManager:
         session.topic_name = self._topic_name_resolver(session.chat_id, session.topic_id)
         return True
 
+    async def _preserve_existing_session(
+        self,
+        existing: SessionData,
+        sessions: dict[str, SessionData],
+        preserve_existing_target: bool,
+        effort: str,
+    ) -> tuple[SessionData, bool] | None:
+        """Preserve the existing model/provider target, capturing effort on first use.
+
+        Returns (session, is_new) when preserved, else None to fall through to
+        the normal resolve/apply path.
+        """
+        if not (
+            preserve_existing_target
+            and bool(existing.provider.strip())
+            and bool(existing.model.strip())
+        ):
+            return None
+        save = self._apply_topic_name(existing)
+        if not existing.reasoning_effort.strip():
+            existing.reasoning_effort = effort
+            save = True
+        if save:
+            await self._save(sessions)
+        return existing, not bool(existing.session_id)
+
     async def resolve_session(
         self,
         key: SessionKey,
         *,
         provider: str | None = None,
         model: str | None = None,
+        reasoning_effort: str | None = None,
         preserve_existing_target: bool = False,
     ) -> tuple[SessionData, bool]:
         """Returns (session, is_new). Reuses if fresh, creates if stale."""
@@ -299,16 +329,14 @@ class SessionManager:
 
         prov = provider or self._config.provider
         model_name = model or self._config.model
+        effort = reasoning_effort or self._config.reasoning_effort
 
         if existing and self._is_fresh(existing):
-            if (
-                preserve_existing_target
-                and bool(existing.provider.strip())
-                and bool(existing.model.strip())
-            ):
-                if self._apply_topic_name(existing):
-                    await self._save(sessions)
-                return existing, not bool(existing.session_id)
+            preserved = await self._preserve_existing_session(
+                existing, sessions, preserve_existing_target, effort
+            )
+            if preserved is not None:
+                return preserved
             changed = False
             if existing.provider != prov:
                 logger.info("Provider switch %s -> %s", existing.provider, prov)
@@ -316,6 +344,9 @@ class SessionManager:
                 changed = True
             if existing.model != model_name:
                 existing.model = model_name
+                changed = True
+            if existing.reasoning_effort != effort:
+                existing.reasoning_effort = effort
                 changed = True
             if self._apply_topic_name(existing):
                 changed = True
@@ -334,6 +365,7 @@ class SessionManager:
             topic_name=topic_name,
             provider=prov,
             model=model_name,
+            reasoning_effort=effort,
             provider_sessions={},
         )
         sessions[skey] = new
@@ -515,8 +547,9 @@ class SessionManager:
         *,
         provider: str | None = None,
         model: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
-        """Persist provider/model changes without touching activity counters."""
+        """Persist provider/model/effort changes without touching activity counters."""
         async with self._lock:
             sessions = await self._load()
             skey = session.session_key.storage_key
@@ -530,6 +563,9 @@ class SessionManager:
                 changed = True
             if model is not None and current.model != model:
                 current.model = model
+                changed = True
+            if reasoning_effort is not None and current.reasoning_effort != reasoning_effort:
+                current.reasoning_effort = reasoning_effort
                 changed = True
 
             needs_model_migration = False
@@ -547,6 +583,7 @@ class SessionManager:
             # Keep caller reference aligned with persisted target.
             session.provider = current.provider
             session.model = current.model
+            session.reasoning_effort = current.reasoning_effort
 
     def _raw_entry_missing_model(self, storage_key: str) -> bool:
         """Return True when raw session JSON exists but has no ``model`` key.

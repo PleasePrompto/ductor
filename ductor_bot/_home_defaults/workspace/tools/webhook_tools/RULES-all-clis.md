@@ -16,8 +16,8 @@ Scripts for managing incoming HTTP webhook endpoints.
    - **If Codex:** `gpt-5.5` (recommended), `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex-spark`
    - **If Gemini:** `gemini-2.5-pro` (recommended), `gemini-2.5-flash`, `gemini-3-pro-preview`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`, `gemini-3.5-flash`
 
-3. **If Codex: Which thinking level?**
-   - `low`, `medium` (default), `high`, `xhigh`
+3. **If Codex or Claude: Which thinking level?**
+   - `low`, `medium` (default), `high`, `xhigh`; Claude also supports `max`
 
 4. **Should this webhook respect quiet hours?**
    - Ask: "Should this webhook skip execution during specific hours (e.g., at night)?"
@@ -145,7 +145,7 @@ python3 tools/webhook_tools/webhook_add.py \
 **Available parameters for cron_task mode:**
 - `--provider` - CLI provider: `claude`, `codex`, or `gemini` (optional)
 - `--model` - Model choice (optional)
-- `--reasoning-effort` - Codex only: thinking level (optional)
+- `--reasoning-effort` - Codex and Claude: thinking level (optional)
 - `--cli-parameters` - Advanced: JSON array (only if user explicitly requests)
 
 ### List
@@ -260,8 +260,8 @@ Webhooks in `cron_task` mode can override global config settings in `webhooks.js
     - `"gemini-3.1-pro-preview"` - Latest pro preview
     - `"gemini-3.1-flash-lite"` - Lightweight fast preview
     - `"gemini-3.5-flash"` - Latest fast model
-- `reasoning_effort`: Thinking level (Codex only, optional, defaults to `"medium"`)
-  - Supported values: `"low"`, `"medium"`, `"high"`, `"xhigh"`
+- `reasoning_effort`: Thinking level (Codex and Claude, optional, defaults to `"medium"`)
+  - Supported values: `"low"`, `"medium"`, `"high"`, `"xhigh"`; Claude also `"max"`
 - `cli_parameters`: List of additional CLI flags (optional, advanced users only)
 
 **Fallback behavior:**
@@ -309,7 +309,7 @@ Gemini webhook:
 ```
 
 **Use cases:**
-- High-reasoning analysis: `"reasoning_effort": "high"` (Codex only)
+- High-reasoning analysis: `"reasoning_effort": "high"` (Codex and Claude)
 - Provider-specific webhook: `"provider": "gemini"` while main agent uses Claude
 - Webhook-specific model: Different model per webhook
 - Advanced CLI flags: `"cli_parameters": [...]` (only if explicitly needed)

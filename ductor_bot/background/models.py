@@ -18,6 +18,7 @@ class BackgroundSubmit:
     resume_session_id: str = ""
     provider_override: str = ""
     model_override: str = ""
+    reasoning_effort_override: str = ""
 
 
 @dataclass(slots=True)
@@ -31,6 +32,7 @@ class BackgroundTask:
     thread_id: int | None
     provider: str
     model: str
+    reasoning_effort: str
     submitted_at: float
     asyncio_task: asyncio.Task[None] | None = field(default=None, repr=False)
     session_name: str = ""

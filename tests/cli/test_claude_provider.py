@@ -170,6 +170,27 @@ class TestBuildCommand:
         cmd = cli._build_command("go")
         assert "None" not in cmd
 
+    def test_effort_passed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, reasoning_effort="high")
+        cmd = cli._build_command("go")
+        assert "--effort" in cmd
+        assert cmd[cmd.index("--effort") + 1] == "high"
+
+    def test_effort_max_passed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, reasoning_effort="max")
+        cmd = cli._build_command("go")
+        assert cmd[cmd.index("--effort") + 1] == "max"
+
+    def test_effort_skipped_when_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, reasoning_effort="default")
+        cmd = cli._build_command("go")
+        assert "--effort" not in cmd
+
+    def test_effort_skipped_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, reasoning_effort="")
+        cmd = cli._build_command("go")
+        assert "--effort" not in cmd
+
     @pytest.mark.parametrize("model", ["haiku", "sonnet", "opus"])
     def test_model_variants(self, monkeypatch: pytest.MonkeyPatch, model: str) -> None:
         cli = _make_cli(monkeypatch, model=model)

@@ -32,12 +32,13 @@ Scripts for creating, editing, listing, and removing scheduled jobs.
      - `gemini-3.1-flash-lite` - Lightweight fast preview
      - `gemini-3.5-flash` - Latest fast model
 
-3. **If Codex: Which thinking level?**
+3. **If Codex or Claude: Which thinking level?**
    - `low` - Fast, surface-level reasoning
    - `medium` - Balanced (default)
    - `high` - Extended thinking
    - `xhigh` - Maximum reasoning depth
-   - Most current Codex models support `low`, `medium`, `high`, `xhigh`
+   - `max` - Deepest reasoning (Claude only)
+   - Most current Codex models support `low`, `medium`, `high`, `xhigh`; Claude also supports `max`
 
 4. **Should this job respect quiet hours?**
    - Ask: "Should this job skip execution during specific hours (e.g., at night)?"
@@ -111,7 +112,7 @@ python3 tools/cron_tools/cron_add.py \
 **Available parameters:**
 - `--provider` - CLI provider: `claude`, `codex`, or `gemini` (optional, uses global config if omitted)
 - `--model` - Model choice (optional, uses global config if omitted)
-- `--reasoning-effort` - Codex only: thinking level (optional, defaults to `medium`)
+- `--reasoning-effort` - Codex and Claude: thinking level (optional, defaults to `medium`)
 - `--cli-parameters` - Advanced: JSON array of CLI flags (only if user explicitly requests)
 
 ### List Jobs

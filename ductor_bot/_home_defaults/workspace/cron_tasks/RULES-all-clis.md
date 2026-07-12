@@ -16,7 +16,7 @@ For cron tool commands (add/edit/remove/list), see `tools/cron_tools/CLAUDE.md`.
    - Gemini models: `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3-pro-preview`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite`, `gemini-3.5-flash`
    - Default if user doesn't specify: Use global config model
 
-3. **If Codex provider: Which thinking level?** (`--reasoning-effort <level>`)
+3. **If Codex or Claude provider: Which thinking level?** (`--reasoning-effort <level>`)
    - Options: `low`, `medium`, `high`, `xhigh`
    - Default if user doesn't specify: `medium` (model default)
 
@@ -42,7 +42,7 @@ You: "I'll create a cron job to check weather every 3 minutes. Let me configure 
    - If Codex: `gpt-5.5` (recommended), `gpt-5.4`, `gpt-5.4-mini`, etc.
    - If Gemini: `gemini-2.5-pro` (recommended), `gemini-2.5-flash`, `gemini-3.1-flash-lite`, etc.
 
-3. **Thinking level** (Codex only): How deeply should it reason?
+3. **Thinking level** (Codex and Claude): How deeply should it reason?
    - `low`, `medium` (default), `high`, `xhigh`
 
 Please specify your choices, or I'll use global config defaults."
@@ -97,7 +97,7 @@ Each cron task can override global config settings in `cron_jobs.json`:
     - `"gemini-3.1-pro-preview"` - Latest pro preview
     - `"gemini-3.1-flash-lite"` - Lightweight fast preview
     - `"gemini-3.5-flash"` - Latest fast model
-- `reasoning_effort`: Thinking level (Codex only, optional, defaults to `"medium"`)
+- `reasoning_effort`: Thinking level (Codex and Claude, optional, defaults to `"medium"`)
   - Typical values: `"low"`, `"medium"`, `"high"`, `"xhigh"`
 - `cli_parameters`: List of additional CLI flags (optional, advanced users only)
 
@@ -146,7 +146,7 @@ Gemini task:
 ```
 
 **Use cases:**
-- High-reasoning analysis (Codex only): `"reasoning_effort": "high"`
+- High-reasoning analysis (Codex and Claude): `"reasoning_effort": "high"`
 - Provider-specific task: `"provider": "gemini"` while main agent uses Claude
 - Task-specific model: Different model per cron job
 - Advanced CLI flags: `"cli_parameters": [...]` (only if user explicitly requests)

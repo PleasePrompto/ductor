@@ -67,6 +67,7 @@ async def _inject_prompt(  # noqa: PLR0913
         process_label=process_label,
         provider_override=active.provider if active else None,
         model_override=active.model if active else None,
+        effort_override=(active.reasoning_effort or None) if active else None,
         resume_session=resume_id,
         timeout_seconds=orch._config.cli_timeout,
     )
@@ -207,6 +208,7 @@ async def handle_interagent_message(
         chat_id=chat_id,
         transport=transport,
         process_label=f"interagent:{sender}",
+        effort_override=ns.reasoning_effort or None,
         resume_session=ns.session_id or None,
         timeout_seconds=orch._config.cli_timeout,
     )
@@ -248,6 +250,7 @@ async def handle_interagent_message(
             chat_id=chat_id,
             transport=transport,
             process_label=f"interagent:{sender}",
+            effort_override=ns.reasoning_effort or None,
             resume_session=None,
             timeout_seconds=orch._config.cli_timeout,
         )

@@ -12,7 +12,11 @@ from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.orchestrator.selectors.cron_selector import cron_selector_start
-from ductor_bot.orchestrator.selectors.model_selector import model_selector_start, switch_model
+from ductor_bot.orchestrator.selectors.model_selector import (
+    effort_selector_start,
+    model_selector_start,
+    switch_model,
+)
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
 from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
@@ -61,6 +65,13 @@ async def cmd_model(orch: Orchestrator, key: SessionKey, text: str) -> Orchestra
     name = parts[1].strip()
     result_text = await switch_model(orch, key, name)
     return OrchestratorResult(text=result_text)
+
+
+async def cmd_effort(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /effort: show reasoning-effort buttons for the active provider."""
+    logger.info("Effort requested")
+    resp = await effort_selector_start(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
@@ -292,6 +303,18 @@ def _build_agent_health_block(orch: Orchestrator) -> str:
     return "\n".join(agent_lines)
 
 
+def _status_effort_suffix(orch: Orchestrator, model_name: str, effort: str) -> str:
+    """Return the ``/status`` reasoning-effort line for effort-using providers.
+
+    *effort* is the effective effort (the session's value in a topic, else the
+    global default) so /status reflects what the next turn actually uses.
+    """
+    provider = orch.models.provider_for(model_name)
+    if provider in ("codex", "claude") and effort and effort != "default":
+        return f"\n{t('status.effort_line', effort=effort)}"
+    return ""
+
+
 async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     """Build the /status response text."""
     runtime_model, _runtime_provider = orch.resolve_runtime_target(orch._config.model)
@@ -314,9 +337,13 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             f"{t('status.tokens_line', tokens=f'{session.total_tokens:,}')}\n"
             f"{t('status.cost_line', cost=f'{session.total_cost_usd:.4f}')}\n"
             f"{_model_line(session.model)}"
+            f"{_status_effort_suffix(orch, session.model, session.reasoning_effort or orch._config.reasoning_effort)}"
         )
     else:
-        session_block = f"{t('status.no_session')}\n{_model_line(runtime_model)}"
+        session_block = (
+            f"{t('status.no_session')}\n"
+            f"{_model_line(runtime_model)}{_status_effort_suffix(orch, runtime_model, orch._config.reasoning_effort)}"
+        )
 
     bg_tasks = orch.active_background_tasks(key.chat_id)
     bg_block = ""

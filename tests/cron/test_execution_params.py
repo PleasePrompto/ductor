@@ -133,6 +133,58 @@ class TestBuildCmdWithTaskExecutionConfig:
         config_idx = result.cmd.index("-c")
         assert result.cmd[config_idx + 1] == "model_reasoning_effort=high"
 
+    def test_build_cmd_claude_reasoning_effort(self) -> None:
+        """Claude command emits --effort (not the codex -c flag)."""
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="max",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
+        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
+            result = build_cmd(exec_config, "deep task")
+        assert result is not None
+        assert "--effort" in result.cmd
+        assert result.cmd[result.cmd.index("--effort") + 1] == "max"
+        assert "model_reasoning_effort" not in " ".join(result.cmd)
+
+    def test_build_cmd_claude_skips_effort_on_medium(self) -> None:
+        """Claude command omits --effort for the default medium effort."""
+        exec_config = TaskExecutionConfig(
+            provider="claude",
+            model="opus",
+            reasoning_effort="medium",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
+        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
+            result = build_cmd(exec_config, "task")
+        assert result is not None
+        assert "--effort" not in result.cmd
+
+    def test_build_cmd_gemini_emits_no_effort(self) -> None:
+        """Gemini command emits neither --effort nor the codex -c flag."""
+        exec_config = TaskExecutionConfig(
+            provider="gemini",
+            model="gemini-2.5-pro",
+            reasoning_effort="high",
+            cli_parameters=[],
+            permission_mode="bypassPermissions",
+            working_dir="/tmp",
+            file_access="all",
+        )
+        with patch("ductor_bot.cron.execution.find_gemini_cli", return_value="/usr/bin/gemini"):
+            result = build_cmd(exec_config, "task")
+        if result is not None:
+            joined = " ".join(result.cmd)
+            assert "--effort" not in result.cmd
+            assert "model_reasoning_effort" not in joined
+
     def test_build_cmd_codex_reasoning_effort_low(self) -> None:
         """Codex command includes reasoning effort flag for low effort."""
         exec_config = TaskExecutionConfig(
@@ -248,3 +300,69 @@ class TestBuildCmdWithTaskExecutionConfig:
         assert result.cmd.index("-c") < separator_idx
         assert result.cmd.index("--verbose") < separator_idx
         assert result.cmd.index("--no-cache") < separator_idx
+
+
+
+class TestResolveToBuildEffortFlow:
+    """End-to-end: resolve_cli_config -> build_cmd must deliver effort to the CLI."""
+
+    def _base(self, **kw):
+        from ductor_bot.config import AgentConfig
+
+        return AgentConfig(provider="claude", model="opus", reasoning_effort="high", **kw)
+
+    def _codex_cache(self):
+        from ductor_bot.cli.codex_cache import CodexModelCache
+        from ductor_bot.cli.codex_discovery import CodexModelInfo
+
+        return CodexModelCache(
+            last_updated="2026-02-10T12:00:00",
+            models=[
+                CodexModelInfo(
+                    id="gpt-5.2-codex", display_name="c", description="d",
+                    supported_efforts=("low", "medium", "high", "xhigh"),
+                    default_effort="medium", is_default=True,
+                )
+            ],
+        )
+
+    def test_claude_effort_reaches_cli(self) -> None:
+        from ductor_bot.cli.param_resolver import resolve_cli_config
+
+        cfg = resolve_cli_config(self._base(), self._codex_cache())
+        assert cfg.reasoning_effort == "high"  # not dropped by resolve
+        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
+            result = build_cmd(cfg, "p")
+        assert result is not None
+        assert "--effort" in result.cmd
+        assert result.cmd[result.cmd.index("--effort") + 1] == "high"
+        assert "model_reasoning_effort" not in " ".join(result.cmd)
+
+    def test_codex_effort_reaches_cli(self) -> None:
+        from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
+
+        cfg = resolve_cli_config(
+            self._base(),
+            self._codex_cache(),
+            task_overrides=TaskOverrides(provider="codex", model="gpt-5.2-codex",
+                                         reasoning_effort="high"),
+        )
+        assert cfg.reasoning_effort == "high"
+        with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/codex"):
+            result = build_cmd(cfg, "p")
+        assert result is not None
+        assert "-c" in result.cmd
+        assert "model_reasoning_effort=high" in result.cmd
+        assert "--effort" not in result.cmd
+
+    def test_gemini_drops_effort(self) -> None:
+        from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
+        from ductor_bot.config import set_gemini_models
+
+        set_gemini_models(frozenset({"gemini-2.5-pro"}))
+        cfg = resolve_cli_config(
+            self._base(),
+            self._codex_cache(),
+            task_overrides=TaskOverrides(provider="gemini", model="gemini-2.5-pro"),
+        )
+        assert cfg.reasoning_effort == ""

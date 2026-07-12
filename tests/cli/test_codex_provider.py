@@ -305,6 +305,22 @@ class TestBuildCommand:
         assert "SYS" in final_arg
         assert "user msg" in final_arg
 
+    def test_resume_reasoning_effort_reasserted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Codex stores the session's creation-time effort, so a later per-session
+        # effort change must be re-sent via -c on resume to take effect.
+        cli = _make_cli(monkeypatch, reasoning_effort="high")
+        cmd = cli._build_command("hello", resume_session="thread-abc")
+        assert "-c" in cmd
+        idx = cmd.index("-c")
+        assert cmd[idx + 1] == "model_reasoning_effort=high"
+        # -c must precede the "--" session separator.
+        assert cmd.index("-c") < cmd.index("--")
+
+    def test_resume_default_effort_omits_flag(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, reasoning_effort="default")
+        cmd = cli._build_command("hello", resume_session="thread-abc")
+        assert "-c" not in cmd
+
 
 # ---------------------------------------------------------------------------
 # _parse_output (static method)

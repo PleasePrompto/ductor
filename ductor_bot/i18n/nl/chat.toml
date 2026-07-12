@@ -107,6 +107,7 @@ header = "**Status**"
 no_session = "Geen actieve sessie."
 model_line = "Model: {model}"
 model_line_configured = "Model: {model} (geconfigureerd: {configured})"
+effort_line = "Inzet: {effort}"
 topic_line = "Onderwerp: {topic}"
 session_line = "Sessie: `{sid}`"
 messages_line = "Berichten: {count}"
@@ -218,7 +219,7 @@ model_line = "Model: {model}"
 model_change = "Model: {old} -> {new}"
 provider_change = "Provider: {old} -> {new}"
 reasoning_line = "Reasoning: {effort}"
-effort_updated = "Reasoning-niveau bijgewerkt."
+effort_updated = "Reasoning-niveau ingesteld op {effort}."
 already_running = "Draait al op {model}. Geen wijzigingen."
 
 resume_hint = """\
@@ -450,3 +451,7 @@ changelog_header = "**Changelog v{version}**"
 
 [multiagent]
 async_task_received = "📥 **Async taak ontvangen** van `{sender}`\nSessie: `{session}` · Taak-ID: `{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "Kies de redeneerinzet voor {model}:"
+unsupported = "Redeneerinzet is niet instelbaar voor provider `{provider}`."

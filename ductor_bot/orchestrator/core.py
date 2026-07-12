@@ -29,6 +29,7 @@ from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
+    cmd_effort,
     cmd_memory,
     cmd_model,
     cmd_reset,
@@ -91,6 +92,7 @@ class NamedSessionRequest:
     thread_id: int | None
     provider_override: str | None = None
     model_override: str | None = None
+    reasoning_effort_override: str | None = None
 
 
 @dataclass(slots=True)
@@ -418,6 +420,7 @@ class Orchestrator:
         reg.register_async("/status", cmd_status)
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
+        reg.register_async("/effort", cmd_effort)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
@@ -573,7 +576,20 @@ class Orchestrator:
                 request.provider_override
             )
 
-        ns = self._named_sessions.create(chat_id, provider_name, model_name, prompt)
+        # Effective effort at creation: explicit override or the global default
+        # (mirrors model_name from self._config.model). Re-validate against the
+        # session's resolved provider and reset to a safe default when the
+        # carried-over effort is unsupported (e.g. global Claude ``max`` -> a
+        # @codex session) so an invalid value never reaches the CLI. Mirrors the
+        # provider-switch reset in model_selector.switch_model.
+        from ductor_bot.orchestrator.selectors.model_selector import _validate_reasoning_effort
+
+        effort = request.reasoning_effort_override or self._config.reasoning_effort
+        if effort and _validate_reasoning_effort(self, model_name, effort) is not None:
+            effort = "medium"
+        ns = self._named_sessions.create(
+            chat_id, provider_name, model_name, prompt, reasoning_effort=effort
+        )
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
         sub = BackgroundSubmit(
             chat_id=chat_id,
@@ -583,6 +599,7 @@ class Orchestrator:
             session_name=ns.name,
             provider_override=provider_name,
             model_override=model_name,
+            reasoning_effort_override=effort,
         )
         task_id = self._observers.background.submit(sub, exec_config)
         return task_id, ns.name
@@ -615,6 +632,14 @@ class Orchestrator:
 
         self._named_sessions.mark_running(chat_id, session_name, prompt)
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
+        # Follow-up keeps the session's provider/model; defensively re-validate
+        # the carried-over effort against ns.model (resets a stale/unsupported
+        # value to a safe default before it reaches the CLI).
+        from ductor_bot.orchestrator.selectors.model_selector import _validate_reasoning_effort
+
+        followup_effort = ns.reasoning_effort
+        if followup_effort and _validate_reasoning_effort(self, ns.model, followup_effort) is not None:
+            followup_effort = "medium"
         sub = BackgroundSubmit(
             chat_id=chat_id,
             prompt=prompt,
@@ -624,6 +649,7 @@ class Orchestrator:
             resume_session_id=ns.session_id,
             provider_override=ns.provider,
             model_override=ns.model,
+            reasoning_effort_override=followup_effort,
         )
         return self._observers.background.submit(sub, exec_config)
 
