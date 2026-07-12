@@ -373,6 +373,7 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | Command | Description |
 |---|---|
 | `/model` | Interactive model/provider selector |
+| `/effort` | Reasoning effort for the current chat/topic (Claude & Codex) |
 | `/new` | Reset the configured default-provider session for this chat/topic |
 | `/reset` | Reset the currently active provider session for this chat/topic |
 | `/stop` | Stop current message and discard queued messages |

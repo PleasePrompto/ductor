@@ -3,13 +3,14 @@ This file gives coding agents a current map of the repository.
 ## Project Overview
 
 ductor is a multi-transport chat orchestrator for the official provider CLIs (`claude`, `codex`, `gemini`, `agy`).
-It runs Telegram and/or Matrix, can expose an optional direct WebSocket API, keeps state under `~/.ductor`, and supervises the main agent plus optional sub-agents in one asyncio process.
+It runs Telegram, Matrix and/or Slack, can expose an optional direct WebSocket API, keeps state under `~/.ductor`, and supervises the main agent plus optional sub-agents in one asyncio process.
 
 Stack:
 
 - Python 3.11+
 - aiogram 3.x (Telegram)
 - matrix-nio (Matrix, optional extra)
+- slack-bolt (Slack, optional extra)
 - aiohttp (webhook server, internal API, optional direct API)
 - Pydantic 2.x
 - asyncio
@@ -68,6 +69,7 @@ Observer / TaskHub / InterAgentBus callback
 | `messenger/` | transport protocol, capabilities, notifications, registry, multi-transport adapter |
 | `messenger/telegram/` | Telegram transport: middleware, handlers, startup, callback routing, file/media UX |
 | `messenger/matrix/` | Matrix transport: sync loop, auth, segment streaming, reaction buttons, media |
+| `messenger/slack/` | Slack transport: Socket Mode bot, native streaming, ID mapping, sender/media |
 | `orchestrator/` | command routing, directives/hooks, flows, provider/session/task wiring, lifecycle split |
 | `bus/` | unified `Envelope`, `MessageBus`, shared `LockPool`, delivery adapters |
 | `cli/` | provider wrappers, stream parsing, auth detection, model caches, process registry |

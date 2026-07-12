@@ -79,7 +79,7 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `max_session_messages` | `int \| None` | `None` | Session rollover limit |
 | `permission_mode` | `str` | `"bypassPermissions"` | Provider sandbox/approval mode |
 | `cli_timeout` | `float` | `1800.0` | Legacy/global timeout. Still used by cron/webhook `cron_task`, inter-agent turns, stale-process heartbeat cleanup, and as fallback for unknown timeout paths |
-| `reasoning_effort` | `str` | `"medium"` | Default Codex reasoning level |
+| `reasoning_effort` | `str` | `"medium"` | Default reasoning effort for Claude (`--effort`) and Codex (`-c model_reasoning_effort`); per-session override via `/effort` |
 | `append_system_prompt_files` | `list[str]` | `[]` | Workspace-relative files appended to the system prompt on every agent-driven turn (chat, named sessions, inter-agent, tasks); paths escaping the workspace and files over 256 KiB are skipped |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
@@ -566,15 +566,19 @@ Returns `ZoneInfo` when available, otherwise a UTC tzinfo fallback object with `
 
 ## `reasoning_effort`
 
-UI values: `low`, `medium`, `high`, `xhigh`.
+UI values: `low`, `medium`, `high`, `xhigh` (Codex and Claude); Claude additionally supports `max`.
+
+Effort is resolved **per session**: each forum topic can run at its own effort
+(`/effort` or the `/model` thinking-level step), the main chat / DM sets the
+global default. Codex resumes re-assert both model and effort.
 
 Main-chat flow:
 
-`AgentConfig` -> `CLIServiceConfig` -> `CLIConfig` -> `CodexCLI` (`-c model_reasoning_effort=<value>` when relevant).
+`AgentConfig` -> session capture -> `AgentRequest.effort_override` -> `CLIConfig` -> `ClaudeCLI` (`--effort <value>`) / `CodexCLI` (`-c model_reasoning_effort=<value>`).
 
 Automation flow:
 
-- `resolve_cli_config()` applies reasoning effort only for Codex models that support the requested effort.
+- `resolve_cli_config()` applies reasoning effort only for models that support the requested effort.
 
 ## Codex Model Cache
 

@@ -145,6 +145,11 @@ Fallback behavior (Matrix):
 
 - if the target room cannot be resolved, the result falls back to broadcast across all allowed rooms.
 
+Delivery tracking (#160):
+
+- execution status and delivery status are tracked separately: `last_delivery_status` (`ok` / `failed` / `skipped`), `last_delivery_error`, and — only on delivery failure — the full `last_result_text` are persisted per job in `cron_jobs.json`, so an undelivered result can be resent without re-running the job.
+- `/cron` marks affected jobs with `(delivery failed)`; `cron_list.py` exposes the preserved fields to the agent.
+
 ## Environment variables
 
 The CLI subprocess receives routing context via environment variables:
