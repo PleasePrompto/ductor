@@ -96,6 +96,14 @@ async def test_appended_block_skips_blank_files(tmp_path: Path) -> None:
     assert block == "beta"
 
 
+async def test_appended_block_skips_oversized_file(tmp_path: Path) -> None:
+    paths = _ws(tmp_path)
+    (paths.workspace / "huge.md").write_text("x" * (256 * 1024 + 1))
+    (paths.workspace / "small.md").write_text("small")
+    block = await build_appended_files_block(paths, ["huge.md", "small.md"])
+    assert block == "small"
+
+
 async def test_appended_block_blocks_absolute_path(tmp_path: Path) -> None:
     paths = _ws(tmp_path)
     secret = tmp_path / "secret.md"

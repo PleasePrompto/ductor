@@ -80,6 +80,7 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `permission_mode` | `str` | `"bypassPermissions"` | Provider sandbox/approval mode |
 | `cli_timeout` | `float` | `1800.0` | Legacy/global timeout. Still used by cron/webhook `cron_task`, inter-agent turns, stale-process heartbeat cleanup, and as fallback for unknown timeout paths |
 | `reasoning_effort` | `str` | `"medium"` | Default Codex reasoning level |
+| `append_system_prompt_files` | `list[str]` | `[]` | Workspace-relative files appended to the system prompt on every agent-driven turn (chat, named sessions, inter-agent, tasks); paths escaping the workspace and files over 256 KiB are skipped |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
 | `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"` or `"matrix"` |
