@@ -15,6 +15,7 @@ from ductor_bot.background import (
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
+from ductor_bot.cli.types import AgentRequest
 from ductor_bot.config import AgentConfig
 from ductor_bot.cron.manager import CronManager
 from ductor_bot.errors import (
@@ -66,6 +67,7 @@ from ductor_bot.session.manager import SessionData
 from ductor_bot.session.named import NamedSessionRegistry
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
+from ductor_bot.workspace.project_roots import resolve_project_root
 
 if TYPE_CHECKING:
     from ductor_bot.background import BackgroundObserver
@@ -167,6 +169,7 @@ class Orchestrator:
             available_providers=frozenset(),
             process_registry=self._process_registry,
         )
+        self._cli_service.set_working_dir_resolver(self._resolve_request_working_dir)
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
         self._webhook_manager = WebhookManager(hooks_path=paths.webhooks_path)
         self._observers = ObserverManager(config, paths)
@@ -212,6 +215,22 @@ class Orchestrator:
         self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
         self._command_registry = CommandRegistry()
         self._register_commands()
+
+    def _resolve_request_working_dir(self, request: AgentRequest) -> str | None:
+        """Map a CLI request to a per-topic project root, if configured.
+
+        Returns ``None`` (keep the default workspace) for named sessions —
+        their resume consistency depends on a stable working dir — and when
+        no ``project_roots`` entry matches the request's topic.
+        """
+        if request.process_label.startswith("ns:"):
+            return None  # named sessions stay in workspace (resume consistency)
+        return resolve_project_root(
+            self._config.project_roots,
+            chat_id=request.chat_id,
+            topic_id=request.topic_id,
+            topic_name=self._sessions.resolve_topic_name(request.chat_id, request.topic_id),
+        )
 
     @property
     def paths(self) -> DuctorPaths:

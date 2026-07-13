@@ -278,6 +278,15 @@ class SessionManager:
         """Register a callback that resolves ``(chat_id, topic_id)`` to a name."""
         self._topic_name_resolver = resolver
 
+    def resolve_topic_name(self, chat_id: int, topic_id: int | None) -> str | None:
+        """Resolve a topic id to its human-readable name via the registered resolver.
+
+        Returns ``None`` when *topic_id* is ``None`` or no resolver is set.
+        """
+        if topic_id is None or self._topic_name_resolver is None:
+            return None
+        return self._topic_name_resolver(chat_id, topic_id)
+
     def _apply_topic_name(self, session: SessionData) -> bool:
         """Fill ``topic_name`` from the resolver when missing. Returns True if changed."""
         if session.topic_id is None or self._topic_name_resolver is None:

@@ -19,6 +19,8 @@
     "reasoning_effort": "medium",
     "file_access": "all",
     "append_system_prompt_files": [],
+    "_comment_project_roots": "Per-topic working dirs. Key: topic name, '<chat_id>:<topic_id>', or '<topic_id>'; value: directory path (~ expanded). Example: {\"my-project\": \"~/code/my-project\"}. Ignored in Docker mode and for named sessions.",
+    "project_roots": {},
     "gemini_api_key": "null",
     "transport": "telegram",
     "transports": ["telegram"],

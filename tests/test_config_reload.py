@@ -83,6 +83,12 @@ class TestClassifyChanges:
         _, restart = classify_changes(changes)
         assert "unknown_future_field" in restart
 
+    def test_project_roots_is_hot_reloadable(self) -> None:
+        changes = {"project_roots": ({}, {"my-project": "~/code/my-project"})}
+        hot, restart = classify_changes(changes)
+        assert hot == {"project_roots": {"my-project": "~/code/my-project"}}
+        assert restart == []
+
 
 class TestConfigReloader:
     def _write_config(self, path: Path, **overrides: Any) -> AgentConfig:
@@ -204,6 +210,23 @@ class TestConfigReloader:
 
         assert cfg.model == "opus"
         assert applied.get("model") == "opus"
+
+    async def test_project_roots_hot_reload(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.json"
+        cfg = self._write_config(config_path)
+
+        applied: dict[str, Any] = {}
+
+        def capture(_config: AgentConfig, hot: dict[str, Any]) -> None:
+            applied.update(hot)
+
+        reloader = ConfigReloader(config_path, cfg, on_hot_reload=capture)
+
+        self._write_config(config_path, project_roots={"my-project": "~/code/my-project"})
+        await reloader._check()
+
+        assert cfg.project_roots == {"my-project": "~/code/my-project"}
+        assert applied.get("project_roots") == {"my-project": "~/code/my-project"}
 
     async def test_same_content_rewrite_no_callback(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.json"
