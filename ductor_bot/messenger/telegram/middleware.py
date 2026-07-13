@@ -104,7 +104,7 @@ class AuthMiddleware(BaseMiddleware):
         on_rejected: RejectedCallback | None = None,
     ) -> None:
         self._allowed_users = allowed_user_ids
-        self._allowed_groups = allowed_group_ids or set()
+        self._allowed_groups = allowed_group_ids if allowed_group_ids is not None else set()
         self._on_rejected = on_rejected
 
     async def __call__(
