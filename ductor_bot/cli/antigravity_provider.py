@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.cli.antigravity_events import parse_antigravity_json
 from ductor_bot.cli.antigravity_runtime import antigravity_process_env
 from ductor_bot.cli.base import BaseCLI, CLIConfig
@@ -291,7 +292,7 @@ class AntigravityCLI(BaseCLI):
 
 def _safe_command_for_logging(cmd: list[str]) -> list[str]:
     """Return a command safe for debug logs."""
-    safe = [part if len(part) <= 80 else part[:80] + "..." for part in cmd]
+    safe = [part if len(part) <= 80 else part[:80] + "..." for part in redact_cmd_for_log(cmd)]
     if "--print" in cmd and safe:
         safe[-1] = "<prompt>"
     return safe
