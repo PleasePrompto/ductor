@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from ductor_bot.infra.inflight import InflightTracker, InflightTurn
 from ductor_bot.infra.recovery import RecoveryAction, RecoveryPlanner
 
@@ -96,11 +98,14 @@ class TestRecoveryPlannerNamedSessions:
         assert ns_actions[0].session_name == "boldowl"
         assert ns_actions[0].session_id == "sess-ns-1"
 
-    def test_skips_inter_agent_sessions(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        "name", ["ia-research", "ia.main.t3892.xf47692", "ia.main.t10.x255106fd"]
+    )
+    def test_skips_inter_agent_sessions(self, tmp_path: Path, name: str) -> None:
         from ductor_bot.session.named import NamedSession
 
         ns = NamedSession(
-            name="ia-research",
+            name=name,
             chat_id=100,
             provider="claude",
             model="opus",

@@ -6,6 +6,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 from ductor_bot.multiagent.bus import AsyncSendOptions, InterAgentBus
+from ductor_bot.session.named import interagent_session_name
 
 
 def _make_stack(
@@ -261,12 +262,14 @@ class TestBusNewSessionFlag:
             "sender",
             "target",
             "Hello",
-            opts=AsyncSendOptions(new_session=True),
+            opts=AsyncSendOptions(new_session=True, chat_id=777, topic_id=10),
         )
         await asyncio.sleep(0.1)
 
         assert len(call_kwargs) == 1
         assert call_kwargs[0]["new_session"] is True
+        assert call_kwargs[0]["source_chat_id"] == 777
+        assert call_kwargs[0]["source_topic_id"] == 10
 
     async def test_async_send_new_session_false_by_default(self) -> None:
         bus = InterAgentBus()
@@ -347,6 +350,32 @@ class TestBusNotifyRecipient:
         assert call_args[0][0] == 12345  # chat_id
         assert "main" in call_args[0][1]  # sender name in text
         assert "ia-main" in call_args[0][1]  # session name in text
+
+    async def test_notify_uses_scoped_session_name_with_source_context(self) -> None:
+        bus = InterAgentBus()
+        stack = _make_stack()
+        stack.config.allowed_user_ids = [12345]
+        mock_ns = AsyncMock()
+        stack.bot.notification_service = mock_ns
+        bus.register("target", stack)
+
+        from ductor_bot.multiagent.bus import AsyncInterAgentTask
+
+        task = AsyncInterAgentTask(
+            task_id="abc123",
+            sender="main",
+            recipient="target",
+            message="Do something important",
+            chat_id=777,
+            topic_id=10,
+        )
+
+        await bus._notify_recipient(task)
+
+        expected = interagent_session_name("main", 777, 10)
+        text = mock_ns.notify.call_args[0][1]
+        assert expected in text
+        assert "ia-main" not in text
 
     async def test_notify_broadcasts_when_no_users(self) -> None:
         """When no allowed_user_ids, notify_all() is used instead."""

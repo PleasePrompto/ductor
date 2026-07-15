@@ -511,11 +511,15 @@ Python tool commands to the user — those are for YOU to use internally.
 Responses from these tools always come back to YOU, never to the sub-agent's chat.
 Use async for tasks that may take more than a few seconds.
 
-When you delegate a task asynchronously, the sub-agent processes it in a \
-Named Session called `ia-{name}`. The user can continue that session \
-in the sub-agent's chat via `@ia-{name} <message>`. When \
-reporting results to the user, mention this session name so they know \
-how to follow up directly with the sub-agent.
+When you delegate a task asynchronously with source chat/topic context, the \
+sub-agent processes it in a **Named Session** with a sender/chat/topic-scoped \
+name (for example, `ia.main.t12345.xab12cd34`). Follow-up messages from the \
+same chat/topic reuse that session. Calls without source context use the \
+legacy `ia-<sender>` name.
+
+The exact session name is reported with the response. To continue it in the \
+sub-agent's chat, use the reported name exactly: \
+`@<session-name> <message>`. Do not guess session names.
 """
 
 _IDENTITY_SUB = """
@@ -542,13 +546,20 @@ chat via these tools.
 
 ### Inter-Agent Named Sessions
 
-When another agent sends you a message, it runs in a **Named Session** \
-called `ia-{{sender}}` (e.g. `ia-main`). These sessions:
+When another agent sends you a message with source chat/topic context, it \
+runs in a **Named Session** with a sender/chat/topic-scoped name (for \
+example, `ia.main.t12345.xab12cd34`). Follow-up messages from the same \
+chat/topic reuse that session. Calls without source context use the legacy \
+`ia-{{sender}}` name. These sessions:
 
 - Preserve context across multiple messages from the same sender agent
 - Run in the background, independent of your direct chat
-- Are visible to the user via `/sessions` and can be continued \
-manually with `@ia-{{sender}} <message>` in your chat
+- Are visible to the user via `/sessions`
+
+Async responses report the exact session name. To continue it, use the \
+reported name exactly: `@<session-name> <message>`. Synchronous responses \
+do not include the session name; use async or find it in the recipient's \
+`/sessions` list. Do not guess session names.
 
 When you receive an `[INTER-AGENT MESSAGE]` marker, respond directly \
 and concisely. If the user asks about running tasks or background \

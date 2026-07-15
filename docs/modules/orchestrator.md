@@ -158,7 +158,7 @@ All injection paths respect `topic_id` when provided.
 
 Inter-agent ingress also lives in `injection.py`:
 
-- deterministic named sessions use `ia-<sender>`
+- deterministic named sessions use scoped `ia.<sender-slug>.t<topic>.x<hash>` names, or legacy `ia-<sender>` without source context
 - if the provider CLI rejects a stored inter-agent session after an update/cache clear, the orchestrator ends that named session, retries once with a fresh session, and surfaces a visible recovery notice back to the caller
 
 ## Observer and bus wiring
