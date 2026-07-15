@@ -155,3 +155,48 @@ def test_docker_wrap_provider_extra_env_wins(tmp_path: Path) -> None:
 
     assert "GEMINI_API_KEY=from-provider" in cmd
     assert "GEMINI_API_KEY=from-dotenv" not in cmd
+
+
+def test_subprocess_env_keeps_all_ductor_vars_after_helper_extraction(tmp_path: Path) -> None:
+    """Regression: extracting build_ductor_env must not change -p's DUCTOR_* env."""
+    workspace = tmp_path / "home" / "workspace"
+    workspace.mkdir(parents=True)
+
+    config = CLIConfig(
+        working_dir=str(workspace),
+        agent_name="main",
+        interagent_port=9001,
+        transport="tg",
+        chat_id=42,
+        topic_id=7,
+        transcribe_command="t.sh",
+        video_transcribe_command="v.sh",
+    )
+    clear_cache()
+    env = build_subprocess_env(config)
+
+    assert env is not None
+    assert env["DUCTOR_AGENT_NAME"] == "main"
+    assert env["DUCTOR_AGENT_ROLE"] == "main"
+    assert env["DUCTOR_INTERAGENT_PORT"] == "9001"
+    assert env["DUCTOR_TRANSPORT"] == "tg"
+    assert env["DUCTOR_CHAT_ID"] == "42"
+    assert env["DUCTOR_TOPIC_ID"] == "7"
+    assert env["DUCTOR_TRANSCRIBE_COMMAND"] == "t.sh"
+    assert env["DUCTOR_VIDEO_TRANSCRIBE_COMMAND"] == "v.sh"
+    assert env["DUCTOR_HOME"] == str(tmp_path / "home")
+    assert env["DUCTOR_SHARED_MEMORY_PATH"] == str(tmp_path / "home" / "SHAREDMEMORY.md")
+
+
+def test_subprocess_env_sub_agent_shared_memory_path(tmp_path: Path) -> None:
+    """Sub-agent shared memory resolves to the main home (../.. from agents/<name>)."""
+    workspace = tmp_path / "agents" / "dev" / "workspace"
+    workspace.mkdir(parents=True)
+
+    config = CLIConfig(working_dir=str(workspace), agent_name="dev")
+    clear_cache()
+    env = build_subprocess_env(config)
+
+    assert env is not None
+    assert env["DUCTOR_AGENT_ROLE"] == "sub"
+    assert env["DUCTOR_SHARED_MEMORY_PATH"] == str(tmp_path / "SHAREDMEMORY.md")

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.auth import check_all_auth
+from ductor_bot.config import update_config_file_async
 from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
@@ -20,12 +21,14 @@ from ductor_bot.orchestrator.selectors.model_selector import (
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
 from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
+from ductor_bot.session.manager import session_bucket_key
 from ductor_bot.text.response_format import SEP, fmt, new_session_text
 from ductor_bot.workspace.loader import read_mainmemory
 
 if TYPE_CHECKING:
     from ductor_bot.orchestrator.core import Orchestrator
     from ductor_bot.session.key import SessionKey
+    from ductor_bot.session.manager import SessionData
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,41 @@ async def cmd_reset_current(orch: Orchestrator, key: SessionKey, _text: str) -> 
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     provider = await orch.reset_current_provider_session(key)
     return OrchestratorResult(text=new_session_text(provider))
+
+
+def _interactive_status_text(orch: Orchestrator) -> str:
+    state = "ON" if orch._config.claude_interactive else "OFF"
+    return t(
+        "interactive.status",
+        state=state,
+        provider=orch._config.provider,
+        model=orch._config.model,
+    )
+
+
+async def cmd_interactive(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /interactive [on|off]: show or toggle Claude interactive REPL mode."""
+    parts = text.split(None, 1)
+    if len(parts) < 2:
+        # Telegram command-menu taps send the bare command, so offer the
+        # opposite state as a button to make the toggle reachable by tap.
+        toggle = "/interactive off" if orch._config.claude_interactive else "/interactive on"
+        status = _interactive_status_text(orch)
+        return OrchestratorResult(text=status + "\n\n[button:" + toggle + "]")
+
+    arg = parts[1].strip().lower()
+    if arg in {"on", "true"}:
+        enabled = True
+    elif arg in {"off", "false"}:
+        enabled = False
+    else:
+        return OrchestratorResult(text=t("interactive.usage"))
+
+    orch._config.claude_interactive = enabled
+    await update_config_file_async(orch.paths.config_path, claude_interactive=enabled)
+    orch._on_config_hot_reload(orch._config, {"claude_interactive": enabled})
+    logger.info("Interactive REPL mode set to %s", enabled)
+    return OrchestratorResult(text=_interactive_status_text(orch))
 
 
 async def cmd_status(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
@@ -315,6 +353,28 @@ def _status_effort_suffix(orch: Orchestrator, model_name: str, effort: str) -> s
     return ""
 
 
+def _status_session_stats(orch: Orchestrator, session: SessionData) -> tuple[str, int, int, float]:
+    """Resolve the (sid_display, message_count, tokens, cost) the /status line shows.
+
+    Reads the bucket /interactive mode actually routes to, so toggling ON/OFF
+    surfaces the separate interactive vs -p conversation state.
+    """
+    is_interactive = session.provider == "claude" and orch._config.claude_interactive
+    bucket = session_bucket_key(session.provider, interactive=is_interactive)
+    provider_data = session.get_provider_session(bucket)
+    if provider_data is not None:
+        sid = provider_data.session_id
+        msg_count = provider_data.message_count
+        tokens = provider_data.total_tokens
+        cost = provider_data.total_cost_usd
+    else:
+        sid, msg_count, tokens, cost = "", 0, 0, 0.0
+    sid_display = sid[:8] + "..." if sid else "-"
+    if is_interactive:
+        sid_display += " (interactive)"
+    return sid_display, msg_count, tokens, cost
+
+
 async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
     """Build the /status response text."""
     runtime_model, _runtime_provider = orch.resolve_runtime_target(orch._config.model)
@@ -330,12 +390,13 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
         topic_line = (
             f"{t('status.topic_line', topic=session.topic_name)}\n" if session.topic_name else ""
         )
+        sid_display, msg_count, tokens, cost = _status_session_stats(orch, session)
         session_block = (
             f"{topic_line}"
-            f"{t('status.session_line', sid=session.session_id[:8] + '...')}\n"
-            f"{t('status.messages_line', count=session.message_count)}\n"
-            f"{t('status.tokens_line', tokens=f'{session.total_tokens:,}')}\n"
-            f"{t('status.cost_line', cost=f'{session.total_cost_usd:.4f}')}\n"
+            f"{t('status.session_line', sid=sid_display)}\n"
+            f"{t('status.messages_line', count=msg_count)}\n"
+            f"{t('status.tokens_line', tokens=f'{tokens:,}')}\n"
+            f"{t('status.cost_line', cost=f'{cost:.4f}')}\n"
             f"{_model_line(session.model)}"
             f"{_status_effort_suffix(orch, session.model, session.reasoning_effort or orch._config.reasoning_effort)}"
         )

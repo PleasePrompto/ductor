@@ -999,6 +999,35 @@ class TestHandleCronSelector:
 
 
 class TestCommandHandlers:
+    def test_effort_model_interactive_are_registered_commands(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        commands = {
+            command
+            for handler in tg_bot._router.message.handlers
+            if getattr(handler.callback, "__name__", "") == "_on_command"
+            for command in handler.filters[0].callback.commands
+        }
+
+        assert {"effort", "model", "interactive"} <= commands
+
+    async def test_command_result_buttons_are_sent_as_reply_markup(self) -> None:
+        from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
+
+        tg_bot, bot_instance = _make_tg_bot()
+        orch = _make_orchestrator()
+        orch.handle_message = AsyncMock(
+            return_value=SelectorResponse(
+                text="Pick effort",
+                buttons=ButtonGrid(rows=[[Button(text="XHigh", callback_data="ms:e:xhigh")]]),
+            )
+        )
+        tg_bot._orchestrator = orch
+
+        await tg_bot._on_command(_make_message(text="/effort"))
+
+        markup = bot_instance.edit_message_reply_markup.call_args.kwargs["reply_markup"]
+        assert markup.inline_keyboard[0][0].text == "XHigh"
+
     @patch(
         "ductor_bot.messenger.telegram.app.handle_abort", new_callable=AsyncMock, return_value=True
     )

@@ -12,7 +12,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from ductor_bot.cli.types import AgentRequest
+from ductor_bot.cli.types import AgentRequest, Origin
 from ductor_bot.orchestrator.flows import _is_invalid_session, _update_session
 from ductor_bot.session.key import SessionKey
 from ductor_bot.session.named import NamedSession
@@ -61,6 +61,7 @@ async def _inject_prompt(  # noqa: PLR0913
     request = AgentRequest(
         prompt=prompt,
         append_system_prompt=files_block,
+        origin=Origin.INJECTION,
         chat_id=chat_id,
         topic_id=topic_id,
         transport=transport,
@@ -205,6 +206,7 @@ async def handle_interagent_message(
     request = AgentRequest(
         prompt=prompt,
         append_system_prompt=files_block,
+        origin=Origin.INTERAGENT,
         chat_id=chat_id,
         transport=transport,
         process_label=f"interagent:{sender}",
@@ -247,6 +249,7 @@ async def handle_interagent_message(
         retry_request = AgentRequest(
             prompt=prompt,
             append_system_prompt=files_block,
+            origin=Origin.INTERAGENT,
             chat_id=chat_id,
             transport=transport,
             process_label=f"interagent:{sender}",

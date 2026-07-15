@@ -9,7 +9,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from ductor_bot.cli.types import AgentRequest
+from ductor_bot.cli.types import AgentRequest, Origin
 from ductor_bot.tasks.models import (
     TaskEntry,
     TaskInFlight,
@@ -484,6 +484,7 @@ class TaskHub:
 
         request = AgentRequest(
             prompt=prompt,
+            origin=Origin.SUBAGENT,
             append_system_prompt=files_block,
             model_override=entry.model or None,
             provider_override=entry.provider or None,

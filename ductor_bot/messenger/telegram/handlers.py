@@ -68,7 +68,7 @@ async def handle_abort(
         return False
 
     thread_id = get_thread_id(message)
-    killed = await orchestrator.abort(chat_id, topic_id=thread_id)
+    killed = await orchestrator.abort(chat_id, topic_id=thread_id, transport="tg")
     logger.info("Abort requested chat=%d topic=%s killed=%d", chat_id, thread_id, killed)
     text = stop_text(bool(killed), orchestrator.active_provider_name)
     await send_rich(

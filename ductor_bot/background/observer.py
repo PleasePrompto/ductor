@@ -203,7 +203,7 @@ class BackgroundObserver:
 
     async def _run_with_session(self, bg_task: BackgroundTask) -> None:
         """Named session execution via CLIService with resume support."""
-        from ductor_bot.cli.types import AgentRequest
+        from ductor_bot.cli.types import AgentRequest, Origin
 
         assert self._cli_service is not None
 
@@ -216,6 +216,7 @@ class BackgroundObserver:
             request = AgentRequest(
                 prompt=bg_task.prompt,
                 append_system_prompt=files_block,
+                origin=Origin.CRON,
                 model_override=bg_task.model or None,
                 provider_override=bg_task.provider or None,
                 effort_override=bg_task.reasoning_effort or None,

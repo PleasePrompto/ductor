@@ -564,6 +564,41 @@ async def test_switch_model_already_set(orch: Orchestrator) -> None:
     assert "Already running" in result
 
 
+async def test_switch_model_kills_interactive_repl(orch: Orchestrator) -> None:
+    """A model change must evict the live interactive REPL so it respawns new."""
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    repl_kill = MagicMock(return_value=1)
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    key = SessionKey(transport="tg", chat_id=1, topic_id=7)
+    await switch_model(orch, key, "sonnet")
+
+    repl_kill.assert_called_once_with("tg", 1, 7)
+
+
+async def test_switch_model_noop_does_not_kill_interactive_repl(orch: Orchestrator) -> None:
+    """No model change (already running) must not touch the interactive REPL."""
+    repl_kill = MagicMock(return_value=0)
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    await switch_model(orch, SessionKey(chat_id=1), "opus")  # opus is already active
+
+    repl_kill.assert_not_called()
+
+
+async def test_effort_only_change_kills_interactive_repl(orch: Orchestrator) -> None:
+    """An effort-only change must evict the REPL so it respawns with --effort."""
+    object.__setattr__(orch._process_registry, "kill_all", AsyncMock(return_value=0))
+    repl_kill = MagicMock(return_value=1)
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    key = SessionKey(transport="tg", chat_id=1, topic_id=7)
+    # Same model (opus), only the effort changes -> effort_only path.
+    await switch_model(orch, key, "opus", reasoning_effort="high")
+
+    repl_kill.assert_called_once_with("tg", 1, 7)
+
+
 async def test_switch_model_with_reasoning_effort(orch: Orchestrator) -> None:
     object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
     result = await switch_model(orch, SessionKey(chat_id=1), "sonnet", reasoning_effort="high")

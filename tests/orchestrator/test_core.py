@@ -898,3 +898,82 @@ async def test_submit_named_session_keeps_valid_effort_for_claude(
         orch.submit_named_session(1, "go", req)
 
     assert captured["effort"] == "max"  # claude supports max
+
+
+async def test_topic_abort_kills_matching_interactive_repl_only(orch: Orchestrator) -> None:
+    kill_by_topic = AsyncMock(return_value=0)
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", kill_by_topic)
+    repl_kill = MagicMock(return_value=1)
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    killed = await orch.abort(1, topic_id=10)
+
+    assert killed == 1
+    kill_by_topic.assert_awaited_once_with(1, 10)
+    repl_kill.assert_called_once_with("tg", 1, 10)
+
+
+async def test_topic_abort_does_not_kill_other_interactive_topics(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    repl_kill = MagicMock(return_value=0)
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    await orch.abort(1, topic_id=20)
+
+    repl_kill.assert_called_once_with("tg", 1, 20)
+
+
+async def test_abort_scopes_repl_kill_to_caller_transport(orch: Orchestrator) -> None:
+    """The messenger's own transport is forwarded so a non-primary /stop kills
+    its own (transport, chat, topic) REPL — not the orchestrator's primary one."""
+    object.__setattr__(orch._process_registry, "kill_by_chat_topic", AsyncMock(return_value=0))
+    repl_kill = MagicMock(return_value=1)
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    await orch.abort(1, topic_id=10, transport="mx")
+    repl_kill.assert_called_once_with("mx", 1, 10)
+
+    repl_kill.reset_mock()
+    await orch.abort(1, topic_id=10, transport="tg")
+    repl_kill.assert_called_once_with("tg", 1, 10)
+
+
+async def test_reset_active_provider_session_resets_interactive_bucket(orch: Orchestrator) -> None:
+    orch._config.claude_interactive = True
+    key = SessionKey(chat_id=1)
+    session, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
+    session.set_provider_session("claude:i").session_id = "interactive-sid"
+    await orch._sessions.update_session(session, bucket_key="claude:i")
+    repl_kill = MagicMock(return_value=1)
+    object.__setattr__(orch._cli_service, "kill_interactive_repl", repl_kill)
+
+    provider = await orch.reset_active_provider_session(key)
+    active = await orch._sessions.get_active(key)
+
+    assert provider == "claude"
+    assert active is not None
+    assert "claude:i" not in active.provider_sessions
+    repl_kill.assert_called_with("tg", 1, None)
+
+
+async def test_abort_all_kills_interactive_repls(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all_active", AsyncMock(return_value=2))
+    repl_kill = MagicMock(return_value=3)
+    object.__setattr__(orch._cli_service, "kill_all_interactive_repls", repl_kill)
+
+    assert await orch.abort_all() == 5
+    repl_kill.assert_called_once_with()
+
+
+async def test_shutdown_kills_interactive_repls(orch: Orchestrator) -> None:
+    object.__setattr__(orch._process_registry, "kill_all_active", AsyncMock(return_value=1))
+    repl_shutdown = MagicMock(return_value=2)
+    object.__setattr__(orch._cli_service, "shutdown_interactive_runtime", repl_shutdown)
+    stop_all = AsyncMock()
+    object.__setattr__(orch._observers, "stop_all", stop_all)
+
+    with patch("ductor_bot.orchestrator.lifecycle.cleanup_ductor_links"):
+        await orch.shutdown()
+
+    repl_shutdown.assert_called_once_with()
+    stop_all.assert_awaited_once_with()

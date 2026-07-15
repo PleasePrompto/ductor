@@ -31,6 +31,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_interactive,
     cmd_memory,
     cmd_model,
     cmd_reset,
@@ -62,7 +63,7 @@ from ductor_bot.orchestrator.providers import ProviderManager
 from ductor_bot.orchestrator.registry import CommandRegistry, OrchestratorResult
 from ductor_bot.security import detect_suspicious_patterns
 from ductor_bot.session import SessionKey, SessionManager
-from ductor_bot.session.manager import SessionData
+from ductor_bot.session.manager import SessionData, session_bucket_key
 from ductor_bot.session.named import NamedSessionRegistry
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
@@ -155,6 +156,8 @@ class Orchestrator:
                 gemini_api_key=config.gemini_api_key,
                 docker_container=docker_container,
                 claude_cli_parameters=tuple(config.cli_parameters.claude),
+                claude_interactive=config.claude_interactive,
+                claude_interactive_tool_denylist=tuple(config.claude_interactive_tool_denylist),
                 codex_cli_parameters=tuple(config.cli_parameters.codex),
                 gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                 antigravity_cli_parameters=tuple(config.cli_parameters.antigravity),
@@ -429,6 +432,8 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/interactive", cmd_interactive)
+        reg.register_async("/interactive ", cmd_interactive)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
@@ -487,16 +492,32 @@ class Orchestrator:
         behaviour users expect from a reset command (issue #82).
         """
         model, provider = self.resolve_runtime_target(self._config.model)
+        bucket_key = session_bucket_key(
+            provider,
+            interactive=provider == "claude" and self._config.claude_interactive,
+        )
+        reset_kwargs: dict[str, str] = {}
+        if bucket_key != provider:
+            reset_kwargs["bucket_key"] = bucket_key
         await self._sessions.reset_provider_session(
             key,
             provider=provider,
             model=model,
+            **reset_kwargs,
         )
+        self._cli_service.kill_interactive_repl(key.transport, key.chat_id, key.topic_id)
         logger.info("Active provider session reset provider=%s model=%s", provider, model)
         return provider
 
-    async def abort(self, chat_id: int, topic_id: int | None = None) -> int:
+    async def abort(
+        self, chat_id: int, topic_id: int | None = None, *, transport: str = "tg"
+    ) -> int:
         """Kill active CLI processes for *chat_id* (optionally scoped to *topic_id*).
+
+        *transport* is the short id (``"tg"``/``"mx"``) of the messenger the
+        ``/stop`` arrived on; it scopes the interactive REPL kill to the matching
+        ``(transport, chat, topic)`` session so a non-primary messenger still
+        kills its own REPL.
 
         When ``topic_id`` is provided (``/stop`` from a specific topic),
         only the foreground CLI processes registered under that
@@ -510,8 +531,11 @@ class Orchestrator:
         plus every background task and named session.
         """
         if topic_id is not None:
-            return await self._process_registry.kill_by_chat_topic(chat_id, topic_id)
+            killed = await self._process_registry.kill_by_chat_topic(chat_id, topic_id)
+            killed += self._cli_service.kill_interactive_repl(transport, chat_id, topic_id)
+            return killed
         killed = await self._process_registry.kill_all(chat_id)
+        killed += self._cli_service.kill_interactive_repl(transport, chat_id, None)
         if self._observers.background:
             killed += await self._observers.background.cancel_all(chat_id)
         self._named_sessions.end_all(chat_id)
@@ -527,8 +551,10 @@ class Orchestrator:
         return self._process_registry.interrupt_all(chat_id)
 
     async def abort_all(self) -> int:
-        """Kill all active CLI processes across all chats on this agent."""
-        return await self._process_registry.kill_all_active()
+        """Kill all active CLI/interactive REPL processes across all chats on this agent."""
+        killed = await self._process_registry.kill_all_active()
+        killed += self._cli_service.kill_all_interactive_repls()
+        return killed
 
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
         """Resolve requested model to the effective ``(model, provider)`` pair."""
@@ -752,6 +778,8 @@ class Orchestrator:
                 "permission_mode",
                 "reasoning_effort",
                 "cli_parameters",
+                "claude_interactive",
+                "claude_interactive_tool_denylist",
             )
         ):
             self._cli_service.update_config(
@@ -766,6 +794,8 @@ class Orchestrator:
                     gemini_api_key=config.gemini_api_key,
                     docker_container=self._cli_service._config.docker_container,
                     claude_cli_parameters=tuple(config.cli_parameters.claude),
+                    claude_interactive=config.claude_interactive,
+                    claude_interactive_tool_denylist=tuple(config.claude_interactive_tool_denylist),
                     codex_cli_parameters=tuple(config.cli_parameters.codex),
                     gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                     antigravity_cli_parameters=tuple(config.cli_parameters.antigravity),

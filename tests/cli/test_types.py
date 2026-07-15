@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse, task_id_from_label
+from ductor_bot.cli.types import (
+    AgentRequest,
+    AgentResponse,
+    CLIResponse,
+    Origin,
+    task_id_from_label,
+)
 
 # -- task_id_from_label --
 
@@ -53,8 +59,17 @@ def test_cli_response_empty_usage_returns_zero() -> None:
 # -- AgentRequest --
 
 
+def test_agent_request_requires_origin() -> None:
+    try:
+        AgentRequest(prompt="hello")  # type: ignore[call-arg]
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("AgentRequest.origin must be required")
+
+
 def test_agent_request_defaults() -> None:
-    req = AgentRequest(prompt="hello")
+    req = AgentRequest(origin=Origin.HUMAN_CHAT, prompt="hello")
     assert req.prompt == "hello"
     assert req.system_prompt is None
     assert req.append_system_prompt is None
@@ -68,7 +83,7 @@ def test_agent_request_defaults() -> None:
 
 
 def test_agent_request_is_frozen() -> None:
-    req = AgentRequest(prompt="hello")
+    req = AgentRequest(origin=Origin.HUMAN_CHAT, prompt="hello")
     try:
         req.prompt = "changed"  # type: ignore[misc]
     except AttributeError:
@@ -81,6 +96,7 @@ def test_agent_request_is_frozen() -> None:
 def test_agent_request_with_overrides() -> None:
     req = AgentRequest(
         prompt="do stuff",
+        origin=Origin.HUMAN_CHAT,
         model_override="sonnet",
         provider_override="codex",
         chat_id=42,

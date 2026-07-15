@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 from ductor_bot.cli.auth import AuthResult, AuthStatus
@@ -10,6 +11,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_interactive,
     cmd_memory,
     cmd_model,
     cmd_status,
@@ -78,6 +80,52 @@ async def test_model_same_provider_does_not_show_reset(orch: Orchestrator) -> No
     assert "Session reset" not in result.text
     assert "Provider:" not in result.text
     kill_mock.assert_called_once_with(1, None)
+
+
+# -- cmd_interactive --
+
+
+async def test_interactive_command_shows_current_state(orch: Orchestrator) -> None:
+    orch._config.claude_interactive = False
+
+    result = await cmd_interactive(orch, SessionKey(chat_id=1), "/interactive")
+
+    assert "OFF" in result.text
+    assert "claude / opus" in result.text
+
+
+async def test_interactive_command_on_persists_and_updates_runtime(orch: Orchestrator) -> None:
+    result = await cmd_interactive(orch, SessionKey(chat_id=1), "/interactive on")
+
+    assert "ON" in result.text
+    assert orch._config.claude_interactive is True
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["claude_interactive"] is True
+    cast("Any", orch._cli_service.update_config).assert_called()
+
+
+async def test_interactive_command_off_persists_and_updates_runtime(orch: Orchestrator) -> None:
+    orch._config.claude_interactive = True
+
+    result = await cmd_interactive(orch, SessionKey(chat_id=1), "/interactive off")
+
+    assert "OFF" in result.text
+    assert orch._config.claude_interactive is False
+    saved = json.loads(orch.paths.config_path.read_text(encoding="utf-8"))
+    assert saved["claude_interactive"] is False
+    cast("Any", orch._cli_service.update_config).assert_called()
+
+
+async def test_interactive_command_prefix_routes_to_command_not_normal_flow(
+    orch: Orchestrator,
+) -> None:
+    mock_execute = AsyncMock()
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    result = await orch.handle_message(SessionKey(chat_id=1), "/interactive on")
+
+    assert "ON" in result.text
+    mock_execute.assert_not_awaited()
 
 
 # -- cmd_status --

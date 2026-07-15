@@ -52,6 +52,8 @@ _HOT_RELOADABLE: frozenset[str] = frozenset(
         "heartbeat",
         "cleanup",
         "cli_parameters",
+        "claude_interactive",
+        "claude_interactive_tool_denylist",
         "allowed_user_ids",
         "allowed_group_ids",
         "group_mention_only",

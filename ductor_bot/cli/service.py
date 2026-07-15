@@ -7,13 +7,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shlex
+import shutil
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.factory import create_cli
+from ductor_bot.cli.interactive.repl_pool import ReplFatalError, ReplPool, ReplPoolConfig
+from ductor_bot.cli.interactive.stop_hook import merge_stop_hook_settings
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
     CompactBoundaryEvent,
@@ -24,7 +31,7 @@ from ductor_bot.cli.stream_events import (
     ThinkingEvent,
     ToolUseEvent,
 )
-from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse
+from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse, Origin
 
 if TYPE_CHECKING:
     from ductor_bot.cli.base import BaseCLI
@@ -114,6 +121,8 @@ class CLIServiceConfig:
     antigravity_cli_parameters: tuple[str, ...] = ()
     agent_name: str = "main"
     interagent_port: int = 8799
+    claude_interactive: bool = False
+    claude_interactive_tool_denylist: tuple[str, ...] = ()
     # External transcription hooks (#66) — empty strings keep built-in strategies.
     transcribe_command: str = ""
     video_transcribe_command: str = ""
@@ -127,6 +136,11 @@ class CLIServiceConfig:
         if provider == "antigravity":
             return list(self.antigravity_cli_parameters)
         return list(self.claude_cli_parameters)
+
+
+def _use_interactive(origin: object, provider: str, config: CLIServiceConfig) -> bool:
+    """Return True only for human Claude requests with interactive mode enabled."""
+    return origin is Origin.HUMAN_CHAT and provider == "claude" and config.claude_interactive
 
 
 class CLIService:
@@ -144,6 +158,7 @@ class CLIService:
         self._models = models
         self._available_providers = available_providers
         self._process_registry = process_registry
+        self._repl_pool: ReplPool | None = None
 
     def update_available_providers(self, providers: frozenset[str]) -> None:
         self._available_providers = providers
@@ -157,12 +172,178 @@ class CLIService:
         self._config = replace(self._config, reasoning_effort=effort)
 
     def update_config(self, config: CLIServiceConfig) -> None:
-        """Replace the full service config (used by config hot-reload)."""
+        """Replace service config and teardown/reprepare interactive runtime as needed."""
+        old_config = self._config
+        if old_config.claude_interactive:
+            pool = self._repl_pool or self._build_repl_pool(old_config)
+            pool.kill_all(old_config.agent_name)
         self._config = config
+        self._repl_pool = None
+        if config.claude_interactive:
+            self.prepare_interactive_runtime()
 
     def update_docker_container(self, container: str) -> None:
         """Switch Docker container (empty string = host execution)."""
         self._config = replace(self._config, docker_container=container)
+
+    def uses_interactive(self, request: AgentRequest) -> bool:
+        """Return whether *request* should use the interactive Claude REPL."""
+        provider, _model = self.resolve_provider(request)
+        return _use_interactive(request.origin, provider, self._config)
+
+    def _interactive_ductor_home(self) -> Path:
+        """Return the ductor home used for interactive Claude state."""
+        working_dir = Path(self._config.working_dir).resolve()
+        return working_dir.parent if working_dir.name == "workspace" else working_dir
+
+    def _interactive_signal_dir(self) -> Path:
+        """Return the shared Stop-hook signal directory."""
+        return self._interactive_ductor_home() / "tmp" / "repl-signals"
+
+    def _interactive_claude_home(self) -> Path:
+        """Return the host Claude config dir used by the interactive REPL.
+
+        Docker-mode: the Ductor home is mounted at ``/ductor``, so the host dir
+        must be ``<ductor_home>/.claude`` to map onto the container's
+        ``/ductor/.claude`` (where the in-container REPL reads its config and
+        writes transcripts / the Stop hook reads its signal).
+
+        Host-mode: resolve it exactly as the Claude CLI does for the headless
+        ``-p`` path (``$CLAUDE_CONFIG_DIR`` else ``$HOME/.claude``) so
+        interactive and ``-p`` authenticate from the same directory.
+        """
+        if self._config.docker_container:
+            return self._interactive_ductor_home() / ".claude"
+        config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+        if config_dir:
+            return Path(config_dir)
+        return Path.home() / ".claude"
+
+    def _interactive_root_home(self) -> Path:
+        """Return the host root mounted into Docker as /ductor."""
+        home = self._interactive_ductor_home()
+        return home.parent.parent if home.parent.name == "agents" else home
+
+    def _container_path(self, path: Path) -> Path:
+        """Map a host path under the root Ductor home to its Docker path."""
+        root = self._interactive_root_home()
+        rel = path.relative_to(root)
+        if str(rel) == ".":
+            return Path("/ductor")
+        return Path("/ductor") / rel
+
+    def _build_repl_pool(self, config: CLIServiceConfig) -> ReplPool:
+        working_dir = Path(config.working_dir)
+        claude_home = self._interactive_claude_home()
+        signal_dir = self._interactive_signal_dir()
+        # DUCTOR_HOME / SHARED_MEMORY_PATH supplied to the in-REPL env. The
+        # in-container REPL runs against /ductor paths, so map them in
+        # docker-mode (mirrors the -p docker_wrap container path mapping);
+        # host-mode passes host paths.
+        ductor_home = self._interactive_ductor_home()
+        shared_memory_path = self._interactive_root_home() / "SHAREDMEMORY.md"
+        container_working_dir = (
+            self._container_path(working_dir) if config.docker_container else None
+        )
+        container_claude_home = (
+            self._container_path(claude_home) if config.docker_container else None
+        )
+        container_signal_dir = self._container_path(signal_dir) if config.docker_container else None
+        if config.docker_container:
+            ductor_home = self._container_path(ductor_home)
+            shared_memory_path = self._container_path(shared_memory_path)
+        return ReplPool(
+            ReplPoolConfig(
+                agent=config.agent_name,
+                working_dir=working_dir,
+                claude_home=claude_home,
+                signal_dir=signal_dir,
+                ductor_home=ductor_home,
+                shared_memory_path=shared_memory_path,
+                interagent_port=config.interagent_port,
+                transcribe_command=config.transcribe_command,
+                video_transcribe_command=config.video_transcribe_command,
+                container_working_dir=container_working_dir,
+                container_claude_home=container_claude_home,
+                container_signal_dir=container_signal_dir,
+                docker_container=config.docker_container,
+                permission_mode=config.permission_mode,
+                tool_denylist=config.claude_interactive_tool_denylist,
+            )
+        )
+
+    def _stop_hook_source_path(self) -> Path:
+        """Return the repo-installed standalone Stop hook script."""
+        return Path(__file__).parent / "interactive" / "stop_hook.py"
+
+    def _stop_hook_host_path(self) -> Path:
+        """Return the mounted host path used to expose Stop hook to Docker."""
+        return self._interactive_ductor_home() / "tmp" / "interactive-stop-hook.py"
+
+    def _install_container_stop_hook_script(self) -> Path:
+        """Copy the standalone Stop hook script into /ductor-mounted storage."""
+        target = self._stop_hook_host_path()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self._stop_hook_source_path(), target)
+        return self._container_path(target)
+
+    def _get_repl_pool(self) -> ReplPool:
+        """Return the lazily-created interactive ReplPool."""
+        if self._repl_pool is None:
+            self._repl_pool = self._build_repl_pool(self._config)
+        return self._repl_pool
+
+    def prepare_interactive_runtime(self) -> None:
+        """Register Stop hook and sweep stale tmux REPL sessions for this agent."""
+        if not self._config.claude_interactive:
+            return
+        pool = self._get_repl_pool()
+        if self._config.docker_container:
+            signal_dir = self._container_path(self._interactive_signal_dir())
+            hook_script = self._install_container_stop_hook_script()
+            command = shlex.join(
+                [
+                    "python3",
+                    str(hook_script),
+                    "--signal-dir",
+                    str(signal_dir),
+                    "--agent",
+                    self._config.agent_name,
+                ]
+            )
+        else:
+            signal_dir = self._interactive_signal_dir()
+            command = shlex.join(
+                [
+                    sys.executable,
+                    "-m",
+                    "ductor_bot.cli.interactive.stop_hook",
+                    "--signal-dir",
+                    str(signal_dir),
+                    "--agent",
+                    self._config.agent_name,
+                ]
+            )
+        merge_stop_hook_settings(self._interactive_claude_home() / "settings.json", command=command)
+        pool.startup_sweep(self._config.agent_name)
+
+    def kill_interactive_repl(self, transport: str, chat_id: int, topic_id: int | None) -> int:
+        """Kill the exact interactive REPL for a /stop target, if one exists."""
+        if self._repl_pool is None:
+            return 0
+        return self._repl_pool.kill(transport=transport, chat=chat_id, topic=topic_id)
+
+    def kill_all_interactive_repls(self) -> int:
+        """Kill all interactive REPL tmux sessions for this agent."""
+        if self._repl_pool is None:
+            return 0
+        return self._repl_pool.kill_all(self._config.agent_name)
+
+    def shutdown_interactive_runtime(self) -> int:
+        """Tear down all interactive REPL resources owned by this service."""
+        killed = self.kill_all_interactive_repls()
+        self._repl_pool = None
+        return killed
 
     def _resolve_model(self, request: AgentRequest) -> str:
         """Resolve the effective model for logging and metadata."""
@@ -180,13 +361,17 @@ class CLIService:
         )
 
         t0 = time.monotonic()
-        response = await cli.send(
-            prompt=request.prompt,
-            resume_session=request.resume_session,
-            continue_session=request.continue_session,
-            timeout_seconds=request.timeout_seconds,
-            timeout_controller=request.timeout_controller,
-        )
+        try:
+            response = await cli.send(
+                prompt=request.prompt,
+                resume_session=request.resume_session,
+                continue_session=request.continue_session,
+                timeout_seconds=request.timeout_seconds,
+                timeout_controller=request.timeout_controller,
+            )
+        except ReplFatalError as exc:
+            logger.warning("Interactive REPL fatal label=%s: %s", request.process_label, exc)
+            response = CLIResponse(result=str(exc), is_error=True)
         elapsed_ms = (time.monotonic() - t0) * 1000
 
         agent_resp = _cli_response_to_agent_response(response)
@@ -224,6 +409,9 @@ class CLIService:
             on_compact_boundary,
         )
 
+        interactive = self.uses_interactive(request)
+        error_text = ""
+
         try:
             async for event in cli.send_streaming(
                 prompt=request.prompt,
@@ -243,14 +431,28 @@ class CLIService:
                     result_event = result
         except asyncio.CancelledError:
             raise
+        except ReplFatalError as exc:
+            logger.warning("Interactive REPL fatal label=%s: %s", request.process_label, exc)
+            stream_error = True
+            error_text = str(exc)
         except (OSError, RuntimeError, ValueError, UnicodeDecodeError):
             logger.exception(
-                "Stream error label=%s, falling back",
+                "Stream error label=%s%s",
                 request.process_label,
+                ", fallback blocked for interactive" if interactive else ", falling back",
             )
             stream_error = True
+            error_text = "streaming failed"
 
         if stream_error or result_event is None:
+            if interactive:
+                return AgentResponse(
+                    result=accumulated_text
+                    if accumulated_text and not stream_error
+                    else error_text,
+                    session_id=callbacks.init_session_id,
+                    is_error=stream_error or not accumulated_text,
+                )
             return await self._handle_stream_fallback(
                 request,
                 accumulated_text,
@@ -348,6 +550,13 @@ class CLIService:
         # Per-turn effort: request override wins, else the service default
         # (mirrors model_override or default_model).
         effort = request.effort_override or self._config.reasoning_effort
+        interactive = _use_interactive(request.origin, provider, self._config)
+        if interactive:
+            logger.info(
+                "interactive REPL path selected provider=claude-interactive chat=%s topic=%s",
+                request.chat_id,
+                request.topic_id,
+            )
 
         return create_cli(
             CLIConfig(
@@ -368,6 +577,8 @@ class CLIService:
                 transport=request.transport,
                 process_label=request.process_label,
                 cli_parameters=self._config.cli_parameters_for_provider(provider),
+                interactive_repl_pool=self._get_repl_pool() if interactive else None,
+                interactive_enabled=interactive,
                 agent_name=self._config.agent_name,
                 interagent_port=self._config.interagent_port,
                 transcribe_command=self._config.transcribe_command,

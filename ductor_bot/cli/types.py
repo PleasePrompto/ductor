@@ -2,13 +2,29 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from ductor_bot.cli.timeout_controller import TimeoutController
+
+
+class Origin(StrEnum):
+    """Execution origin for fail-closed routing decisions."""
+
+    HUMAN_CHAT = "human_chat"
+    CRON = "cron"
+    HEARTBEAT = "heartbeat"
+    MEMORY_FLUSH = "memory_flush"
+    COMPACT = "compact"
+    NAMED_SESSION = "named_session"
+    SUBAGENT = "subagent"
+    WEBHOOK = "webhook"
+    INJECTION = "injection"
+    INTERAGENT = "interagent"
 
 
 _TASK_LABEL_PREFIX = "task:"
@@ -63,6 +79,7 @@ class AgentRequest:
     """Immutable specification for a CLI call."""
 
     prompt: str
+    origin: Origin = field(kw_only=True)
     system_prompt: str | None = None
     append_system_prompt: str | None = None
     model_override: str | None = None
@@ -93,3 +110,4 @@ class AgentResponse:
     timed_out: bool = False
     duration_ms: float | None = None
     stream_fallback: bool = False
+    stderr: str = ""

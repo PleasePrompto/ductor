@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
-from ductor_bot.cli.types import AgentRequest
+from ductor_bot.cli.types import AgentRequest, Origin
 from ductor_bot.config import ModelRegistry
 
 
@@ -35,7 +35,7 @@ def test_make_cli_default_provider(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_create.return_value = MagicMock()
-        svc._make_cli(AgentRequest(prompt="test", chat_id=1))
+        svc._make_cli(AgentRequest(origin=Origin.HUMAN_CHAT, prompt="test", chat_id=1))
 
     call_args = mock_create.call_args[0][0]
     assert isinstance(call_args, CLIConfig)
@@ -47,7 +47,11 @@ def test_make_cli_with_model_override(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_create.return_value = MagicMock()
-        svc._make_cli(AgentRequest(prompt="test", model_override="sonnet", chat_id=1))
+        svc._make_cli(
+            AgentRequest(
+                origin=Origin.HUMAN_CHAT, prompt="test", model_override="sonnet", chat_id=1
+            )
+        )
 
     call_args = mock_create.call_args[0][0]
     assert call_args.model == "sonnet"
@@ -58,7 +62,11 @@ def test_make_cli_with_provider_override(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_create.return_value = MagicMock()
-        svc._make_cli(AgentRequest(prompt="test", provider_override="codex", chat_id=1))
+        svc._make_cli(
+            AgentRequest(
+                origin=Origin.HUMAN_CHAT, prompt="test", provider_override="codex", chat_id=1
+            )
+        )
 
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "codex"
@@ -69,7 +77,7 @@ def test_make_cli_does_not_auto_fallback_provider(tmp_path: Path) -> None:
     svc = _make_service(tmp_path, available_providers=frozenset({"codex"}))
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_create.return_value = MagicMock()
-        svc._make_cli(AgentRequest(prompt="test", chat_id=1))
+        svc._make_cli(AgentRequest(origin=Origin.HUMAN_CHAT, prompt="test", chat_id=1))
 
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "claude"
@@ -83,6 +91,7 @@ def test_make_cli_passes_system_prompts(tmp_path: Path) -> None:
         svc._make_cli(
             AgentRequest(
                 prompt="test",
+                origin=Origin.HUMAN_CHAT,
                 system_prompt="Be helpful",
                 append_system_prompt="Follow rules",
                 chat_id=1,
@@ -98,7 +107,11 @@ def test_make_cli_passes_process_label(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_create.return_value = MagicMock()
-        svc._make_cli(AgentRequest(prompt="test", chat_id=42, process_label="worker"))
+        svc._make_cli(
+            AgentRequest(
+                origin=Origin.HUMAN_CHAT, prompt="test", chat_id=42, process_label="worker"
+            )
+        )
 
     call_args = mock_create.call_args[0][0]
     assert call_args.chat_id == 42
@@ -109,7 +122,9 @@ def test_make_cli_passes_transport(tmp_path: Path) -> None:
     svc = _make_service(tmp_path)
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_create.return_value = MagicMock()
-        svc._make_cli(AgentRequest(prompt="test", chat_id=42, transport="mx"))
+        svc._make_cli(
+            AgentRequest(origin=Origin.HUMAN_CHAT, prompt="test", chat_id=42, transport="mx")
+        )
 
     call_args = mock_create.call_args[0][0]
     assert call_args.transport == "mx"
@@ -119,7 +134,11 @@ def test_make_cli_passes_gemini_api_key(tmp_path: Path) -> None:
     svc = _make_service(tmp_path, gemini_api_key="cfg-key-123")
     with patch("ductor_bot.cli.service.create_cli") as mock_create:
         mock_create.return_value = MagicMock()
-        svc._make_cli(AgentRequest(prompt="test", provider_override="gemini", chat_id=1))
+        svc._make_cli(
+            AgentRequest(
+                origin=Origin.HUMAN_CHAT, prompt="test", provider_override="gemini", chat_id=1
+            )
+        )
 
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "gemini"

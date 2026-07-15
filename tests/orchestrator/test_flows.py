@@ -990,3 +990,22 @@ async def test_existing_topic_effort_fixed_when_global_default_changes(
     assert se.reasoning_effort == "low"
     assert sf is not None
     assert sf.reasoning_effort == "high"
+
+
+async def test_interactive_streaming_stores_session_in_claude_i_bucket(
+    orch: Orchestrator,
+) -> None:
+    orch._config.claude_interactive = True
+    object.__setattr__(
+        orch._cli_service,
+        "execute_streaming",
+        AsyncMock(return_value=_mock_response(session_id="interactive-sid")),
+    )
+
+    result = await normal_streaming(orch, SessionKey(chat_id=1), "Hello")
+    active = await orch._sessions.get_active(SessionKey(chat_id=1))
+
+    assert result.text == "Hello from agent"
+    assert active is not None
+    assert active.provider_sessions["claude:i"].session_id == "interactive-sid"
+    assert "claude" not in active.provider_sessions
