@@ -357,6 +357,45 @@ async def test_callback_reasoning_topic_without_session_targets_next_message(
     assert request.provider_override == "codex"
 
 
+async def test_callback_reasoning_same_model_topic_without_session_persists_effort(
+    orch: Orchestrator,
+) -> None:
+    orch._config.model = "opus"
+    orch._config.provider = "claude"
+    orch._config.reasoning_effort = "medium"
+    main = SessionKey(chat_id=-100)
+    await orch._sessions.resolve_session(
+        main,
+        provider="claude",
+        model="opus",
+        reasoning_effort="medium",
+    )
+    key = SessionKey(chat_id=-100, topic_id=44)
+    mock_execute = AsyncMock(
+        return_value=AgentResponse(result="ok", session_id="claude-topic-session")
+    )
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await handle_model_callback(orch, key, "ms:r:xhigh:opus")
+
+    topic = await orch._sessions.get_active(key)
+    assert topic is not None
+    assert topic.model == "opus"
+    assert topic.reasoning_effort == "xhigh"
+    assert orch._config.model == "opus"
+    assert orch._config.reasoning_effort == "medium"
+    main_after = await orch._sessions.get_active(main)
+    assert main_after is not None
+    assert main_after.reasoning_effort == "medium"
+
+    await normal(orch, key, "hello", model_override=None)
+
+    request = mock_execute.call_args.args[0]
+    assert request.model_override == "opus"
+    assert request.provider_override == "claude"
+    assert request.effort_override == "xhigh"
+
+
 async def test_callback_reasoning_stale_topic_targets_next_message(orch: Orchestrator) -> None:
     key = SessionKey(chat_id=-100, topic_id=43)
     orch._config.max_session_messages = 1
