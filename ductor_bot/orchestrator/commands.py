@@ -310,7 +310,7 @@ def _status_effort_suffix(orch: Orchestrator, model_name: str, effort: str) -> s
     global default) so /status reflects what the next turn actually uses.
     """
     provider = orch.models.provider_for(model_name)
-    if provider in ("codex", "claude") and effort and effort != "default":
+    if provider in ("codex", "claude", "grok") and effort and effort != "default":
         return f"\n{t('status.effort_line', effort=effort)}"
     return ""
 

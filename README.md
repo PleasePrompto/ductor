@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Claude Code, Codex CLI, Gemini CLI, and Antigravity CLI as your coding assistant — on Telegram, Matrix, and Slack.</strong><br>
+  <strong>Claude Code, Codex CLI, Gemini CLI, Antigravity CLI, and Grok Build as your coding assistant — on Telegram, Matrix, and Slack.</strong><br>
   Uses only official CLIs. Nothing spoofed, nothing proxied. Multi-transport, automation, and sub-agents in one runtime.
 </p>
 
@@ -23,7 +23,7 @@
 
 ---
 
-If you want to control Claude Code, Google's Gemini CLI, OpenAI's Codex CLI, or Antigravity CLI via Telegram, Matrix, or Slack, build automations, or manage multiple agents easily — ductor is the right tool for you. The messaging layer is modular: Telegram, Matrix, and Slack ship today, and new transports plug into the same transport-agnostic core.
+If you want to control Claude Code, Google's Gemini CLI, OpenAI's Codex CLI, Antigravity CLI, or xAI Grok Build via Telegram, Matrix, or Slack, build automations, or manage multiple agents easily — ductor is the right tool for you. The messaging layer is modular: Telegram, Matrix, and Slack ship today, and new transports plug into the same transport-agnostic core.
 
 ductor runs on your machine and sends simple console commands as if you were typing them yourself, so you can use your active subscriptions (Claude Max, Google AI Ultra, etc.) directly. No API proxying, no SDK patching, no spoofed headers. Just the official CLIs, executed as subprocesses, with all state kept in plain JSON and Markdown under `~/.ductor/`.
 

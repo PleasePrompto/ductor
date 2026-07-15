@@ -158,6 +158,7 @@ class Orchestrator:
                 codex_cli_parameters=tuple(config.cli_parameters.codex),
                 gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                 antigravity_cli_parameters=tuple(config.cli_parameters.antigravity),
+                grok_cli_parameters=tuple(config.cli_parameters.grok),
                 agent_name=agent_name,
                 interagent_port=interagent_port,
                 transcribe_command=config.transcription.audio_command,

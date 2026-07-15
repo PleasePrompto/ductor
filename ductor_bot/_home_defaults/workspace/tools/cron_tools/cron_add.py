@@ -215,7 +215,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        choices=["claude", "codex", "gemini"],
+        choices=["claude", "codex", "gemini", "grok"],
         help=(
             "CLI provider for this job (claude, codex, or gemini). If omitted, uses global config."
         ),

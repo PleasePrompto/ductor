@@ -231,6 +231,7 @@ class CLIParametersConfig(BaseModel):
     codex: list[str] = Field(default_factory=list)
     gemini: list[str] = Field(default_factory=list)
     antigravity: list[str] = Field(default_factory=list)
+    grok: list[str] = Field(default_factory=list)
 
 
 class MatrixConfig(BaseModel):
@@ -416,6 +417,7 @@ class SkillSyncProviders(BaseModel):
     claude: bool = True
     codex: bool = True
     gemini: bool = True
+    grok: bool = True
 
 
 class SkillsConfig(BaseModel):
@@ -622,6 +624,14 @@ _GEMINI_ALIASES: frozenset[str] = frozenset({"auto", "pro", "flash", "flash-lite
 ANTIGRAVITY_MODELS_ORDERED: tuple[str, ...] = ("antigravity-default",)
 ANTIGRAVITY_MODELS: frozenset[str] = frozenset(ANTIGRAVITY_MODELS_ORDERED)
 
+# Grok Build models (xAI Grok CLI). Keep aliases short for @directives.
+GROK_MODELS_ORDERED: tuple[str, ...] = (
+    "grok-4.5",
+    "grok-composer-2.5-fast",
+)
+GROK_MODELS: frozenset[str] = frozenset(GROK_MODELS_ORDERED)
+GROK_SUPPORTED_EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh")
+
 _runtime_gemini: list[frozenset[str]] = [frozenset()]
 _runtime_antigravity: list[frozenset[str]] = [frozenset()]
 
@@ -631,6 +641,7 @@ class ModelRegistry:
 
     Claude models (haiku, sonnet, opus) are hardcoded.
     Gemini models are hardcoded (parsed from CLI at startup if available).
+    Grok models are hardcoded (plus any ``grok-`` prefixed IDs).
     Codex models are discovered dynamically at runtime.
     """
 
@@ -656,6 +667,8 @@ class ModelRegistry:
             or model_id.startswith("antigravity-")
         ):
             return "antigravity"
+        if model_id in GROK_MODELS or model_id.startswith("grok-"):
+            return "grok"
         return "codex"
 
 

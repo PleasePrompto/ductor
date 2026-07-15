@@ -43,6 +43,7 @@ def _agents_path() -> Path:
 
 
 _CLAUDE_MODELS = ("haiku", "sonnet", "sonnet[1m]", "opus", "opus[1m]", "fable")
+_GROK_MODELS = ("grok-4.5", "grok-composer-2.5-fast")
 
 
 def _main_home() -> Path:
@@ -121,6 +122,12 @@ def _resolve_model(provider: str | None, model: str | None) -> str | None:
 
     if provider == "gemini":
         return _resolve_gemini_model(model, home)
+
+    if provider == "grok":
+        if model in _GROK_MODELS or model.startswith("grok-"):
+            return model
+        print(f"Note: '{model}' is not a valid Grok model. Using: grok-4.5")
+        return "grok-4.5"
 
     return model
 

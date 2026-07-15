@@ -14,6 +14,7 @@ from shutil import which
 from ductor_bot.cli.codex_events import parse_codex_jsonl
 from ductor_bot.cli.gemini_events import parse_gemini_json
 from ductor_bot.cli.gemini_utils import find_gemini_cli
+from ductor_bot.cli.grok_events import parse_grok_json
 from ductor_bot.cli.param_resolver import TaskExecutionConfig
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from ductor_bot.infra.process_tree import force_kill_process_tree
@@ -89,6 +90,21 @@ def parse_codex_result(stdout: bytes) -> str:
         return result_text
     if thread_id is not None or usage is not None:
         return ""
+    return raw[:2000]
+
+
+def parse_grok_result(stdout: bytes) -> str:
+    """Extract result text from Grok Build CLI JSON output."""
+    if not stdout:
+        return ""
+    raw = stdout.decode(errors="replace").strip()
+    if not raw:
+        return ""
+    text, _session_id, _usage, _model_usage, _turns, is_error = parse_grok_json(raw)
+    if text:
+        return text
+    if is_error:
+        return raw[:2000]
     return raw[:2000]
 
 
@@ -178,6 +194,24 @@ def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCo
     return OneShotCommand(cmd=cmd)
 
 
+def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+    """Build a Grok Build CLI command for one-shot cron execution."""
+    cli = which("grok")
+    if not cli:
+        return None
+    cmd = [cli, "-p", prompt, "--output-format", "json"]
+    if exec_config.model:
+        cmd += ["--model", exec_config.model]
+    if exec_config.permission_mode:
+        cmd += ["--permission-mode", exec_config.permission_mode]
+    if exec_config.permission_mode == "bypassPermissions":
+        cmd.append("--always-approve")
+    if exec_config.reasoning_effort and exec_config.reasoning_effort != "default":
+        cmd += ["--reasoning-effort", exec_config.reasoning_effort]
+    cmd.extend(exec_config.cli_parameters)
+    return OneShotCommand(cmd=cmd)
+
+
 _CmdBuilder = Callable[[TaskExecutionConfig, str], OneShotCommand | None]
 _ResultParser = Callable[[bytes], str]
 
@@ -185,12 +219,14 @@ _CMD_BUILDERS: dict[str, _CmdBuilder] = {
     "claude": _build_claude_cmd,
     "gemini": _build_gemini_cmd,
     "codex": _build_codex_cmd,
+    "grok": _build_grok_cmd,
 }
 
 _RESULT_PARSERS: dict[str, _ResultParser] = {
     "claude": parse_claude_result,
     "gemini": parse_gemini_result,
     "codex": parse_codex_result,
+    "grok": parse_grok_result,
 }
 
 

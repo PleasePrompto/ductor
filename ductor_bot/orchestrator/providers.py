@@ -10,6 +10,7 @@ from ductor_bot.config import (
     _GEMINI_ALIASES,
     ANTIGRAVITY_MODELS,
     CLAUDE_MODELS,
+    GROK_MODELS,
     ModelRegistry,
     get_antigravity_models,
     get_gemini_models,
@@ -78,6 +79,8 @@ class ProviderManager:
             return "Gemini"
         if provider == "antigravity":
             return "Antigravity"
+        if provider == "grok":
+            return "Grok Build"
         return "Codex"
 
     # -- Auth / init ----------------------------------------------------------
@@ -145,6 +148,7 @@ class ProviderManager:
         self._known_model_ids = (
             CLAUDE_MODELS
             | ANTIGRAVITY_MODELS
+            | GROK_MODELS
             | _GEMINI_ALIASES
             | get_gemini_models()
             | get_antigravity_models()
@@ -177,6 +181,8 @@ class ProviderManager:
             return ""
         if provider == "antigravity":
             return "antigravity-default"
+        if provider == "grok":
+            return self._config.model if self._config.provider == "grok" else "grok-4.5"
         return ""
 
     def resolve_session_directive(self, key: str) -> tuple[str, str] | None:
@@ -187,7 +193,7 @@ class ProviderManager:
         - known model   (``@opus``)  -> (inferred_provider, model)
         - unknown                    -> None
         """
-        if key in ("claude", "codex", "gemini", "antigravity"):
+        if key in ("claude", "codex", "gemini", "antigravity", "grok"):
             return key, self.default_model_for_provider(key)
         if self.is_known_model(key):
             provider = self._models.provider_for(key)
@@ -209,6 +215,7 @@ class ProviderManager:
             "gemini": ("Gemini", "#8B5CF6"),
             "codex": ("Codex", "#10B981"),
             "antigravity": ("Antigravity", "#3B82F6"),
+            "grok": ("Grok Build", "#111827"),
         }
         providers: list[dict[str, object]] = []
         for pid in sorted(self._available_providers):
@@ -225,6 +232,8 @@ class ProviderManager:
             elif pid == "antigravity":
                 antigravity = get_antigravity_models()
                 models = sorted(antigravity) if antigravity else sorted(ANTIGRAVITY_MODELS)
+            elif pid == "grok":
+                models = sorted(GROK_MODELS)
             else:
                 models = []
             providers.append({"id": pid, "name": name, "color": color, "models": models})

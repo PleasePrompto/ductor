@@ -27,6 +27,11 @@ def create_cli(config: CLIConfig) -> BaseCLI:
 
         return AntigravityCLI(config)
 
+    if config.provider == "grok":
+        from ductor_bot.cli.grok_provider import GrokCLI
+
+        return GrokCLI(config)
+
     from ductor_bot.cli.claude_provider import ClaudeCodeCLI
 
     return ClaudeCodeCLI(config)
