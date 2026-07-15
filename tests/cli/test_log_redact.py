@@ -60,6 +60,51 @@ def test_redact_cmd_for_log_handles_inline_env_forms() -> None:
     ]
 
 
+def test_redact_cmd_for_log_masks_env_values_without_parsing_key_syntax() -> None:
+    redacted = redact_cmd_for_log(
+        [
+            "docker",
+            "-e",
+            "api-key=hyphen-secret",
+            "--env",
+            "api.key=dot-secret",
+            "-e",
+            "1TOKEN=digit-secret",
+            "--env=키=unicode-secret",
+            "line-key=first=second\nthird",
+            "DUCTOR_CHAT_ID=42",
+        ]
+    )
+
+    assert redacted == [
+        "docker",
+        "-e",
+        "api-key=***",
+        "--env",
+        "api.key=***",
+        "-e",
+        "1TOKEN=***",
+        "--env=키=***",
+        "line-key=***",
+        "DUCTOR_CHAT_ID=42",
+    ]
+
+
+def test_redact_cmd_for_log_preserves_non_env_arguments() -> None:
+    cmd = [
+        "command",
+        "--flag",
+        "--flag=value",
+        "/tmp/file=name",
+        "https://example.test/path?query=value",
+        "plain prompt",
+        "-e",
+        "HOST_ONLY_KEY",
+    ]
+
+    assert redact_cmd_for_log(cmd) == cmd
+
+
 def test_redact_cmd_for_log_masks_all_non_whitelisted_dotenv_keys() -> None:
     cmd = [
         "docker",
@@ -102,11 +147,10 @@ def test_provider_command_logs_redact_secret(
     log_cmd: Callable[[list[str]], None],
 ) -> None:
     with caplog.at_level(logging.INFO):
-        log_cmd(_CMD)
+        log_cmd(["docker", "-e", f"api-key={_FAKE_SECRET}"])
 
     assert _FAKE_SECRET not in caplog.text
-    assert "GITHUB_TOKEN=***" in caplog.text
-    assert "DUCTOR_CHAT_ID=42" in caplog.text
+    assert "api-key=***" in caplog.text
 
 
 def test_claude_info_log_masks_embedded_url_credentials(
@@ -151,13 +195,13 @@ async def test_docker_debug_log_masks_embedded_url_credentials(
         patch.object(
             manager,
             "_env_secret_flags",
-            return_value=["-e", f"DATABASE_URL={_FAKE_DATABASE_VALUE}"],
+            return_value=["-e", f"api.key={_FAKE_DATABASE_VALUE}"],
         ),
     ):
         await manager.setup()
 
     assert _FAKE_DATABASE_VALUE not in caplog.text
-    assert "DATABASE_URL=***" in caplog.text
+    assert "api.key=***" in caplog.text
 
 
 def test_antigravity_safe_command_redacts_before_truncation() -> None:
