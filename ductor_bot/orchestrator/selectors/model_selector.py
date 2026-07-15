@@ -13,7 +13,7 @@ from ductor_bot.config import (
     CLAUDE_MODELS_ORDERED,
     CLAUDE_SUPPORTED_EFFORTS,
     CODEX_SUPPORTED_EFFORTS_FALLBACK,
-    GROK_MODELS_ORDERED,
+    get_grok_models_ordered,
     GROK_SUPPORTED_EFFORTS,
     get_antigravity_models,
     get_gemini_models,
@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 MS_PREFIX = "ms:"
 
 _EFFORT_LABELS: dict[str, str] = {
+    "none": "None",
+    "minimal": "Minimal",
     "low": "Low",
     "medium": "Medium",
     "high": "High",
@@ -596,7 +598,8 @@ async def _build_model_step(
         )
 
     if provider == "grok":
-        buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in GROK_MODELS_ORDERED]
+        grok_models = get_grok_models_ordered()
+        buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in grok_models]
         keyboard = ButtonGrid(
             rows=[
                 *_rows_of(buttons),

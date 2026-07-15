@@ -1595,14 +1595,32 @@ class TelegramBot:
         await handle_upgrade_callback(self, chat_id, message_id, data, thread_id=thread_id)
 
     async def _sync_commands(self) -> None:
-        from aiogram.types import BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
+        from aiogram.types import (
+            BotCommandScopeAllGroupChats,
+            BotCommandScopeAllPrivateChats,
+            BotCommandScopeChat,
+        )
 
         desired = _BOT_COMMANDS
 
         # Clear legacy scoped commands (previous versions set per-scope lists).
         # Telegram keeps scoped commands independently — they must be deleted
         # explicitly or they shadow the default-scope list.
-        for scope in (BotCommandScopeAllPrivateChats(), BotCommandScopeAllGroupChats()):
+        #
+        # Also clear per-chat scopes for allowed users. Foreign bridges (e.g.
+        # opencode-telegram-bot) register chat-scoped command lists that outrank
+        # the default list and leave users seeing the wrong slash menu.
+        scopes_to_clear: list = [
+            BotCommandScopeAllPrivateChats(),
+            BotCommandScopeAllGroupChats(),
+        ]
+        for uid in getattr(self._config, "allowed_user_ids", None) or []:
+            try:
+                scopes_to_clear.append(BotCommandScopeChat(chat_id=int(uid)))
+            except (TypeError, ValueError):
+                continue
+
+        for scope in scopes_to_clear:
             try:
                 scoped = await self._bot.get_my_commands(scope=scope)
                 if scoped:

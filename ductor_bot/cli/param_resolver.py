@@ -174,9 +174,12 @@ def resolve_cli_config(
     elif provider == "gemini":
         _validate_gemini_model(model)
     elif provider == "grok":
-        if model not in GROK_MODELS and not model.startswith("grok-"):
+        from ductor_bot.config import get_grok_models
+
+        known = GROK_MODELS | get_grok_models()
+        if model not in known and not model.startswith("grok-"):
             msg = (
-                f"Invalid Grok model: {model}. Must be one of {sorted(GROK_MODELS)} "
+                f"Invalid Grok model: {model}. Must be one of {sorted(known)} "
                 "or a grok-* model ID"
             )
             raise DuctorError(msg)

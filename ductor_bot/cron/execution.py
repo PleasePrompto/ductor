@@ -29,6 +29,7 @@ class OneShotCommand:
     cmd: list[str] = field(default_factory=list)
     stdin_input: bytes | None = None
     env_overrides: dict[str, str] = field(default_factory=dict)
+    cleanup_paths: list[Path] = field(default_factory=list)
 
 
 def build_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
@@ -100,7 +101,7 @@ def parse_grok_result(stdout: bytes) -> str:
     raw = stdout.decode(errors="replace").strip()
     if not raw:
         return ""
-    text, _session_id, _usage, _model_usage, _turns, is_error = parse_grok_json(raw)
+    text, _session_id, _usage, _model_usage, _turns, is_error, _cost = parse_grok_json(raw)
     if text:
         return text
     if is_error:
@@ -194,12 +195,18 @@ def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCo
     return OneShotCommand(cmd=cmd)
 
 
+# Match GrokCLI: long prompts go through --prompt-file to avoid ARG_MAX.
+_GROK_PROMPT_ARGV_SOFT_LIMIT = 24_000
+
+
 def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
     """Build a Grok Build CLI command for one-shot cron execution."""
+    import tempfile
+
     cli = which("grok")
     if not cli:
         return None
-    cmd = [cli, "-p", prompt, "--output-format", "json"]
+    cmd = [cli, "--output-format", "json"]
     if exec_config.model:
         cmd += ["--model", exec_config.model]
     if exec_config.permission_mode:
@@ -209,7 +216,24 @@ def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCom
     if exec_config.reasoning_effort and exec_config.reasoning_effort != "default":
         cmd += ["--reasoning-effort", exec_config.reasoning_effort]
     cmd.extend(exec_config.cli_parameters)
-    return OneShotCommand(cmd=cmd)
+
+    cleanup: list[Path] = []
+    if len(prompt) > _GROK_PROMPT_ARGV_SOFT_LIMIT:
+        handle = tempfile.NamedTemporaryFile(  # noqa: SIM115
+            mode="w",
+            encoding="utf-8",
+            prefix="ductor-grok-cron-prompt-",
+            suffix=".txt",
+            delete=False,
+        )
+        with handle:
+            handle.write(prompt)
+            prompt_path = Path(handle.name)
+        cleanup.append(prompt_path)
+        cmd += ["--prompt-file", str(prompt_path)]
+    else:
+        cmd += ["-p", prompt]
+    return OneShotCommand(cmd=cmd, cleanup_paths=cleanup)
 
 
 _CmdBuilder = Callable[[TaskExecutionConfig, str], OneShotCommand | None]
@@ -258,46 +282,53 @@ async def execute_one_shot(
     """Run one provider CLI command with timeout and normalized status/result."""
     stdin_input = one_shot.stdin_input
     env = {**os.environ, **one_shot.env_overrides} if one_shot.env_overrides else None
-    proc = await asyncio.create_subprocess_exec(
-        *one_shot.cmd,
-        cwd=str(cwd),
-        env=env,
-        stdin=asyncio.subprocess.PIPE if stdin_input is not None else asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        creationflags=_CREATION_FLAGS,
-    )
-
-    timed_out = False
     try:
-        async with asyncio.timeout(timeout_seconds):
-            stdout, stderr = await proc.communicate(input=stdin_input)
-    except TimeoutError:
-        timed_out = True
-        _force_kill(proc)
-        stdout, stderr = await proc.communicate()
-    except asyncio.CancelledError:
-        _force_kill(proc)
-        await proc.wait()
-        raise
-
-    if timed_out:
-        return OneShotExecutionResult(
-            status="error:timeout",
-            result_text=f"[{timeout_label} timed out after {timeout_seconds:.0f}s]",
-            stdout=stdout,
-            stderr=stderr,
-            returncode=proc.returncode,
-            timed_out=True,
+        proc = await asyncio.create_subprocess_exec(
+            *one_shot.cmd,
+            cwd=str(cwd),
+            env=env,
+            stdin=asyncio.subprocess.PIPE if stdin_input is not None else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            creationflags=_CREATION_FLAGS,
         )
 
-    returncode = proc.returncode
-    status = "success" if returncode == 0 else f"error:exit_{returncode}"
-    return OneShotExecutionResult(
-        status=status,
-        result_text=parse_result(provider, stdout),
-        stdout=stdout,
-        stderr=stderr,
-        returncode=returncode,
-        timed_out=False,
-    )
+        timed_out = False
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                stdout, stderr = await proc.communicate(input=stdin_input)
+        except TimeoutError:
+            timed_out = True
+            _force_kill(proc)
+            stdout, stderr = await proc.communicate()
+        except asyncio.CancelledError:
+            _force_kill(proc)
+            await proc.wait()
+            raise
+
+        if timed_out:
+            return OneShotExecutionResult(
+                status="error:timeout",
+                result_text=f"[{timeout_label} timed out after {timeout_seconds:.0f}s]",
+                stdout=stdout,
+                stderr=stderr,
+                returncode=proc.returncode,
+                timed_out=True,
+            )
+
+        returncode = proc.returncode
+        status = "success" if returncode == 0 else f"error:exit_{returncode}"
+        return OneShotExecutionResult(
+            status=status,
+            result_text=parse_result(provider, stdout),
+            stdout=stdout,
+            stderr=stderr,
+            returncode=returncode,
+            timed_out=False,
+        )
+    finally:
+        for path in one_shot.cleanup_paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Failed to remove one-shot temp path %s", path)

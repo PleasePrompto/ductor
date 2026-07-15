@@ -97,6 +97,7 @@ async def create_orchestrator(
     codex_cache = await orch._observers.init_model_caches(
         on_gemini_refresh=orch._providers.on_gemini_models_refresh,
         on_antigravity_refresh=orch._providers.on_antigravity_models_refresh,
+        on_grok_refresh=orch._providers.on_grok_models_refresh,
     )
     orch._observers.init_task_observers(
         cron_manager=orch._cron_manager,

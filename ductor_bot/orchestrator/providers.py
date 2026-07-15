@@ -14,8 +14,11 @@ from ductor_bot.config import (
     ModelRegistry,
     get_antigravity_models,
     get_gemini_models,
+    get_grok_models,
+    get_grok_models_ordered,
     set_antigravity_models,
     set_gemini_models,
+    set_grok_models,
 )
 
 if TYPE_CHECKING:
@@ -132,6 +135,11 @@ class ProviderManager:
         set_antigravity_models(frozenset(models))
         self.refresh_known_model_ids()
 
+    def on_grok_models_refresh(self, models: tuple[str, ...]) -> None:
+        """Callback for GrokCacheObserver: update model registry."""
+        set_grok_models(models)
+        self.refresh_known_model_ids()
+
     def refresh_gemini_api_key_mode(self) -> bool:
         """Re-read ``~/.gemini/settings.json`` and update the cache.
 
@@ -152,6 +160,7 @@ class ProviderManager:
             | _GEMINI_ALIASES
             | get_gemini_models()
             | get_antigravity_models()
+            | get_grok_models()
         )
 
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
@@ -233,7 +242,7 @@ class ProviderManager:
                 antigravity = get_antigravity_models()
                 models = sorted(antigravity) if antigravity else sorted(ANTIGRAVITY_MODELS)
             elif pid == "grok":
-                models = sorted(GROK_MODELS)
+                models = list(get_grok_models_ordered())
             else:
                 models = []
             providers.append({"id": pid, "name": name, "color": color, "models": models})

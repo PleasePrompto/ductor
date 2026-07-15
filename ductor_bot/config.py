@@ -624,24 +624,34 @@ _GEMINI_ALIASES: frozenset[str] = frozenset({"auto", "pro", "flash", "flash-lite
 ANTIGRAVITY_MODELS_ORDERED: tuple[str, ...] = ("antigravity-default",)
 ANTIGRAVITY_MODELS: frozenset[str] = frozenset(ANTIGRAVITY_MODELS_ORDERED)
 
-# Grok Build models (xAI Grok CLI). Keep aliases short for @directives.
+# Grok Build models (xAI Grok CLI). Fallback when discovery is unavailable.
 GROK_MODELS_ORDERED: tuple[str, ...] = (
     "grok-4.5",
     "grok-composer-2.5-fast",
 )
 GROK_MODELS: frozenset[str] = frozenset(GROK_MODELS_ORDERED)
-GROK_SUPPORTED_EFFORTS: tuple[str, ...] = ("low", "medium", "high", "xhigh")
+# Canonical Grok headless levels (plus max alias of xhigh). See grok --help.
+GROK_SUPPORTED_EFFORTS: tuple[str, ...] = (
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+)
 
 _runtime_gemini: list[frozenset[str]] = [frozenset()]
 _runtime_antigravity: list[frozenset[str]] = [frozenset()]
+_runtime_grok: list[frozenset[str]] = [frozenset()]
+_runtime_grok_ordered: list[tuple[str, ...]] = [()]
 
 
 class ModelRegistry:
     """Provider resolution for models.
 
     Claude models (haiku, sonnet, opus) are hardcoded.
-    Gemini models are hardcoded (parsed from CLI at startup if available).
-    Grok models are hardcoded (plus any ``grok-`` prefixed IDs).
+    Gemini / Antigravity / Grok models refresh from CLI discovery when available.
     Codex models are discovered dynamically at runtime.
     """
 
@@ -667,7 +677,11 @@ class ModelRegistry:
             or model_id.startswith("antigravity-")
         ):
             return "antigravity"
-        if model_id in GROK_MODELS or model_id.startswith("grok-"):
+        if (
+            model_id in GROK_MODELS
+            or model_id in _runtime_grok[0]
+            or model_id.startswith("grok-")
+        ):
             return "grok"
         return "codex"
 
@@ -710,3 +724,40 @@ def set_antigravity_models(models: frozenset[str]) -> None:
 def reset_antigravity_models() -> None:
     """Clear runtime Antigravity models. For test teardown only."""
     _runtime_antigravity[0] = frozenset()
+
+
+def get_grok_models() -> frozenset[str]:
+    """Return dynamically discovered Grok models (may be empty)."""
+    return _runtime_grok[0]
+
+
+def get_grok_models_ordered() -> tuple[str, ...]:
+    """Return Grok models in discovery order, or the hardcoded fallback list."""
+    ordered = _runtime_grok_ordered[0]
+    if ordered:
+        return ordered
+    return GROK_MODELS_ORDERED
+
+
+def set_grok_models(models: tuple[str, ...] | frozenset[str] | list[str]) -> None:
+    """Set runtime Grok models discovered from ``grok models``.
+
+    Refuses to overwrite with an empty set to prevent cache wipe.
+    Preserves discovery order when a sequence is provided.
+    """
+    if not models:
+        return
+    if isinstance(models, frozenset):
+        ordered = tuple(sorted(models))
+    else:
+        ordered = tuple(dict.fromkeys(models))  # dedupe, keep order
+    if not ordered:
+        return
+    _runtime_grok_ordered[0] = ordered
+    _runtime_grok[0] = frozenset(ordered)
+
+
+def reset_grok_models() -> None:
+    """Clear runtime Grok models. For test teardown only."""
+    _runtime_grok[0] = frozenset()
+    _runtime_grok_ordered[0] = ()

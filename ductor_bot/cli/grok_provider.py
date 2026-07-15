@@ -90,13 +90,12 @@ class GrokCLI(BaseCLI):
         _add_opt(cmd, "--rules", cfg.append_system_prompt)
         _add_opt(cmd, "--max-turns", str(cfg.max_turns) if cfg.max_turns is not None else None)
 
+        # Built-in tool filter (headless): comma-separated tool IDs.
+        # Distinct from permission rules (--allow/--deny with Bash(...) globs).
         if cfg.allowed_tools:
-            # Grok uses --tools / --allow; pass allow rules when provided.
-            for tool in cfg.allowed_tools:
-                cmd += ["--allow", tool]
+            cmd += ["--tools", ",".join(cfg.allowed_tools)]
         if cfg.disallowed_tools:
-            for tool in cfg.disallowed_tools:
-                cmd += ["--deny", tool]
+            cmd += ["--disallowed-tools", ",".join(cfg.disallowed_tools)]
 
         if resume_session:
             cmd += ["--resume", resume_session]
@@ -258,7 +257,9 @@ def _parse_response(stdout: bytes, stderr: bytes, returncode: int | None) -> CLI
         )
 
     # Prefer last JSON object if the CLI printed trailing noise.
-    text, session_id, usage, model_usage, num_turns, is_error = _parse_best_json(raw)
+    text, session_id, usage, model_usage, num_turns, is_error, total_cost = _parse_best_json(
+        raw
+    )
     if returncode not in (None, 0):
         is_error = True
 
@@ -271,15 +272,17 @@ def _parse_response(stdout: bytes, stderr: bytes, returncode: int | None) -> CLI
         num_turns=num_turns,
         usage=usage,
         model_usage=model_usage,
+        total_cost_usd=total_cost,
     )
 
     if response.is_error:
         logger.error("Grok error: %s", (response.result or stderr_text)[:200])
     else:
         logger.info(
-            "Grok done session=%s turns=%s tokens=%d",
+            "Grok done session=%s turns=%s cost=$%.4f tokens=%d",
             (response.session_id or "?")[:8],
             response.num_turns,
+            response.total_cost_usd or 0,
             response.total_tokens,
         )
     return response
@@ -287,7 +290,7 @@ def _parse_response(stdout: bytes, stderr: bytes, returncode: int | None) -> CLI
 
 def _parse_best_json(
     raw: str,
-) -> tuple[str, str | None, dict, dict, int | None, bool]:
+) -> tuple[str, str | None, dict, dict, int | None, bool, float | None]:
     """Parse raw stdout, tolerating multi-line pretty JSON or trailing junk."""
     try:
         return parse_grok_json(raw)
