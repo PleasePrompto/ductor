@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-_ENV_ASSIGNMENT = re.compile(r"^([A-Z0-9_]+)=(.*)$", re.DOTALL)
+_ENV_ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
 _VISIBLE_ENV_KEYS = {
     "DUCTOR_HOME",
     "DUCTOR_AGENT_NAME",
@@ -21,7 +21,6 @@ _VISIBLE_ENV_KEYS = {
     "CONTAINER",
     "PLAYWRIGHT_BROWSERS_PATH",
 }
-_VISIBLE_ENV_SUFFIXES = ("_URL", "_HOST", "_PORT")
 
 
 def _redact_assignment(value: str) -> str:
@@ -29,7 +28,7 @@ def _redact_assignment(value: str) -> str:
     if match is None:
         return value
     key, raw_value = match.groups()
-    if key in _VISIBLE_ENV_KEYS or key.endswith(_VISIBLE_ENV_SUFFIXES):
+    if key in _VISIBLE_ENV_KEYS:
         return f"{key}={raw_value}"
     return f"{key}=***"
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -12,8 +14,12 @@ from ductor_bot.cli.antigravity_provider import _safe_command_for_logging
 from ductor_bot.cli.claude_provider import _log_cmd as log_claude_cmd
 from ductor_bot.cli.codex_provider import _log_cmd as log_codex_cmd
 from ductor_bot.cli.gemini_provider import _log_cmd as log_gemini_cmd
+from ductor_bot.config import DockerConfig
+from ductor_bot.infra.docker import DockerManager
+from ductor_bot.workspace.paths import DuctorPaths
 
 _FAKE_SECRET = "ghp_FAKESECRET123"
+_FAKE_DATABASE_VALUE = "postgres://fake-user:fake-password@example.invalid/db"
 _CMD = [
     "docker",
     "exec",
@@ -50,7 +56,39 @@ def test_redact_cmd_for_log_handles_inline_env_forms() -> None:
         "docker",
         "--env=API_TOKEN=***",
         "-eINLINE_TOKEN=***",
-        "SERVICE_URL=https://example.test",
+        "SERVICE_URL=***",
+    ]
+
+
+def test_redact_cmd_for_log_masks_all_non_whitelisted_dotenv_keys() -> None:
+    cmd = [
+        "docker",
+        "exec",
+        "-e",
+        f"DATABASE_URL={_FAKE_DATABASE_VALUE}",
+        "-e",
+        "api_key=fake-lowercase-secret",
+        "--env=MyToken=fake-mixed-secret",
+        "-e",
+        "DUCTOR_CHAT_ID=42",
+        "--model",
+        "opus",
+    ]
+
+    redacted = redact_cmd_for_log(cmd)
+
+    assert redacted == [
+        "docker",
+        "exec",
+        "-e",
+        "DATABASE_URL=***",
+        "-e",
+        "api_key=***",
+        "--env=MyToken=***",
+        "-e",
+        "DUCTOR_CHAT_ID=42",
+        "--model",
+        "opus",
     ]
 
 
@@ -69,6 +107,57 @@ def test_provider_command_logs_redact_secret(
     assert _FAKE_SECRET not in caplog.text
     assert "GITHUB_TOKEN=***" in caplog.text
     assert "DUCTOR_CHAT_ID=42" in caplog.text
+
+
+def test_claude_info_log_masks_embedded_url_credentials(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO):
+        log_claude_cmd(["docker", "-e", f"DATABASE_URL={_FAKE_DATABASE_VALUE}"])
+
+    assert _FAKE_DATABASE_VALUE not in caplog.text
+    assert "DATABASE_URL=***" in caplog.text
+
+
+async def test_docker_debug_log_masks_embedded_url_credentials(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    home = tmp_path / ".ductor"
+    workspace = home / "workspace"
+    framework = tmp_path / "framework"
+    workspace.mkdir(parents=True)
+    framework.mkdir()
+    paths = DuctorPaths(
+        ductor_home=home,
+        home_defaults=framework / "workspace",
+        framework_root=framework,
+    )
+    manager = DockerManager(
+        DockerConfig(enabled=True, image_name="test-img", container_name="test-ctr"),
+        paths,
+    )
+
+    async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+        command = " ".join(args)
+        if "container inspect" in command:
+            return 1, ""
+        return 0, "ok"
+
+    with (
+        caplog.at_level(logging.DEBUG),
+        patch("shutil.which", return_value="/usr/bin/docker"),
+        patch.object(manager, "_exec", new=AsyncMock(side_effect=mock_exec)),
+        patch.object(
+            manager,
+            "_env_secret_flags",
+            return_value=["-e", f"DATABASE_URL={_FAKE_DATABASE_VALUE}"],
+        ),
+    ):
+        await manager.setup()
+
+    assert _FAKE_DATABASE_VALUE not in caplog.text
+    assert "DATABASE_URL=***" in caplog.text
 
 
 def test_antigravity_safe_command_redacts_before_truncation() -> None:
