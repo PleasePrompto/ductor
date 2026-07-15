@@ -22,6 +22,14 @@ Edit only when the user asks for behavior changes.
   the Claude CLI via `--effort`. Change it with the `/effort` command.
 - `permission_mode`: CLI permission behavior
 
+### Interactive Claude REPL
+
+- `claude_interactive`: opt-in (default `false`). When `true`, human-chat Claude
+  turns run through a persistent interactive REPL instead of headless `-p`.
+- `claude_interactive_tool_denylist`: list of tool names blocked in that REPL
+  (e.g. `["Bash"]`).
+- Toggle at runtime with the `/interactive on|off` command.
+
 ### Time and Scheduling
 
 - `user_timezone`: IANA timezone string (for example `Europe/Berlin`)

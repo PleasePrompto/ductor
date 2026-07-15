@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
@@ -17,7 +18,11 @@ from ductor_bot.cli.base import (
 )
 from ductor_bot.cli.executor import SubprocessSpec, run_oneshot_subprocess, run_streaming_subprocess
 from ductor_bot.cli.stream_events import (
+    AssistantTextDelta,
+    ResultEvent,
     StreamEvent,
+    SystemInitEvent,
+    SystemStatusEvent,
     parse_stream_line,
 )
 from ductor_bot.cli.types import CLIResponse
@@ -36,6 +41,15 @@ class ClaudeCodeCLI(BaseCLI):
         self._working_dir = Path(config.working_dir).resolve()
         self._cli = "claude" if config.docker_container else self._find_cli()
         logger.info("CLI wrapper: cwd=%s, model=%s", self._working_dir, config.model)
+
+    @property
+    def _interactive_enabled(self) -> bool:
+        """Return whether this Claude provider instance should use ReplPool."""
+        return self._config.interactive_enabled and self._config.interactive_repl_pool is not None
+
+    def _interactive_system_prompt(self) -> str:
+        """Return the system prompt passed to the interactive REPL."""
+        return self._config.append_system_prompt or ""
 
     @staticmethod
     def _find_cli() -> str:
@@ -100,6 +114,10 @@ class ClaudeCodeCLI(BaseCLI):
         timeout_controller: TimeoutController | None = None,
     ) -> CLIResponse:
         """Send a prompt and return the final result."""
+        if self._interactive_enabled:
+            return await self._send_interactive(
+                prompt, resume_session=resume_session, timeout_seconds=timeout_seconds
+            )
         cmd = self._build_command(prompt, resume_session, continue_session)
         exec_cmd, use_cwd = docker_wrap(cmd, self._config, interactive=_IS_WINDOWS)
         _log_cmd(exec_cmd)
@@ -108,6 +126,46 @@ class ClaudeCodeCLI(BaseCLI):
             spec=SubprocessSpec(exec_cmd, use_cwd, prompt, timeout_seconds, timeout_controller),
             parse_output=_parse_response,
             provider_label="CLI",
+        )
+
+    async def _send_interactive(
+        self,
+        prompt: str,
+        *,
+        resume_session: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> CLIResponse:
+        """Execute one interactive REPL turn and return a CLIResponse."""
+        pool = self._config.interactive_repl_pool
+        if pool is None:
+            return CLIResponse(result="interactive ReplPool is not configured", is_error=True)
+        system_prompt = self._interactive_system_prompt()
+        pool.seed_resume_session(
+            transport=self._config.transport,
+            chat=self._config.chat_id,
+            topic=self._config.topic_id,
+            model=self._config.model or "",
+            system_prompt=system_prompt,
+            session_id=resume_session,
+            effort=self._config.reasoning_effort,
+        )
+        text, session_id = await asyncio.to_thread(
+            pool.send,
+            transport=self._config.transport,
+            chat=self._config.chat_id,
+            topic=self._config.topic_id,
+            model=self._config.model or "",
+            system_prompt=system_prompt,
+            prompt=prompt,
+            effort=self._config.reasoning_effort,
+            timeout_seconds=timeout_seconds,
+        )
+        return CLIResponse(
+            session_id=session_id,
+            result=text,
+            is_error=False,
+            returncode=0,
+            num_turns=1,
         )
 
     def _build_command_streaming(
@@ -136,6 +194,28 @@ class ClaudeCodeCLI(BaseCLI):
         timeout_controller: TimeoutController | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
         """Send a prompt and yield stream events as they arrive."""
+        if self._interactive_enabled:
+            response = await self._send_interactive(
+                prompt, resume_session=resume_session, timeout_seconds=timeout_seconds
+            )
+            yield SystemInitEvent(type="system", subtype="init", session_id=response.session_id)
+            yield SystemStatusEvent(type="system", subtype="status", status="working")
+            if response.result:
+                yield AssistantTextDelta(type="assistant", text=response.result)
+            yield ResultEvent(
+                type="result",
+                session_id=response.session_id,
+                result=response.result,
+                is_error=response.is_error,
+                returncode=response.returncode,
+                duration_ms=response.duration_ms,
+                duration_api_ms=response.duration_api_ms,
+                total_cost_usd=response.total_cost_usd,
+                usage=response.usage,
+                model_usage=response.model_usage,
+                num_turns=response.num_turns,
+            )
+            return
         cmd = self._build_command_streaming(prompt, resume_session, continue_session)
         exec_cmd, use_cwd = docker_wrap(cmd, self._config, interactive=_IS_WINDOWS)
         _log_cmd(exec_cmd, streaming=True)

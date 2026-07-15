@@ -17,6 +17,11 @@ from ductor_bot.session.key import SessionKey
 logger = logging.getLogger(__name__)
 
 
+def session_bucket_key(provider: str, *, interactive: bool = False) -> str:
+    """Return the provider_sessions bucket key for a provider/mode pair."""
+    return f"{provider}:i" if interactive else provider
+
+
 def _as_mapping(value: object) -> Mapping[str, object] | None:
     """Return value as string-key mapping when possible."""
     if isinstance(value, Mapping):
@@ -196,19 +201,29 @@ class SessionData:
 
     def _current_provider_data(self) -> ProviderSessionData:
         """Get/create provider-local state for the active provider."""
-        current = self.provider_sessions.get(self.provider)
-        if current is None:
-            current = ProviderSessionData()
-            self.provider_sessions[self.provider] = current
+        return self.set_provider_session(self.provider)
+
+    def get_provider_session(self, bucket_key: str) -> ProviderSessionData | None:
+        """Return provider-local state by explicit bucket key."""
+        return self.provider_sessions.get(bucket_key)
+
+    def set_provider_session(
+        self,
+        bucket_key: str,
+        data: ProviderSessionData | None = None,
+    ) -> ProviderSessionData:
+        """Set or create provider-local state by explicit bucket key."""
+        current = data or self.provider_sessions.get(bucket_key) or ProviderSessionData()
+        self.provider_sessions[bucket_key] = current
         return current
 
     def clear_all_sessions(self) -> None:
         """Drop all provider-local sessions and metrics."""
         self.provider_sessions.clear()
 
-    def clear_provider_session(self, provider: str) -> None:
+    def clear_provider_session(self, provider: str, *, bucket_key: str | None = None) -> None:
         """Drop one provider-local session and metrics."""
-        self.provider_sessions.pop(provider, None)
+        self.provider_sessions.pop(bucket_key or provider, None)
 
     @staticmethod
     def _coerce_provider_sessions(
@@ -331,7 +346,17 @@ class SessionManager:
         model_name = model or self._config.model
         effort = reasoning_effort or self._config.reasoning_effort
 
-        if existing and self._is_fresh(existing):
+        preserve_target = bool(
+            existing
+            and preserve_existing_target
+            and existing.provider.strip()
+            and existing.model.strip()
+        )
+        if existing and (
+            self._is_fresh_for_target(existing, existing.provider)
+            if preserve_target
+            else self._is_fresh(existing)
+        ):
             preserved = await self._preserve_existing_session(
                 existing, sessions, preserve_existing_target, effort
             )
@@ -405,7 +430,11 @@ class SessionManager:
             existing = sessions.get(skey)
 
             if existing is not None and self._time_fresh(existing):
-                target_bucket = existing.provider_sessions.get(provider)
+                target_bucket_key = session_bucket_key(
+                    provider,
+                    interactive=provider == "claude" and self._config.claude_interactive,
+                )
+                target_bucket = existing.provider_sessions.get(target_bucket_key)
                 bucket_count = target_bucket.message_count if target_bucket is not None else 0
                 if self._within_message_limit(bucket_count):
                     # Fresh for the target provider: retarget in place and keep
@@ -416,7 +445,7 @@ class SessionManager:
                 # Otherwise fresh, but the target bucket hit the message cap.
                 # Reset only that bucket so switching back to another provider
                 # keeps its history, then retarget onto the fresh bucket.
-                existing.provider_sessions.pop(provider, None)
+                existing.provider_sessions.pop(target_bucket_key, None)
                 self._retarget_session(existing, provider, model, reasoning_effort)
                 await self._save(sessions)
                 logger.info("Target bucket reset provider=%s model=%s", provider, model)
@@ -426,6 +455,7 @@ class SessionManager:
             if key.topic_id is not None and self._topic_name_resolver is not None:
                 topic_name = self._topic_name_resolver(key.chat_id, key.topic_id)
 
+            effort = reasoning_effort or self._config.reasoning_effort
             new = SessionData(
                 chat_id=key.chat_id,
                 transport=key.transport,
@@ -433,13 +463,48 @@ class SessionManager:
                 topic_name=topic_name,
                 provider=provider,
                 model=model,
-                reasoning_effort=reasoning_effort or "",
+                reasoning_effort=effort,
                 provider_sessions={},
             )
             sessions[skey] = new
             await self._save(sessions)
             logger.info("Session created provider=%s model=%s", provider, model)
             return new, True
+
+    async def get_provider_session(
+        self,
+        key: SessionKey,
+        bucket_key: str,
+    ) -> ProviderSessionData | None:
+        """Return provider-local state from an explicit bucket key."""
+        session = await self.get_active(key)
+        if session is None:
+            return None
+        return session.get_provider_session(bucket_key)
+
+    async def set_provider_session(
+        self,
+        key: SessionKey,
+        bucket_key: str,
+        data: ProviderSessionData,
+    ) -> SessionData:
+        """Persist provider-local state under an explicit bucket key."""
+        sessions = await self._load()
+        session = sessions.get(key.storage_key)
+        if session is None:
+            session = SessionData(
+                chat_id=key.chat_id,
+                transport=key.transport,
+                topic_id=key.topic_id,
+                provider=self._config.provider,
+                model=self._config.model,
+                provider_sessions={},
+            )
+        session.set_provider_session(bucket_key, data)
+        session.last_active = datetime.now(UTC).isoformat()
+        sessions[key.storage_key] = session
+        await self._save(sessions)
+        return session
 
     def _retarget_session(
         self,
@@ -507,6 +572,8 @@ class SessionManager:
         key: SessionKey,
         provider: str,
         model: str,
+        *,
+        bucket_key: str | None = None,
     ) -> SessionData:
         """Reset only one provider-local session and keep all others intact."""
         sessions = await self._load()
@@ -522,7 +589,7 @@ class SessionManager:
                 provider_sessions={},
             )
         else:
-            current.clear_provider_session(provider)
+            current.clear_provider_session(provider, bucket_key=bucket_key)
             current.provider = provider
             current.model = model
             current.last_active = datetime.now(UTC).isoformat()
@@ -536,6 +603,8 @@ class SessionManager:
         session: SessionData,
         cost_usd: float = 0.0,
         tokens: int = 0,
+        *,
+        bucket_key: str | None = None,
     ) -> None:
         """Update session metrics and persist.
 
@@ -558,9 +627,10 @@ class SessionManager:
                     current.topic_name = session.topic_name
 
             current.last_active = datetime.now(UTC).isoformat()
-            current.message_count += 1
-            current.total_cost_usd += cost_usd
-            current.total_tokens += tokens
+            data = current.set_provider_session(bucket_key or current.provider)
+            data.message_count += 1
+            data.total_cost_usd += cost_usd
+            data.total_tokens += tokens
             sessions[key] = current
             await self._save(sessions)
 
@@ -569,9 +639,11 @@ class SessionManager:
             session.model = current.model
             session.last_active = current.last_active
             session.provider_sessions = self._clone_provider_sessions(current.provider_sessions)
-            session.message_count = current.message_count
-            session.total_cost_usd = current.total_cost_usd
-            session.total_tokens = current.total_tokens
+            active = session.get_provider_session(bucket_key or session.provider)
+            if active is not None:
+                active.message_count = data.message_count
+                active.total_cost_usd = data.total_cost_usd
+                active.total_tokens = data.total_tokens
 
     async def preserve_session_identity(self, session: SessionData) -> None:
         """Persist session IDs/provider metadata without counting a completed turn."""
@@ -696,6 +768,16 @@ class SessionManager:
                     entry = data[raw_key]
                     break
         return isinstance(entry, dict) and "model" not in entry
+
+    def _is_fresh_for_target(self, session: SessionData, provider: str) -> bool:
+        """Check freshness using the bucket the target's next turn will use."""
+        bucket_key = session_bucket_key(
+            provider,
+            interactive=provider == "claude" and self._config.claude_interactive,
+        )
+        provider_data = session.get_provider_session(bucket_key)
+        message_count = provider_data.message_count if provider_data is not None else 0
+        return self._within_message_limit(message_count) and self._time_fresh(session)
 
     def _within_message_limit(self, message_count: int) -> bool:
         """False when the message cap is configured and *message_count* reached it."""

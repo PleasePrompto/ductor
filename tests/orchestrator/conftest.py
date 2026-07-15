@@ -61,5 +61,8 @@ def orch(workspace: tuple[DuctorPaths, AgentConfig]) -> Orchestrator:
     mock_cli = MagicMock()
     mock_cli.execute = AsyncMock()
     mock_cli.execute_streaming = AsyncMock()
+    mock_cli.kill_interactive_repl.return_value = 0
+    mock_cli.kill_all_interactive_repls.return_value = 0
+    mock_cli.shutdown_interactive_runtime.return_value = 0
     object.__setattr__(o, "_cli_service", mock_cli)
     return o

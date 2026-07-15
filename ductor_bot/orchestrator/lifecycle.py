@@ -74,6 +74,7 @@ async def create_orchestrator(
         interagent_port=config.interagent_port,
     )
     orch._docker = docker_mgr
+    await asyncio.to_thread(orch._cli_service.prepare_interactive_runtime)
 
     from ductor_bot.cli.auth import AuthStatus, check_all_auth
 
@@ -190,8 +191,9 @@ async def ensure_docker(orch: Orchestrator) -> None:
 async def shutdown(orch: Orchestrator) -> None:
     """Cleanup on bot shutdown."""
     killed = await orch._process_registry.kill_all_active()
+    killed += orch._cli_service.shutdown_interactive_runtime()
     if killed:
-        logger.info("Shutdown terminated %d active CLI process(es)", killed)
+        logger.info("Shutdown terminated %d active CLI/REPL process(es)", killed)
     if orch._api_stop is not None:
         await orch._api_stop()
     await asyncio.to_thread(cleanup_ductor_links, orch._paths)

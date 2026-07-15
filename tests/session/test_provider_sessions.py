@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from ductor_bot.session.manager import ProviderSessionData, SessionData
+from ductor_bot.session.manager import ProviderSessionData, SessionData, session_bucket_key
 
 
 def test_session_id_property_reads_current_provider() -> None:
@@ -159,3 +159,23 @@ def test_asdict_contains_provider_sessions_not_session_id() -> None:
     assert "provider_sessions" in serialized
     assert "session_id" not in serialized
     assert serialized["provider_sessions"]["claude"]["session_id"] == "sid"
+
+
+def test_session_bucket_key_interactive_suffix() -> None:
+    assert session_bucket_key("claude", interactive=True) == "claude:i"
+    assert session_bucket_key("claude", interactive=False) == "claude"
+
+
+def test_provider_session_bucket_keys_do_not_collide() -> None:
+    session = SessionData(chat_id=1, provider="claude", provider_sessions={})
+    session.set_provider_session("claude", ProviderSessionData(session_id="print-sid"))
+    session.set_provider_session("claude:i", ProviderSessionData(session_id="interactive-sid"))
+
+    print_bucket = session.get_provider_session("claude")
+    interactive_bucket = session.get_provider_session("claude:i")
+
+    assert print_bucket is not None
+    assert interactive_bucket is not None
+    assert print_bucket.session_id == "print-sid"
+    assert interactive_bucket.session_id == "interactive-sid"
+    assert session.session_id == "print-sid"

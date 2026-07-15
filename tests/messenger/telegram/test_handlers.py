@@ -50,7 +50,7 @@ class TestHandleAbort:
         msg = _make_message(chat_id=42)
         result = await handle_abort(orchestrator, bot, chat_id=42, message=msg)
         assert result is True
-        orchestrator.abort.assert_called_once_with(42, topic_id=None)
+        orchestrator.abort.assert_called_once_with(42, topic_id=None, transport="tg")
 
     async def test_abort_zero_killed_sends_nothing_text(self) -> None:
         from ductor_bot.messenger.telegram.handlers import handle_abort
@@ -316,7 +316,7 @@ class TestForumTopicPropagation:
         msg = _make_message(chat_id=42, topic_thread_id=99)
 
         await handle_abort(orchestrator, bot, chat_id=42, message=msg)
-        orchestrator.abort.assert_called_once_with(42, topic_id=99)
+        orchestrator.abort.assert_called_once_with(42, topic_id=99, transport="tg")
 
     @patch("ductor_bot.messenger.telegram.handlers.send_rich", new_callable=AsyncMock)
     async def test_handle_abort_passes_thread_id(self, mock_send: AsyncMock) -> None:

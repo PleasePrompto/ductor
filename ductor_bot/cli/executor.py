@@ -19,6 +19,7 @@ from ductor_bot.cli.base import (
     _feed_stdin_and_close,
     _win_feed_stdin,
 )
+from ductor_bot.cli.ductor_env import build_ductor_env
 from ductor_bot.cli.stream_events import ResultEvent, StreamEvent
 from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import CLIResponse, task_id_from_label
@@ -51,31 +52,28 @@ def build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
         if key not in env:
             env[key] = value
 
-    env["DUCTOR_AGENT_NAME"] = config.agent_name
-    env["DUCTOR_AGENT_ROLE"] = "main" if config.agent_name == "main" else "sub"
-    env["DUCTOR_INTERAGENT_PORT"] = str(config.interagent_port)
-    if config.chat_id:
-        env["DUCTOR_CHAT_ID"] = str(config.chat_id)
-    if config.topic_id:
-        env["DUCTOR_TOPIC_ID"] = str(config.topic_id)
-    env["DUCTOR_TRANSPORT"] = config.transport
-    if task_id := task_id_from_label(config.process_label):
-        env["DUCTOR_TASK_ID"] = task_id
-    if config.transcribe_command:
-        env["DUCTOR_TRANSCRIBE_COMMAND"] = config.transcribe_command
-    if config.video_transcribe_command:
-        env["DUCTOR_VIDEO_TRANSCRIBE_COMMAND"] = config.video_transcribe_command
-    working_dir = Path(config.working_dir)
-    ductor_home = working_dir.parent if working_dir.name == "workspace" else working_dir
-    env["DUCTOR_HOME"] = str(ductor_home)
     # Shared knowledge is always at the main agent's home level.
     # For main: ductor_home itself. For sub-agents: ../../ from agents/<name>/.
     if config.agent_name == "main":
-        env["DUCTOR_SHARED_MEMORY_PATH"] = str(ductor_home / "SHAREDMEMORY.md")
+        shared_memory_path = ductor_home / "SHAREDMEMORY.md"
     else:
         # Sub-agent home is <main_home>/agents/<name>/
-        main_home = ductor_home.parent.parent
-        env["DUCTOR_SHARED_MEMORY_PATH"] = str(main_home / "SHAREDMEMORY.md")
+        shared_memory_path = ductor_home.parent.parent / "SHAREDMEMORY.md"
+    env.update(
+        build_ductor_env(
+            agent_name=config.agent_name,
+            interagent_port=config.interagent_port,
+            transport=config.transport,
+            chat_id=config.chat_id,
+            topic_id=config.topic_id,
+            ductor_home=ductor_home,
+            shared_memory_path=shared_memory_path,
+            transcribe_command=config.transcribe_command,
+            video_transcribe_command=config.video_transcribe_command,
+        )
+    )
+    if task_id := task_id_from_label(config.process_label):
+        env["DUCTOR_TASK_ID"] = task_id
     return env
 
 

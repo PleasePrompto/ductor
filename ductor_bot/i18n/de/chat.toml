@@ -324,6 +324,12 @@ slack_footer = "Nutze Befehle wie `help` oder `/help`. Schick eine andere Nachri
 
 # -- Multi-Agent ---------------------------------------------------------------
 
+# -- Interactive ---------------------------------------------------------------
+
+[interactive]
+status = "Interactive REPL mode: {state}\nProvider/model: {provider} / {model}"
+usage = "Usage: /interactive on|off"
+
 [agents]
 header = "**Agents**"
 empty = "Keine Agents."

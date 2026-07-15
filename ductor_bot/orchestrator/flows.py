@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.cli.timeout_controller import TimeoutConfig as TCConfig
 from ductor_bot.cli.timeout_controller import TimeoutController
-from ductor_bot.cli.types import AgentRequest, AgentResponse
+from ductor_bot.cli.types import AgentRequest, AgentResponse, Origin
 from ductor_bot.config import NULLISH_TEXT_VALUES, resolve_timeout
 from ductor_bot.i18n import t
 from ductor_bot.infra.inflight import InflightTurn
@@ -22,6 +22,7 @@ from ductor_bot.log_context import set_log_context
 from ductor_bot.orchestrator.hooks import HookContext
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.session import SessionData, SessionKey
+from ductor_bot.session.manager import session_bucket_key
 from ductor_bot.text.response_format import session_error_text, timeout_error_text
 from ductor_bot.workspace.loader import build_appended_files_block, read_mainmemory
 
@@ -98,7 +99,7 @@ async def _prepare_normal(
     req_model, req_provider = orch.resolve_runtime_target(requested_model)
     requested_effort = orch._config.reasoning_effort
 
-    session, is_new = await orch._sessions.resolve_session(
+    session, _is_new = await orch._sessions.resolve_session(
         key,
         provider=req_provider,
         model=req_model,
@@ -114,17 +115,26 @@ async def _prepare_normal(
         model=req_model,
         reasoning_effort=req_effort,
     )
-    if session.session_id:
-        set_log_context(session_id=session.session_id)
+    interactive_bucket = session_bucket_key(
+        req_provider,
+        interactive=req_provider == "claude" and orch._config.claude_interactive,
+    )
+    provider_data = session.get_provider_session(interactive_bucket)
+    resume_session = provider_data.session_id if provider_data is not None else ""
+    message_count = provider_data.message_count if provider_data is not None else 0
+    is_new_bucket = not resume_session
+    if resume_session:
+        set_log_context(session_id=resume_session)
     logger.info(
-        "Session resolved sid=%s new=%s msgs=%d",
-        session.session_id[:8] if session.session_id else "<new>",
-        is_new,
-        session.message_count,
+        "Session resolved sid=%s new=%s msgs=%d bucket=%s",
+        resume_session[:8] if resume_session else "<new>",
+        is_new_bucket,
+        message_count,
+        interactive_bucket,
     )
 
     append_prompt = None
-    if is_new:
+    if is_new_bucket:
         mainmemory = await asyncio.to_thread(read_mainmemory, orch.paths)
         if mainmemory.strip():
             append_prompt = mainmemory
@@ -141,8 +151,8 @@ async def _prepare_normal(
 
     hook_ctx = HookContext(
         chat_id=key.chat_id,
-        message_count=session.message_count,
-        is_new_session=is_new,
+        message_count=message_count,
+        is_new_session=is_new_bucket,
         provider=req_provider,
         model=req_model,
     )
@@ -151,6 +161,7 @@ async def _prepare_normal(
     timeout_secs = resolve_timeout(orch._config, "normal")
     request = AgentRequest(
         prompt=prompt,
+        origin=Origin.HUMAN_CHAT,
         append_system_prompt=append_prompt,
         model_override=req_model,
         provider_override=req_provider,
@@ -158,7 +169,7 @@ async def _prepare_normal(
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,
-        resume_session=None if is_new else session.session_id,
+        resume_session=None if is_new_bucket else resume_session,
         timeout_seconds=timeout_secs,
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
@@ -166,18 +177,27 @@ async def _prepare_normal(
 
 
 async def _update_session(
-    orch: Orchestrator, session: SessionData, response: AgentResponse
+    orch: Orchestrator,
+    session: SessionData,
+    response: AgentResponse,
+    request: AgentRequest | None = None,
 ) -> None:
     """Store the real CLI session_id and update metrics."""
-    if response.session_id and response.session_id != session.session_id:
+    bucket_key = _request_bucket_key(orch, request) if request is not None else None
+    current_data = session.get_provider_session(bucket_key) if bucket_key else None
+    current_sid = current_data.session_id if current_data is not None else session.session_id
+    if response.session_id and response.session_id != current_sid:
         logger.info(
             "Session ID updated: %s -> %s",
-            session.session_id[:8] if session.session_id else "<new>",
+            current_sid[:8] if current_sid else "<new>",
             response.session_id[:8],
         )
-        session.session_id = response.session_id
+        if bucket_key:
+            session.set_provider_session(bucket_key).session_id = response.session_id
+        else:
+            session.session_id = response.session_id
     await orch._sessions.update_session(
-        session, cost_usd=response.cost_usd, tokens=response.total_tokens
+        session, cost_usd=response.cost_usd, tokens=response.total_tokens, bucket_key=bucket_key
     )
 
 
@@ -187,16 +207,23 @@ async def _preserve_session_from_response(
     response: AgentResponse,
     *,
     reason: str,
+    request: AgentRequest | None = None,
 ) -> None:
     """Persist a first response session id even when the turn ends early."""
-    if response.session_id and not session.session_id:
+    bucket_key = _request_bucket_key(orch, request) if request is not None else None
+    current_data = session.get_provider_session(bucket_key) if bucket_key else None
+    current_sid = current_data.session_id if current_data is not None else session.session_id
+    if response.session_id and not current_sid:
         logger.debug("%s: preserving session_id %s for resume", reason, response.session_id[:8])
-        session.session_id = response.session_id
-    elif response.session_id and response.session_id != session.session_id:
+        if bucket_key:
+            session.set_provider_session(bucket_key).session_id = response.session_id
+        else:
+            session.session_id = response.session_id
+    elif response.session_id and response.session_id != current_sid:
         logger.debug(
             "%s: keeping existing session_id %s over response session_id %s",
             reason,
-            session.session_id[:8],
+            current_sid[:8],
             response.session_id[:8],
         )
     await orch._sessions.preserve_session_identity(session)
@@ -234,14 +261,17 @@ async def _handle_timeout(
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
 
     # Persist the session_id captured from SystemInitEvent so resume works.
-    if response.session_id and response.session_id != session.session_id:
+    bucket_key = _request_bucket_key(orch, request)
+    current_data = session.get_provider_session(bucket_key)
+    current_sid = current_data.session_id if current_data is not None else ""
+    if response.session_id and response.session_id != current_sid:
         logger.info(
             "Timeout: preserving session_id %s for resume",
             response.session_id[:8],
         )
-        session.session_id = response.session_id
+        session.set_provider_session(bucket_key).session_id = response.session_id
     await orch._sessions.update_session(
-        session, cost_usd=response.cost_usd, tokens=response.total_tokens
+        session, cost_usd=response.cost_usd, tokens=response.total_tokens, bucket_key=bucket_key
     )
 
     timeout_s = request.timeout_seconds or 0
@@ -397,7 +427,19 @@ async def _recover_session(
     provider_name = orch.models.provider_for(model_name)
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     orch._process_registry.clear_topic_abort(key.chat_id, key.topic_id)
-    await orch._sessions.reset_provider_session(key, provider=provider_name, model=model_name)
+    bucket_key = session_bucket_key(
+        provider_name,
+        interactive=provider_name == "claude" and orch._config.claude_interactive,
+    )
+    reset_kwargs: dict[str, str] = {}
+    if bucket_key != provider_name:
+        reset_kwargs["bucket_key"] = bucket_key
+    await orch._sessions.reset_provider_session(
+        key,
+        provider=provider_name,
+        model=model_name,
+        **reset_kwargs,
+    )
 
     cb = ctx.cbs
     if ctx.reason == "invalid_session" and cb.on_text_delta is not None:
@@ -426,6 +468,19 @@ def _request_target(orch: Orchestrator, request: AgentRequest) -> tuple[str, str
     return model_name, provider_name
 
 
+def _request_bucket_key(orch: Orchestrator, request: AgentRequest) -> str:
+    """Return the provider-session bucket key for a prepared request."""
+    _model_name, provider_name = _request_target(orch, request)
+    return session_bucket_key(
+        provider_name,
+        interactive=(
+            request.origin is Origin.HUMAN_CHAT
+            and provider_name == "claude"
+            and orch._config.claude_interactive
+        ),
+    )
+
+
 def _begin_inflight(
     orch: Orchestrator,
     request: AgentRequest,
@@ -435,12 +490,15 @@ def _begin_inflight(
 ) -> None:
     """Record an in-flight turn for crash recovery."""
     model_name, provider_name = _request_target(orch, request)
+    bucket_key = _request_bucket_key(orch, request)
+    provider_data = session.get_provider_session(bucket_key)
+    session_id = provider_data.session_id if provider_data is not None else session.session_id
     orch._inflight_tracker.begin(
         InflightTurn(
             chat_id=request.chat_id,
             provider=provider_name,
             model=model_name,
-            session_id=session.session_id or "",
+            session_id=session_id or "",
             prompt_preview=request.prompt[:100],
             started_at=datetime.now(UTC).isoformat(),
             is_recovery=is_recovery,
@@ -508,7 +566,9 @@ async def normal(  # noqa: PLR0911
             or _reg.was_interrupted(key.chat_id)
         ):
             _reg.clear_interrupt(key.chat_id)
-            await _preserve_session_from_response(orch, session, response, reason="abort")
+            await _preserve_session_from_response(
+                orch, session, response, reason="abort", request=request
+            )
             logger.info("Normal flow aborted/interrupted by user")
             return OrchestratorResult(text="")
         if response.timed_out:
@@ -518,7 +578,9 @@ async def normal(  # noqa: PLR0911
                 logger.warning("recovery.sigkill chat=%s action=user-retry", key.chat_id)
                 return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True)
             model_name, provider_name = _request_target(orch, request)
-            await _preserve_session_from_response(orch, session, response, reason="error")
+            await _preserve_session_from_response(
+                orch, session, response, reason="error", request=request
+            )
             return await _reset_on_error(
                 orch,
                 key,
@@ -526,7 +588,7 @@ async def normal(  # noqa: PLR0911
                 provider_name=provider_name,
                 cli_detail=response.result,
             )
-        await _update_session(orch, session, response)
+        await _update_session(orch, session, response, request)
         logger.info("Normal flow completed")
         req_model, _prov = _request_target(orch, request)
         result = _finish_normal(
@@ -593,7 +655,9 @@ async def normal_streaming(  # noqa: PLR0911
             or _reg.was_interrupted(key.chat_id)
         ):
             _reg.clear_interrupt(key.chat_id)
-            await _preserve_session_from_response(orch, session, response, reason="abort")
+            await _preserve_session_from_response(
+                orch, session, response, reason="abort", request=request
+            )
             logger.info("Streaming flow aborted/interrupted by user")
             return OrchestratorResult(text="")
         if response.timed_out:
@@ -603,7 +667,9 @@ async def normal_streaming(  # noqa: PLR0911
                 logger.warning("recovery.sigkill chat=%s action=user-retry", key.chat_id)
                 return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True)
             model_name, provider_name = _request_target(orch, request)
-            await _preserve_session_from_response(orch, session, response, reason="error")
+            await _preserve_session_from_response(
+                orch, session, response, reason="error", request=request
+            )
             return await _reset_on_error(
                 orch,
                 key,
@@ -611,7 +677,7 @@ async def normal_streaming(  # noqa: PLR0911
                 provider_name=provider_name,
                 cli_detail=response.result,
             )
-        await _update_session(orch, session, response)
+        await _update_session(orch, session, response, request)
         _schedule_memory_flush(orch, key, session)
         logger.info("Streaming flow completed")
         req_model, _prov = _request_target(orch, request)
@@ -756,6 +822,7 @@ async def named_session_flow(
     request = AgentRequest(
         prompt=text,
         append_system_prompt=files_block,
+        origin=Origin.NAMED_SESSION,
         model_override=ns.model,
         provider_override=ns.provider,
         effort_override=ns.reasoning_effort or None,
@@ -818,6 +885,7 @@ async def named_session_streaming(
     request = AgentRequest(
         prompt=text,
         append_system_prompt=files_block,
+        origin=Origin.NAMED_SESSION,
         model_override=ns.model,
         provider_override=ns.provider,
         effort_override=ns.reasoning_effort or None,
@@ -923,6 +991,7 @@ async def heartbeat_flow(
 
     request = AgentRequest(
         prompt=effective_prompt,
+        origin=Origin.HEARTBEAT,
         model_override=req_model,
         provider_override=req_provider,
         effort_override=session.reasoning_effort or None,

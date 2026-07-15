@@ -524,7 +524,7 @@ class MatrixBot:
         drained = self._message_queue.drain(chat_id=key.chat_id)
         orch = self._orchestrator
         if orch:
-            killed = await orch.abort(key.chat_id)
+            killed = await orch.abort(key.chat_id, transport=key.transport)
             killed += drained
             msg = t("abort_all.done", count=killed) if killed else t("abort_all.nothing")
         else:
@@ -671,6 +671,12 @@ class MatrixBot:
         if result and result.text:
             await self._send_selector_response(room_id, result.text, result.buttons)
 
+    async def _cmd_interactive(
+        self, *, text: str, room_id: str, key: SessionKey, event: object
+    ) -> None:
+        """Toggle or show Claude interactive REPL mode via the orchestrator."""
+        await self._cmd_orchestrator(text=text, room_id=room_id, key=key, event=event)
+
     async def _dispatch_with_lock(
         self, key: SessionKey, text: str, room_id: str, event: object
     ) -> None:
@@ -724,6 +730,7 @@ class MatrixBot:
         "agent_commands": _cmd_agent_commands,
         "showfiles": _cmd_showfiles,
         "session": _cmd_session,
+        "interactive": _cmd_interactive,
     }
 
     # Commands that run immediately without the per-chat lock.
@@ -759,7 +766,8 @@ class MatrixBot:
             t("help.header"),
             SEP,
             f"**{t('help.cat_daily')}**\n{_line('new')}\n{_line('reset')}\n{_line('stop')}\n"
-            f"{_line('stop_all')}\n{_line('model')}\n{_line('status')}\n{_line('memory')}",
+            f"{_line('stop_all')}\n{_line('model')}\n{_line('interactive')}\n{_line('status')}\n"
+            f"{_line('memory')}",
             f"**{t('help.cat_automation')}**\n{_line('session')}\n{_line('tasks')}\n{_line('cron')}",
             f"**{t('help.cat_multiagent')}**\n{_line('agent_commands')}\n{_line('agents')}\n"
             f"{_line('agent_start')}\n{_line('agent_stop')}\n{_line('agent_restart')}",

@@ -321,6 +321,12 @@ footer = "Kirim pesan apa pun untuk mulai bekerja dengan agen Anda."
 matrix_footer = "Gunakan awalan `!` atau `/`. Kirim pesan apa pun untuk memulai."
 slack_footer = "Gunakan perintah seperti `help` atau `/help`. Kirim pesan lain untuk memulai."
 
+# -- Interactive ---------------------------------------------------------------
+
+[interactive]
+status = "Interactive REPL mode: {state}\nProvider/model: {provider} / {model}"
+usage = "Usage: /interactive on|off"
+
 # -- Multi-agent ---------------------------------------------------------------
 
 [agents]

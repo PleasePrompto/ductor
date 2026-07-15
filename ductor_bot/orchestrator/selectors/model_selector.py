@@ -449,6 +449,11 @@ async def switch_model(
         ),
     )
 
+    # The interactive REPL bakes --model and --effort into a persistent
+    # (transport, chat, topic) tmux session; kill it on any model OR effort
+    # change so the next turn respawns (with --resume) using the new value.
+    if not same_model or effort_only:
+        orch._cli_service.kill_interactive_repl(key.transport, key.chat_id, key.topic_id)
     if not is_topic:
         # Global config: update only from main chat / DM (not from topics).
         orch._config.model = model_id

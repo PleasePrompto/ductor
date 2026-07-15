@@ -25,7 +25,7 @@ import time
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING
 
-from ductor_bot.cli.types import AgentRequest
+from ductor_bot.cli.types import AgentRequest, Origin
 from ductor_bot.errors import CLIError
 from ductor_bot.workspace.loader import read_mainmemory
 
@@ -114,6 +114,7 @@ class MemoryFlusher:
 
         request = AgentRequest(
             prompt=self._config.flush_prompt,
+            origin=Origin.MEMORY_FLUSH,
             chat_id=key.chat_id,
             topic_id=key.topic_id,
             transport=key.transport,
@@ -143,6 +144,7 @@ class MemoryFlusher:
         prompt = self._render_compact_prompt()
         request = AgentRequest(
             prompt=prompt,
+            origin=Origin.COMPACT,
             chat_id=key.chat_id,
             topic_id=key.topic_id,
             transport=key.transport,

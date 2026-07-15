@@ -460,6 +460,8 @@ class AgentConfig(BaseModel):
     webhooks: WebhookConfig = Field(default_factory=WebhookConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     cli_parameters: CLIParametersConfig = Field(default_factory=CLIParametersConfig)
+    claude_interactive: bool = False
+    claude_interactive_tool_denylist: list[str] = Field(default_factory=list)
     image: ImageConfig = Field(default_factory=ImageConfig)
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)

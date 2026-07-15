@@ -801,3 +801,44 @@ class TestParseResponse:
         data = {"result": "ok"}
         resp = _parse_response(json.dumps(data).encode(), b"", 0)
         assert resp.stderr == ""
+
+
+class FakeReplPool:
+    def __init__(self) -> None:
+        self.seed_calls: list[dict[str, object]] = []
+        self.send_calls: list[dict[str, object]] = []
+
+    def seed_resume_session(self, **kwargs: object) -> None:
+        self.seed_calls.append(kwargs)
+
+    def send(self, **kwargs: object) -> tuple[str, str]:
+        self.send_calls.append(kwargs)
+        return "interactive text", "sid-i"
+
+
+async def test_interactive_streaming_yields_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    pool = FakeReplPool()
+    cli = _make_cli(
+        monkeypatch,
+        chat_id=42,
+        topic_id=7,
+        model="sonnet",
+        append_system_prompt="custom-system-prompt",
+        interactive_enabled=True,
+        interactive_repl_pool=pool,
+    )
+
+    events = await _collect_stream(cli, resume_session="old-i")
+
+    assert isinstance(events[0], SystemInitEvent)
+    assert events[0].session_id == "sid-i"
+    assert any(
+        isinstance(event, AssistantTextDelta) and event.text == "interactive text"
+        for event in events
+    )
+    result_events = [event for event in events if isinstance(event, ResultEvent)]
+    assert len(result_events) == 1
+    assert result_events[0].session_id == "sid-i"
+    assert result_events[0].result == "interactive text"
+    assert pool.seed_calls[0]["session_id"] == "old-i"
+    assert pool.send_calls[0]["system_prompt"] == "custom-system-prompt"

@@ -14,7 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        python3 python3-pip python3-venv python3-dev \
-       build-essential git curl ca-certificates sudo locales \
+       build-essential git curl ca-certificates sudo locales tmux \
     && sed -i '/en_US.UTF-8/s/^# //' /etc/locale.gen && locale-gen \
     && rm -rf /var/lib/apt/lists/*
 

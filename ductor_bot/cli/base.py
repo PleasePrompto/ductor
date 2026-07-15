@@ -17,6 +17,7 @@ from ductor_bot.cli.stream_events import StreamEvent
 from ductor_bot.cli.types import CLIResponse, task_id_from_label
 
 if TYPE_CHECKING:
+    from ductor_bot.cli.interactive.repl_pool import ReplPool
     from ductor_bot.cli.process_registry import ProcessRegistry
     from ductor_bot.cli.timeout_controller import TimeoutController
 
@@ -98,12 +99,17 @@ class CLIConfig:
     # Multi-agent identification:
     agent_name: str = "main"
     interagent_port: int = 8799
+    # Claude-specific interactive REPL path (human chat only, configured by CLIService):
+    interactive_repl_pool: ReplPool | None = None
+    interactive_enabled: bool = False
     # External transcription hooks (#66) — empty strings keep built-in strategies.
     transcribe_command: str = ""
     video_transcribe_command: str = ""
 
 
 _CONTAINER_DUCTOR_MOUNT = "/ductor"
+# Inter-agent host the container uses to reach the host-bound bus (docker-only).
+DOCKER_INTERAGENT_HOST = "host.docker.internal"
 
 
 def _to_container_path(host_path: Path, main_home: Path) -> str:
@@ -137,7 +143,7 @@ def _docker_env_flags(
         "-e",
         f"DUCTOR_SHARED_MEMORY_PATH={container_shared}",
         "-e",
-        "DUCTOR_INTERAGENT_HOST=host.docker.internal",
+        f"DUCTOR_INTERAGENT_HOST={DOCKER_INTERAGENT_HOST}",
     ]
     if config.topic_id:
         env_flags += ["-e", f"DUCTOR_TOPIC_ID={config.topic_id}"]
