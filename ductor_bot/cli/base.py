@@ -218,6 +218,42 @@ def docker_wrap(
     return cmd, str(Path(config.working_dir).resolve())
 
 
+def host_path_to_container(host_path: str) -> str | None:
+    """Translate a host path under the ductor home to its container path.
+
+    The Docker container bind-mounts the ductor home at ``/ductor``.  Returns
+    ``None`` when *host_path* is not under the mounted home so callers can fail
+    loudly instead of passing a path the container cannot read.
+    """
+    from ductor_bot.workspace.paths import resolve_paths
+
+    prefix = str(resolve_paths().ductor_home)
+    if host_path.startswith(prefix):
+        return _CONTAINER_DUCTOR_MOUNT + host_path[len(prefix) :].replace("\\", "/")
+    return None
+
+
+def docker_prompt_tmp_dir() -> str:
+    """Return the bind-mounted tmp dir for prompt files, creating it if needed.
+
+    Prompt files handed to a containerized CLI must live under the ductor home
+    so they are readable through the ``/ductor`` mount.
+    """
+    from ductor_bot.workspace.paths import resolve_paths
+
+    tmp_dir = resolve_paths().ductor_home / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    return str(tmp_dir)
+
+
+async def _cleanup_file(path: str | None) -> None:
+    """Delete a temporary file from an async context (best effort)."""
+    if not path:
+        return
+    with contextlib.suppress(OSError):
+        await asyncio.to_thread(Path(path).unlink, missing_ok=True)
+
+
 class BaseCLI(ABC):
     """Abstract interface for CLI backends (Claude, Codex, etc.)."""
 

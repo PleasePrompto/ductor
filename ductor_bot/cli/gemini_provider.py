@@ -18,8 +18,11 @@ from ductor_bot.cli.auth import gemini_api_key_mode_selected
 from ductor_bot.cli.base import (
     BaseCLI,
     CLIConfig,
+    _cleanup_file,
     _feed_stdin_and_close,
+    docker_prompt_tmp_dir,
     docker_wrap,
+    host_path_to_container,
 )
 from ductor_bot.cli.gemini_events import extract_result_text, extract_text, parse_gemini_stream_line
 from ductor_bot.cli.gemini_utils import (
@@ -32,7 +35,6 @@ from ductor_bot.cli.types import CLIResponse
 from ductor_bot.config import NULLISH_TEXT_VALUES
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from ductor_bot.infra.process_tree import force_kill_process_tree
-from ductor_bot.workspace.paths import resolve_paths
 
 if TYPE_CHECKING:
     from ductor_bot.cli.process_registry import ProcessRegistry, TrackedProcess
@@ -41,9 +43,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 300.0
-
-# Must match ``_DUCTOR_MOUNT`` in ``ductor_bot.infra.docker``.
-_CONTAINER_DUCTOR = "/ductor"
 
 
 @dataclass(slots=True)
@@ -322,11 +321,7 @@ class GeminiCLI(BaseCLI):
         """
         if not (self._config.system_prompt or self._config.append_system_prompt):
             return None
-        directory: str | None = None
-        if self._config.docker_container:
-            tmp_dir = resolve_paths().ductor_home / "tmp"
-            tmp_dir.mkdir(parents=True, exist_ok=True)
-            directory = str(tmp_dir)
+        directory = docker_prompt_tmp_dir() if self._config.docker_container else None
         return create_system_prompt_file(
             self._config.system_prompt or "",
             self._config.append_system_prompt or "",
@@ -359,19 +354,11 @@ class GeminiCLI(BaseCLI):
 
         # Translate system prompt path to container-side path.
         if system_prompt_path:
-            container_path = self._host_to_container_path(system_prompt_path)
+            container_path = host_path_to_container(system_prompt_path)
             if container_path:
                 extra["GEMINI_SYSTEM_MD"] = container_path
 
         return extra
-
-    @staticmethod
-    def _host_to_container_path(host_path: str) -> str | None:
-        """Translate a host path under ``~/.ductor/`` to its container mount."""
-        prefix = str(resolve_paths().ductor_home)
-        if host_path.startswith(prefix):
-            return _CONTAINER_DUCTOR + host_path[len(prefix) :].replace("\\", "/")
-        return None
 
     def _resolve_exec(
         self,
@@ -568,14 +555,6 @@ def _build_stream_exit_event(
         returncode=returncode,
         session_id=state.last_session_id,
     )
-
-
-async def _cleanup_file(path: str | None) -> None:
-    """Delete a temporary file from an async context."""
-    if not path:
-        return
-    with contextlib.suppress(OSError):
-        await asyncio.to_thread(Path(path).unlink, missing_ok=True)
 
 
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:

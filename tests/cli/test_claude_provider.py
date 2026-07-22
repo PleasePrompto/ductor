@@ -7,6 +7,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,6 +15,7 @@ import pytest
 
 from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.claude_provider import (
+    _MAX_INLINE_APPEND_BYTES,
     ClaudeCodeCLI,
     _add_opt,
     _log_cmd,
@@ -801,3 +803,161 @@ class TestParseResponse:
         data = {"result": "ok"}
         resp = _parse_response(json.dumps(data).encode(), b"", 0)
         assert resp.stderr == ""
+
+
+# ---------------------------------------------------------------------------
+# --append-system-prompt file offloading (issue #182: E2BIG on >128KB argv)
+# ---------------------------------------------------------------------------
+
+
+_BIG_APPEND = "A" * (200 * 1024)
+
+
+def _file_exists(path: str) -> bool:
+    """Sync existence check (keeps pathlib out of async test bodies)."""
+    return Path(path).exists()
+
+
+def _capturing_exec(
+    captured: dict[str, Any],
+    proc: MagicMock,
+    *,
+    read_file: bool = False,
+) -> Any:
+    """Build a create_subprocess_exec side effect that records the argv."""
+
+    def _exec(*args: Any, **_kwargs: Any) -> MagicMock:
+        cmd = list(args)
+        captured["cmd"] = cmd
+        if "--append-system-prompt-file" in cmd:
+            path = cmd[cmd.index("--append-system-prompt-file") + 1]
+            captured["arg_path"] = path
+            if read_file:
+                captured["content"] = Path(path).read_text(encoding="utf-8")
+        return proc
+
+    return _exec
+
+
+class TestAppendSystemPromptFile:
+    async def test_large_append_offloaded_to_file(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, append_system_prompt=_BIG_APPEND)
+        proc = _fake_process(stdout=json.dumps({"result": "ok"}).encode())
+        captured: dict[str, Any] = {}
+
+        with patch(_EXEC_PATH, side_effect=_capturing_exec(captured, proc, read_file=True)):
+            resp = await cli.send("hi")
+
+        assert resp.result == "ok"
+        assert "--append-system-prompt-file" in captured["cmd"]
+        assert "--append-system-prompt" not in captured["cmd"]
+        assert captured["content"] == _BIG_APPEND
+        assert not _file_exists(captured["arg_path"])  # cleaned up after send
+
+    async def test_small_append_stays_inline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, append_system_prompt="be concise")
+        proc = _fake_process(stdout=json.dumps({"result": "ok"}).encode())
+        captured: dict[str, Any] = {}
+
+        with (
+            patch(_EXEC_PATH, side_effect=_capturing_exec(captured, proc)),
+            patch("ductor_bot.cli.claude_provider.create_system_prompt_file") as make_file,
+        ):
+            await cli.send("hi")
+
+        make_file.assert_not_called()
+        assert "--append-system-prompt" in captured["cmd"]
+        assert "--append-system-prompt-file" not in captured["cmd"]
+        idx = captured["cmd"].index("--append-system-prompt")
+        assert captured["cmd"][idx + 1] == "be concise"
+
+    async def test_append_at_gate_stays_inline(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        value = "x" * _MAX_INLINE_APPEND_BYTES  # ascii: bytes == chars, exactly the gate
+        cli = _make_cli(monkeypatch, append_system_prompt=value)
+        proc = _fake_process(stdout=json.dumps({"result": "ok"}).encode())
+        captured: dict[str, Any] = {}
+
+        with patch(_EXEC_PATH, side_effect=_capturing_exec(captured, proc)):
+            await cli.send("hi")
+
+        assert "--append-system-prompt" in captured["cmd"]
+        assert "--append-system-prompt-file" not in captured["cmd"]
+
+    async def test_oversized_append_never_enters_argv(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression for #182: a >128 KiB append must not become an argv token."""
+        cli = _make_cli(monkeypatch, append_system_prompt=_BIG_APPEND)
+        proc = _fake_process(stdout=json.dumps({"result": "ok"}).encode())
+        captured: dict[str, Any] = {}
+
+        with patch(_EXEC_PATH, side_effect=_capturing_exec(captured, proc)):
+            await cli.send("hi")
+
+        assert _BIG_APPEND not in captured["cmd"]
+        assert all(len(tok.encode()) < 131072 for tok in captured["cmd"])
+
+    async def test_streaming_large_append_offloaded_to_file(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cli = _make_cli(monkeypatch, append_system_prompt=_BIG_APPEND)
+        proc = _fake_streaming_process([], returncode=0)
+        captured: dict[str, Any] = {}
+
+        with patch(_EXEC_PATH, side_effect=_capturing_exec(captured, proc, read_file=True)):
+            await _collect_stream(cli)
+
+        assert "--append-system-prompt-file" in captured["cmd"]
+        assert "stream-json" in captured["cmd"]
+        assert captured["content"] == _BIG_APPEND
+        assert not _file_exists(captured["arg_path"])
+
+    async def test_temp_file_cleaned_up_on_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, append_system_prompt=_BIG_APPEND)
+        captured: dict[str, Any] = {}
+
+        def _boom(*args: Any, **_kwargs: Any) -> MagicMock:
+            cmd = list(args)
+            captured["arg_path"] = cmd[cmd.index("--append-system-prompt-file") + 1]
+            raise RuntimeError("boom")
+
+        with (
+            patch(_EXEC_PATH, side_effect=_boom),
+            pytest.raises(RuntimeError, match="boom"),
+        ):
+            await cli.send("hi")
+
+        assert not _file_exists(captured["arg_path"])
+
+    async def test_docker_uses_container_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        fake_home = tmp_path / ".ductor"
+        fake_home.mkdir()
+        monkeypatch.setattr(
+            "ductor_bot.workspace.paths.resolve_paths",
+            lambda: SimpleNamespace(ductor_home=fake_home),
+        )
+        cli = _make_cli(monkeypatch, docker_container="sandbox-1", append_system_prompt=_BIG_APPEND)
+        proc = _fake_process(stdout=json.dumps({"result": "ok"}).encode())
+        captured: dict[str, Any] = {}
+
+        def _exec(*args: Any, **_kwargs: Any) -> MagicMock:
+            cmd = list(args)
+            captured["cmd"] = cmd
+            arg_path = cmd[cmd.index("--append-system-prompt-file") + 1]
+            captured["arg_path"] = arg_path
+            # Map the container path back to the host file to verify its content.
+            host_path = str(fake_home) + arg_path[len("/ductor") :]
+            captured["content"] = Path(host_path).read_text(encoding="utf-8")
+            return proc
+
+        with patch(_EXEC_PATH, side_effect=_exec):
+            resp = await cli.send("hi")
+
+        assert resp.result == "ok"
+        assert "docker" in captured["cmd"]
+        assert captured["arg_path"].startswith("/ductor/tmp/")
+        assert captured["arg_path"].endswith(".md")
+        assert captured["content"] == _BIG_APPEND
+        assert (fake_home / "tmp").is_dir()

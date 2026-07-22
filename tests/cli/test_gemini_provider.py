@@ -14,6 +14,7 @@ from ductor_bot.cli.base import CLIConfig
 
 if TYPE_CHECKING:
     import pytest
+from ductor_bot.cli.base import host_path_to_container
 from ductor_bot.cli.gemini_provider import GeminiCLI, _log_cmd, _parse_response
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.stream_events import (
@@ -162,13 +163,11 @@ class TestPrepareEnv:
     ) -> None:
         fake_paths = type("P", (), {"ductor_home": Path(r"C:\Users\ZOZN109\.ductor")})()
         monkeypatch.setattr(
-            "ductor_bot.cli.gemini_provider.resolve_paths",
+            "ductor_bot.workspace.paths.resolve_paths",
             lambda: fake_paths,
         )
 
-        result = GeminiCLI._host_to_container_path(
-            r"C:\Users\ZOZN109\.ductor\tmp\gemini_system_abc.md"
-        )
+        result = host_path_to_container(r"C:\Users\ZOZN109\.ductor\tmp\gemini_system_abc.md")
 
         assert result == "/ductor/tmp/gemini_system_abc.md"
 
