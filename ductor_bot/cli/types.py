@@ -54,7 +54,18 @@ class CLIResponse(BaseModel):
 
     @property
     def total_tokens(self) -> int:
-        """Combined input + output tokens for context tracking."""
+        """Combined tokens for context tracking.
+
+        Prefer an explicit ``usage.total_tokens`` when providers publish one
+        (Grok headless does: uncached input + cache reads + output). Fall back
+        to input + output for Claude-style usage objects.
+        """
+        explicit = self.usage.get("total_tokens")
+        if explicit is not None:
+            try:
+                return int(explicit)
+            except (TypeError, ValueError):
+                pass
         return self.input_tokens + self.output_tokens
 
 

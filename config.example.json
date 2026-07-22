@@ -114,7 +114,8 @@
         "claude": ["--verbose", "--chrome"],
         "codex": [],
         "gemini": [],
-        "antigravity": []
+        "antigravity": [],
+        "grok": []
     },
     "image": {"max_dimension": 2000, "output_format": "webp", "quality": 85},
     "scene": {"seen_reaction": false, "status_reaction": true, "technical_footer": false},

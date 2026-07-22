@@ -2,7 +2,7 @@ This file gives coding agents a current map of the repository.
 
 ## Project Overview
 
-ductor is a multi-transport chat orchestrator for the official provider CLIs (`claude`, `codex`, `gemini`, `agy`).
+ductor is a multi-transport chat orchestrator for the official provider CLIs (`claude`, `codex`, `gemini`, `agy`, `grok`).
 It runs Telegram, Matrix and/or Slack, can expose an optional direct WebSocket API, keeps state under `~/.ductor`, and supervises the main agent plus optional sub-agents in one asyncio process.
 
 Stack:

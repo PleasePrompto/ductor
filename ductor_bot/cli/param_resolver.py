@@ -15,10 +15,12 @@ from ductor_bot.config import (
     _GEMINI_ALIASES,
     CLAUDE_MODELS,
     CLAUDE_SUPPORTED_EFFORTS,
+    GROK_MODELS,
+    GROK_SUPPORTED_EFFORTS,
     get_gemini_models,
 )
 
-_TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini"})
+_TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok"})
 
 
 def _looks_like_gemini_model(model: str) -> bool:
@@ -99,6 +101,17 @@ def _resolve_reasoning_effort(
             raise DuctorError(msg)
         return ""
 
+    if provider == "grok":
+        if requested_effort in GROK_SUPPORTED_EFFORTS:
+            return requested_effort
+        if overrides.reasoning_effort is not None:
+            msg = (
+                f"Invalid reasoning effort '{requested_effort}' for Grok model {model}. "
+                f"Supported: {', '.join(GROK_SUPPORTED_EFFORTS)}"
+            )
+            raise DuctorError(msg)
+        return ""
+
     if provider == "codex" and codex_cache:
         model_info = codex_cache.get_model(model)
         if (
@@ -160,6 +173,16 @@ def resolve_cli_config(
             raise DuctorError(msg)
     elif provider == "gemini":
         _validate_gemini_model(model)
+    elif provider == "grok":
+        from ductor_bot.config import get_grok_models
+
+        known = GROK_MODELS | get_grok_models()
+        if model not in known and not model.startswith("grok-"):
+            msg = (
+                f"Invalid Grok model: {model}. Must be one of {sorted(known)} "
+                "or a grok-* model ID"
+            )
+            raise DuctorError(msg)
     else:  # codex
         if codex_cache is None:
             msg = "Codex cache is required for Codex model validation"
@@ -168,7 +191,7 @@ def resolve_cli_config(
             msg = f"Invalid Codex model: {model}"
             raise DuctorError(msg)
 
-    # 4. Resolve reasoning effort (Codex and Claude carry it; others drop it).
+    # 4. Resolve reasoning effort (Codex, Claude, Grok carry it; others drop it).
     reasoning_effort = _resolve_reasoning_effort(
         provider, model, overrides, base_config, codex_cache
     )

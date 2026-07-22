@@ -13,6 +13,8 @@ from ductor_bot.config import (
     CLAUDE_MODELS_ORDERED,
     CLAUDE_SUPPORTED_EFFORTS,
     CODEX_SUPPORTED_EFFORTS_FALLBACK,
+    get_grok_models_ordered,
+    GROK_SUPPORTED_EFFORTS,
     get_antigravity_models,
     get_gemini_models,
     update_config_file_async,
@@ -32,6 +34,8 @@ logger = logging.getLogger(__name__)
 MS_PREFIX = "ms:"
 
 _EFFORT_LABELS: dict[str, str] = {
+    "none": "None",
+    "minimal": "Minimal",
     "low": "Low",
     "medium": "Medium",
     "high": "High",
@@ -110,6 +114,8 @@ def _supported_efforts(orch: Orchestrator, model_id: str) -> tuple[str, ...]:
     provider = orch.models.provider_for(model_id)
     if provider == "claude":
         return CLAUDE_SUPPORTED_EFFORTS
+    if provider == "grok":
+        return GROK_SUPPORTED_EFFORTS
     if provider == "codex":
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
@@ -129,12 +135,12 @@ def _validate_reasoning_effort(
     """Return a user-facing error when the effort is unsupported by the provider.
 
     Providers without a reasoning-effort concept (gemini/antigravity) skip
-    validation; codex/claude validate against their supported set (an empty
+    validation; codex/claude/grok validate against their supported set (an empty
     set rejects any effort).
     """
     if not reasoning_effort:
         return None
-    if orch.models.provider_for(model_id) not in ("codex", "claude"):
+    if orch.models.provider_for(model_id) not in ("codex", "claude", "grok"):
         return None
 
     supported = _supported_efforts(orch, model_id)
@@ -244,6 +250,8 @@ async def model_selector_start(
         buttons.append(Button(text="GEMINI", callback_data="ms:p:gemini"))
     if "antigravity" in authed:
         buttons.append(Button(text="ANTIGRAVITY", callback_data="ms:p:antigravity"))
+    if "grok" in authed:
+        buttons.append(Button(text="GROK BUILD", callback_data="ms:p:grok"))
 
     provider_rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     keyboard = ButtonGrid(rows=provider_rows)
@@ -494,7 +502,7 @@ async def switch_model(
             # Codex and Claude both use reasoning_effort — only drop it when
             # switching to a provider that has no notion of effort.
             if (
-                new_provider not in {"codex", "claude"}
+                new_provider not in {"codex", "claude", "grok"}
                 and "reasoning_effort" not in registry_updates
             ):
                 registry_updates["reasoning_effort"] = None
@@ -540,7 +548,7 @@ async def _status_line(orch: Orchestrator, key: SessionKey) -> str:
         model, provider = orch.resolve_runtime_target(orch._config.model)
         effort = orch._config.reasoning_effort
 
-    if provider in ("codex", "claude") and effort and effort != "default":
+    if provider in ("codex", "claude", "grok") and effort and effort != "default":
         current = (
             f"{t('model.header')}\n{t('model.current_with_effort', model=model, effort=effort)}"
         )
@@ -595,6 +603,20 @@ async def _build_model_step(
         keyboard = ButtonGrid(rows=antigravity_rows)
         return SelectorResponse(
             text=f"{header}\n\n{t('model.select_antigravity')}", buttons=keyboard
+        )
+
+    if provider == "grok":
+        grok_models = get_grok_models_ordered()
+        buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in grok_models]
+        keyboard = ButtonGrid(
+            rows=[
+                *_rows_of(buttons),
+                [Button(text=t("model.btn_back"), callback_data="ms:b:root")],
+            ]
+        )
+        return SelectorResponse(
+            text=f"{header}\n\nSelect a Grok Build model:",
+            buttons=keyboard,
         )
 
     # Use cache instead of live discovery

@@ -96,7 +96,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--timezone", help="IANA timezone for this job (e.g. 'Europe/Berlin')")
     parser.add_argument(
         "--provider",
-        choices=["claude", "codex", "gemini"],
+        choices=["claude", "codex", "gemini", "grok"],
         help="Provider override for this job.",
     )
     parser.add_argument(

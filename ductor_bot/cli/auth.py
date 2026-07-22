@@ -449,11 +449,74 @@ def check_antigravity_auth() -> AuthResult:
     return AuthResult(provider="antigravity", status=AuthStatus.NOT_FOUND)
 
 
+def check_grok_auth() -> AuthResult:
+    """Check Grok Build CLI auth via ``~/.grok/auth.json``, env key, or CLI probe."""
+    try:
+        default_home = str(Path.home() / ".grok")
+    except (RuntimeError, OSError):
+        logger.debug("Grok auth: home directory unresolvable; treating as NOT_FOUND")
+        return AuthResult("grok", AuthStatus.NOT_FOUND)
+
+    grok_home = Path(os.environ.get("GROK_HOME", default_home))
+    auth_file = grok_home / "auth.json"
+    binary = shutil.which("grok")
+
+    if auth_file.is_file() and auth_file.stat().st_size > 0:
+        mtime = datetime.fromtimestamp(auth_file.stat().st_mtime, tz=UTC)
+        result = AuthResult("grok", AuthStatus.AUTHENTICATED, auth_file, mtime)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    if _has_nonempty_env("XAI_API_KEY"):
+        result = AuthResult("grok", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
+        return result
+
+    if binary is not None and _grok_cli_logged_in(binary):
+        result = AuthResult("grok", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (cli)", result.provider, result.status)
+        return result
+
+    if binary is not None or (grok_home / "config.toml").is_file():
+        result = AuthResult("grok", AuthStatus.INSTALLED)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    result = AuthResult("grok", AuthStatus.NOT_FOUND)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
+def _grok_cli_logged_in(binary: str) -> bool:
+    """Run ``grok models`` and return True when the CLI reports an authenticated account."""
+    try:
+        proc = subprocess.run(
+            [binary, "models"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            creationflags=_CREATION_FLAGS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.debug("Grok CLI auth probe failed: %s", exc)
+        return False
+
+    output = f"{proc.stdout}\n{proc.stderr}".lower()
+    if any(
+        token in output
+        for token in ("not logged in", "sign in", "login required", "unauthorized", "run `grok login`")
+    ):
+        return False
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
     "gemini": check_gemini_auth,
     "antigravity": check_antigravity_auth,
+    "grok": check_grok_auth,
 }
 
 

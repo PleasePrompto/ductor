@@ -1,12 +1,12 @@
 # cli/
 
-Provider-agnostic CLI execution layer for Claude Code, Codex, Gemini, and Antigravity.
+Provider-agnostic CLI execution layer for Claude Code, Codex, Gemini, Antigravity, and Grok Build.
 
 ## Files
 
 - `types.py`: `AgentRequest`, `AgentResponse`, `CLIResponse`
 - `base.py`: `BaseCLI`, `CLIConfig`, `docker_wrap()`, Windows helpers
-- `factory.py`: provider factory (`claude` / `codex` / `gemini` / `antigravity`)
+- `factory.py`: provider factory (`claude` / `codex` / `gemini` / `antigravity` / `grok`)
 - `service.py`: `CLIService` gateway for orchestrator
 - `init_wizard.py`: interactive onboarding and smart reset flow
 - `executor.py`: shared subprocess lifecycle helpers for provider wrappers
@@ -16,10 +16,12 @@ Provider-agnostic CLI execution layer for Claude Code, Codex, Gemini, and Antigr
 - `codex_provider.py`: Codex subprocess wrapper
 - `gemini_provider.py`: Gemini subprocess wrapper
 - `antigravity_provider.py`: Antigravity (`agy`) subprocess wrapper — always runs on the host, even with the Docker sandbox enabled (the sandbox image ships no `agy` binary or auth state). `agy` has no headless streaming mode (`--print` is one-shot; `--prompt-interactive` needs a TTY), so `send_streaming` reuses the `--print` path. Because `agy --print` silently drops stdout in non-TTY subprocesses (upstream bug `google-antigravity/antigravity-cli#76`), the answer is read back from agy's own transcript (`<home>/.gemini/antigravity-cli/brain/<conv-id>/.system_generated/logs/transcript.jsonl`, the final `PLANNER_RESPONSE` entry — clean, without tool-call narration), with stdout as fallback. `--print <prompt>` is placed last and adjacent (it consumes the next token as its prompt value), and agy is grounded in the per-agent workspace via `--add-dir`
+- `grok_provider.py`: Grok Build (`grok`) headless wrapper — oneshot `--output-format json`, streaming `streaming-json`, session `--resume`/`--continue`, long prompts via `--prompt-file`, tool filter via `--tools`/`--disallowed-tools`
 - `stream_events.py`: normalized stream events + Claude stream parser
 - `codex_events.py`: Codex JSONL parser
 - `gemini_events.py`: Gemini NDJSON + JSON parser
 - `antigravity_events.py`: Antigravity `--print` output parser (`parse_antigravity_json`)
+- `grok_events.py`: Grok JSON / streaming-json parser (text, thought, tool, error, auto_compact_*, end)
 - `coalescer.py`: streaming text coalescing buffer used by bot streaming dispatch
 - `gemini_utils.py`: Gemini CLI discovery, trusted folder, model discovery helpers
 - `codex_discovery.py`: Codex model discovery via `codex app-server` JSON-RPC
@@ -67,6 +69,7 @@ Configured globally in `config.json`:
 - `cli_parameters.codex`
 - `cli_parameters.gemini`
 - `cli_parameters.antigravity`
+- `cli_parameters.grok`
 
 `CLIService` forwards them per provider.
 
@@ -76,12 +79,13 @@ Used by cron and webhook `cron_task` runs.
 
 - input: `TaskOverrides(provider, model, reasoning_effort, cli_parameters)`
 - output: immutable `TaskExecutionConfig`
-- supported one-shot providers: `claude`, `codex`, `gemini`
+- supported one-shot providers: `claude`, `codex`, `gemini`, `grok`
 - validation:
   - Claude model in `CLAUDE_MODELS`
   - Codex model validated against `CodexModelCache`
   - Gemini model validated against aliases/discovered IDs or `gemini-*` patterns
-- Codex reasoning effort applied only when supported by model
+  - Grok model in `GROK_MODELS` or `grok-*` prefix
+- Codex / Claude / Grok reasoning effort applied only when supported by model
 - task `cli_parameters` are appended after the global provider-specific args
 
 ## Streaming model
@@ -152,6 +156,20 @@ Recovery triggers handled in orchestrator flows:
 - trusts workspace path in `~/.gemini/trustedFolders.json`
 - may inject `GEMINI_API_KEY` from ductor config when Gemini settings indicate API-key mode and no env key is set
 
+### Grok Build
+
+- binary `grok` (install: `curl -fsSL https://x.ai/cli/install.sh | bash`)
+- non-streaming `--output-format json`, streaming `--output-format streaming-json`
+- permission: `--permission-mode` plus `--always-approve` when `bypassPermissions`
+- system prompt: `--system-prompt-override` / rules: `--rules`
+- tool filter: `--tools` / `--disallowed-tools` (comma-separated built-in IDs; not permission globs)
+- long prompts: `--prompt-file` (chat path and cron path)
+- stream maps `error` → terminal error `ResultEvent`, `auto_compact_*` → `CompactBoundaryEvent` (memory flush)
+- spend: prefers `usage.total_tokens` and maps `total_cost_usd` into `CLIResponse`
+- models: discovered via `grok models` into `grok_models.json` (hourly refresh);
+  fallback `grok-4.5` / `grok-composer-2.5-fast`; any `grok-*` ID still routes
+- efforts: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`
+
 ## Auth detection (`auth.py`)
 
 Statuses: `AUTHENTICATED`, `INSTALLED`, `NOT_FOUND`.
@@ -166,6 +184,7 @@ Statuses: `AUTHENTICATED`, `INSTALLED`, `NOT_FOUND`.
   - env/.env/API-key/Vertex markers
   - `settings.json` selected auth mode
   - optional fallback to `~/.ductor/config/config.json` `gemini_api_key`
+- Grok: `~/.grok/auth.json`, then `XAI_API_KEY`, then `grok models` probe; install markers: binary or `config.toml`
 
 ## Model caches
 
@@ -193,6 +212,15 @@ Statuses: `AUTHENTICATED`, `INSTALLED`, `NOT_FOUND`.
 - the Telegram model selector currently offers only `antigravity-default` and
   explains that `agy` model selection is not reliable there; discovered names
   remain available for directive/API provider metadata.
+
+### Grok cache
+
+- file: `~/.ductor/config/grok_models.json` (per-agent home, e.g. `~/.ductor-cto/config/`)
+- discovery source: `discover_grok_models()` (`grok_discovery.py`) via `grok models`
+- loaded on startup (uses cache when fresh, refreshes when stale/missing)
+- hourly refresh loop
+- refresh callback updates runtime Grok model registry (`set_grok_models`)
+- Telegram model selector shows discovery-ordered IDs via `get_grok_models_ordered()`
 
 ## Process registry
 

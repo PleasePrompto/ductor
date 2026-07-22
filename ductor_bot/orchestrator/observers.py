@@ -22,8 +22,14 @@ from ductor_bot.cli.antigravity_cache_observer import AntigravityCacheObserver
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_cache_observer import CodexCacheObserver
 from ductor_bot.cli.gemini_cache_observer import GeminiCacheObserver
+from ductor_bot.cli.grok_cache_observer import GrokCacheObserver
 from ductor_bot.cli.service import CLIService
-from ductor_bot.config import AgentConfig, get_antigravity_models, get_gemini_models
+from ductor_bot.config import (
+    AgentConfig,
+    get_antigravity_models,
+    get_gemini_models,
+    get_grok_models,
+)
 from ductor_bot.config_reload import ConfigReloader
 from ductor_bot.cron.manager import CronManager
 from ductor_bot.cron.observer import CronObserver
@@ -54,6 +60,7 @@ class ObserverManager:
         self.codex_cache_obs: CodexCacheObserver | None = None
         self.gemini_cache_obs: GeminiCacheObserver | None = None
         self.antigravity_cache_obs: AntigravityCacheObserver | None = None
+        self.grok_cache_obs: GrokCacheObserver | None = None
 
         self._config_reloader: ConfigReloader | None = None
         self._rule_sync_task: asyncio.Task[None] | None = None
@@ -67,8 +74,9 @@ class ObserverManager:
         installed_providers: frozenset[str],
         on_gemini_refresh: Callable[[tuple[str, ...]], None],
         on_antigravity_refresh: Callable[[tuple[str, ...]], None],
+        on_grok_refresh: Callable[[tuple[str, ...]], None],
     ) -> CodexModelCache:
-        """Start Gemini, Antigravity, and Codex cache observers, return Codex cache.
+        """Start Gemini, Antigravity, Grok, and Codex cache observers, return Codex cache.
 
         *installed_providers* comes from the startup auth detection, which is
         fallback-aware (e.g. finds a Gemini CLI installed under NVM that plain
@@ -98,6 +106,17 @@ class ObserverManager:
                 logger.warning("Antigravity cache is empty after startup")
         else:
             logger.debug("Antigravity CLI not found; cache observer disabled")
+
+        if "grok" in installed_providers:
+            grok_cache_path = self._paths.config_path.parent / "grok_models.json"
+            grok_observer = GrokCacheObserver(grok_cache_path, on_refresh=on_grok_refresh)
+            await grok_observer.start()
+            self.grok_cache_obs = grok_observer
+
+            if not get_grok_models():
+                logger.warning("Grok cache is empty after startup")
+        else:
+            logger.debug("Grok CLI not found; cache observer disabled")
 
         codex_cache: CodexModelCache | None = None
         if "codex" in installed_providers:
@@ -193,6 +212,9 @@ class ObserverManager:
         if self.antigravity_cache_obs:
             await self.antigravity_cache_obs.stop()
             self.antigravity_cache_obs = None
+        if self.grok_cache_obs:
+            await self.grok_cache_obs.stop()
+            self.grok_cache_obs = None
         for task in (self._rule_sync_task, self._skill_sync_task):
             if task and not task.done():
                 task.cancel()

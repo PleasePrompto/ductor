@@ -102,6 +102,7 @@ def test_deploy_claude_only_no_agents_md(mock_paths: DuctorPaths) -> None:
     auth = {
         "claude": AuthResult(provider="claude", status=AuthStatus.AUTHENTICATED),
         "codex": AuthResult(provider="codex", status=AuthStatus.NOT_FOUND),
+        "grok": AuthResult(provider="grok", status=AuthStatus.NOT_FOUND),
     }
 
     with patch("ductor_bot.cli.auth.check_all_auth", return_value=auth):
@@ -116,6 +117,26 @@ def test_deploy_claude_only_no_agents_md(mock_paths: DuctorPaths) -> None:
         # Check that AGENTS.md was NOT created
         config_agents = mock_paths.ductor_home / "config" / "AGENTS.md"
         assert not config_agents.exists()
+
+
+def test_deploy_grok_only_with_agents_md(mock_paths: DuctorPaths) -> None:
+    """Grok Build loads AGENTS.md; deploy it when only Grok is authenticated."""
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.NOT_FOUND),
+        "codex": AuthResult(provider="codex", status=AuthStatus.NOT_FOUND),
+        "gemini": AuthResult(provider="gemini", status=AuthStatus.NOT_FOUND),
+        "grok": AuthResult(provider="grok", status=AuthStatus.AUTHENTICATED),
+    }
+
+    with patch("ductor_bot.cli.auth.check_all_auth", return_value=auth):
+        selector = RulesSelector(mock_paths)
+        assert selector.get_variant_suffix() == "codex-only"
+        selector.deploy_rules()
+
+        config_agents = mock_paths.ductor_home / "config" / "AGENTS.md"
+        assert config_agents.exists()
+        assert "Codex Only Template" in config_agents.read_text()
+        assert not (mock_paths.ductor_home / "config" / "CLAUDE.md").exists()
 
 
 def test_deploy_codex_only_with_agents_md(mock_paths: DuctorPaths) -> None:
