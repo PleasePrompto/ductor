@@ -94,7 +94,11 @@ async def create_orchestrator(
 
     await asyncio.to_thread(orch._providers.init_gemini_state, paths.workspace)
 
+    installed_providers = frozenset(
+        name for name, result in auth_results.items() if result.status is not AuthStatus.NOT_FOUND
+    )
     codex_cache = await orch._observers.init_model_caches(
+        installed_providers=installed_providers,
         on_gemini_refresh=orch._providers.on_gemini_models_refresh,
         on_antigravity_refresh=orch._providers.on_antigravity_models_refresh,
     )

@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import shutil
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
@@ -65,12 +64,18 @@ class ObserverManager:
     async def init_model_caches(
         self,
         *,
+        installed_providers: frozenset[str],
         on_gemini_refresh: Callable[[tuple[str, ...]], None],
         on_antigravity_refresh: Callable[[tuple[str, ...]], None],
     ) -> CodexModelCache:
-        """Start Gemini, Antigravity, and Codex cache observers, return Codex cache."""
-        # Optional provider observers are useful only when their CLIs are installed.
-        if shutil.which("gemini"):
+        """Start Gemini, Antigravity, and Codex cache observers, return Codex cache.
+
+        *installed_providers* comes from the startup auth detection, which is
+        fallback-aware (e.g. finds a Gemini CLI installed under NVM that plain
+        PATH lookup would miss). Observers for providers not in the set are
+        never created.
+        """
+        if "gemini" in installed_providers:
             gemini_cache_path = self._paths.config_path.parent / "gemini_models.json"
             gemini_observer = GeminiCacheObserver(gemini_cache_path, on_refresh=on_gemini_refresh)
             await gemini_observer.start()
@@ -81,7 +86,7 @@ class ObserverManager:
         else:
             logger.debug("Gemini CLI not found; cache observer disabled")
 
-        if shutil.which("agy"):
+        if "antigravity" in installed_providers:
             antigravity_cache_path = self._paths.config_path.parent / "antigravity_models.json"
             antigravity_observer = AntigravityCacheObserver(
                 antigravity_cache_path, on_refresh=on_antigravity_refresh
@@ -95,7 +100,7 @@ class ObserverManager:
             logger.debug("Antigravity CLI not found; cache observer disabled")
 
         codex_cache: CodexModelCache | None = None
-        if shutil.which("codex"):
+        if "codex" in installed_providers:
             codex_cache_path = self._paths.config_path.parent / "codex_models.json"
             codex_observer = CodexCacheObserver(codex_cache_path)
             await codex_observer.start()
