@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -101,11 +102,9 @@ def parse_grok_result(stdout: bytes) -> str:
     raw = stdout.decode(errors="replace").strip()
     if not raw:
         return ""
-    text, _session_id, _usage, _model_usage, _turns, is_error, _cost = parse_grok_json(raw)
+    text, _session_id, _usage, _model_usage, _turns, _is_error, _cost = parse_grok_json(raw)
     if text:
         return text
-    if is_error:
-        return raw[:2000]
     return raw[:2000]
 
 
@@ -201,8 +200,6 @@ _GROK_PROMPT_ARGV_SOFT_LIMIT = 24_000
 
 def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
     """Build a Grok Build CLI command for one-shot cron execution."""
-    import tempfile
-
     cli = which("grok")
     if not cli:
         return None
@@ -287,7 +284,9 @@ async def execute_one_shot(
             *one_shot.cmd,
             cwd=str(cwd),
             env=env,
-            stdin=asyncio.subprocess.PIPE if stdin_input is not None else asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.PIPE
+            if stdin_input is not None
+            else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             creationflags=_CREATION_FLAGS,

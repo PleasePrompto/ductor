@@ -179,6 +179,8 @@ class ProviderManager:
         """Return the default model ID for a provider, or empty string if unknown."""
         if provider == "claude":
             return self._config.model if self._config.provider == "claude" else "sonnet"
+        if provider == "grok":
+            return self._config.model if self._config.provider == "grok" else "grok-4.5"
         if provider == "codex":
             codex = self._codex_cache_fn() if self._codex_cache_fn else None
             if codex:
@@ -186,13 +188,8 @@ class ProviderManager:
                     if m.is_default:
                         return m.id
             return ""
-        if provider == "gemini":
-            return ""
-        if provider == "antigravity":
-            return "antigravity-default"
-        if provider == "grok":
-            return self._config.model if self._config.provider == "grok" else "grok-4.5"
-        return ""
+        # gemini has no static default; unknown providers fall through to "".
+        return {"antigravity": "antigravity-default"}.get(provider, "")
 
     def resolve_session_directive(self, key: str) -> tuple[str, str] | None:
         """Resolve a ``@key`` directive to ``(provider, model)`` or ``None``.

@@ -19,7 +19,7 @@ import tempfile
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from shutil import which
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ductor_bot.cli.base import (
     _IS_WINDOWS,
@@ -205,12 +205,13 @@ class GrokCLI(BaseCLI):
             ):
                 if isinstance(event, AssistantTextDelta) and event.text:
                     accumulated.append(event.text)
+                out = event
                 if isinstance(event, ResultEvent):
                     saw_result = True
                     # Grok end events often omit the full text; fill from deltas.
                     if not event.result and accumulated:
-                        event = event.model_copy(update={"result": "".join(accumulated)})
-                yield event
+                        out = event.model_copy(update={"result": "".join(accumulated)})
+                yield out
 
             if not saw_result and accumulated:
                 yield ResultEvent(type="result", result="".join(accumulated), is_error=False)
@@ -257,9 +258,7 @@ def _parse_response(stdout: bytes, stderr: bytes, returncode: int | None) -> CLI
         )
 
     # Prefer last JSON object if the CLI printed trailing noise.
-    text, session_id, usage, model_usage, num_turns, is_error, total_cost = _parse_best_json(
-        raw
-    )
+    text, session_id, usage, model_usage, num_turns, is_error, total_cost = _parse_best_json(raw)
     if returncode not in (None, 0):
         is_error = True
 
@@ -290,22 +289,24 @@ def _parse_response(stdout: bytes, stderr: bytes, returncode: int | None) -> CLI
 
 def _parse_best_json(
     raw: str,
-) -> tuple[str, str | None, dict, dict, int | None, bool, float | None]:
-    """Parse raw stdout, tolerating multi-line pretty JSON or trailing junk."""
+) -> tuple[str, str | None, dict[str, Any], dict[str, Any], int | None, bool, float | None]:
+    """Parse raw stdout, tolerating multi-line pretty JSON or trailing junk.
+
+    ``parse_grok_json`` never raises — it degrades unparseable input to plain
+    text. So probe validity with ``json.loads`` first and, when the whole blob
+    is not JSON (NDJSON leaked into json mode, trailing noise), hand the last
+    valid JSON line to the parser instead of surfacing raw JSON to the user.
+    """
     try:
-        return parse_grok_json(raw)
-    except Exception:  # noqa: BLE001 — fall through to line-wise recovery
-        pass
-
-    # Try last non-empty line (in case of NDJSON leaked into json mode).
-    for line in reversed(raw.splitlines()):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        return parse_grok_json(line)
-
+        json.loads(raw.strip())
+    except json.JSONDecodeError:
+        for line in reversed(raw.splitlines()):
+            candidate = line.strip()
+            if not candidate:
+                continue
+            try:
+                json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            return parse_grok_json(candidate)
     return parse_grok_json(raw)

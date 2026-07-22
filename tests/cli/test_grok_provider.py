@@ -12,6 +12,7 @@ from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.factory import create_cli
 from ductor_bot.cli.grok_events import parse_grok_json, parse_grok_stream_line
 from ductor_bot.cli.grok_provider import GrokCLI, _parse_response
+from ductor_bot.cli.param_resolver import TaskExecutionConfig
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
     CompactBoundaryEvent,
@@ -23,7 +24,6 @@ from ductor_bot.cli.stream_events import (
 from ductor_bot.cli.types import CLIResponse
 from ductor_bot.config import ModelRegistry
 from ductor_bot.cron.execution import _build_grok_cmd
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
 
 
 class TestGrokEvents:
@@ -92,9 +92,7 @@ class TestGrokEvents:
         assert events[0].parameters == {"command": "ls"}
 
     def test_parse_stream_error(self) -> None:
-        events = parse_grok_stream_line(
-            '{"type":"error","message":"auth failed","sessionId":"e1"}'
-        )
+        events = parse_grok_stream_line('{"type":"error","message":"auth failed","sessionId":"e1"}')
         assert len(events) == 1
         assert isinstance(events[0], ResultEvent)
         assert events[0].is_error is True
@@ -140,9 +138,11 @@ class TestGrokProvider:
         )
         cmd = cli._build_command("hello world")
         assert cmd[0] == "/usr/bin/grok"
-        assert "--output-format" in cmd and "json" in cmd
+        assert "--output-format" in cmd
+        assert "json" in cmd
         assert cmd[cmd.index("-p") + 1] == "hello world"
-        assert "--permission-mode" in cmd and "bypassPermissions" in cmd
+        assert "--permission-mode" in cmd
+        assert "bypassPermissions" in cmd
         assert "--always-approve" in cmd
         assert cmd[cmd.index("--model") + 1] == "grok-4.5"
         assert cmd[cmd.index("--reasoning-effort") + 1] == "high"
@@ -159,7 +159,8 @@ class TestGrokProvider:
         monkeypatch.setattr("ductor_bot.cli.grok_provider.which", lambda _: "/usr/bin/grok")
         cli = GrokCLI(CLIConfig(provider="grok", model="grok-4.5"))
         cmd = cli._build_command("follow up", resume_session="abc", output_format="streaming-json")
-        assert "--output-format" in cmd and "streaming-json" in cmd
+        assert "--output-format" in cmd
+        assert "streaming-json" in cmd
         assert cmd[cmd.index("--resume") + 1] == "abc"
 
     def test_long_prompt_uses_file(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -198,15 +199,15 @@ class TestGrokProvider:
 
 
 def _grok_task_cfg(**kwargs: Any) -> TaskExecutionConfig:
-    base = dict(
-        provider="grok",
-        model="grok-4.5",
-        reasoning_effort="medium",
-        permission_mode="bypassPermissions",
-        cli_parameters=[],
-        working_dir="/tmp",
-        file_access="all",
-    )
+    base: dict[str, Any] = {
+        "provider": "grok",
+        "model": "grok-4.5",
+        "reasoning_effort": "medium",
+        "permission_mode": "bypassPermissions",
+        "cli_parameters": [],
+        "working_dir": "/tmp",
+        "file_access": "all",
+    }
     base.update(kwargs)
     return TaskExecutionConfig(**base)
 

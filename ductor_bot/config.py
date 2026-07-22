@@ -697,11 +697,7 @@ class ModelRegistry:
             or model_id.startswith("antigravity-")
         ):
             return "antigravity"
-        if (
-            model_id in GROK_MODELS
-            or model_id in _runtime_grok[0]
-            or model_id.startswith("grok-")
-        ):
+        if model_id in GROK_MODELS or model_id in _runtime_grok[0] or model_id.startswith("grok-"):
             return "grok"
         return "codex"
 

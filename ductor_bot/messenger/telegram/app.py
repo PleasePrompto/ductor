@@ -993,8 +993,8 @@ class TelegramBot:
             elif p == "codex":
                 lines.append(t("session_help.codex_single"))
             elif p == "grok":
-                lines.append("• `@grok <prompt>` — Grok Build session")
-                lines.append("• `@grok-4.5 <prompt>` — pin model")
+                lines.append(t("session_help.grok_single"))
+                lines.append(t("session_help.grok_model"))
             else:
                 lines.append(t("session_help.gemini_single"))
                 lines.append(t("session_help.gemini_model"))
@@ -1007,7 +1007,7 @@ class TelegramBot:
             if "gemini" in providers:
                 lines.append(t("session_help.gemini_multi"))
             if "grok" in providers:
-                lines.append("• `@grok <prompt>` — Grok Build")
+                lines.append(t("session_help.grok_multi"))
             lines.append(t("session_help.explicit"))
 
         lines += [
@@ -1595,32 +1595,14 @@ class TelegramBot:
         await handle_upgrade_callback(self, chat_id, message_id, data, thread_id=thread_id)
 
     async def _sync_commands(self) -> None:
-        from aiogram.types import (
-            BotCommandScopeAllGroupChats,
-            BotCommandScopeAllPrivateChats,
-            BotCommandScopeChat,
-        )
+        from aiogram.types import BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 
         desired = _BOT_COMMANDS
 
         # Clear legacy scoped commands (previous versions set per-scope lists).
         # Telegram keeps scoped commands independently — they must be deleted
         # explicitly or they shadow the default-scope list.
-        #
-        # Also clear per-chat scopes for allowed users. Foreign bridges (e.g.
-        # opencode-telegram-bot) register chat-scoped command lists that outrank
-        # the default list and leave users seeing the wrong slash menu.
-        scopes_to_clear: list = [
-            BotCommandScopeAllPrivateChats(),
-            BotCommandScopeAllGroupChats(),
-        ]
-        for uid in getattr(self._config, "allowed_user_ids", None) or []:
-            try:
-                scopes_to_clear.append(BotCommandScopeChat(chat_id=int(uid)))
-            except (TypeError, ValueError):
-                continue
-
-        for scope in scopes_to_clear:
+        for scope in (BotCommandScopeAllPrivateChats(), BotCommandScopeAllGroupChats()):
             try:
                 scoped = await self._bot.get_my_commands(scope=scope)
                 if scoped:

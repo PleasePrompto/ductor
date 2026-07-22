@@ -13,10 +13,10 @@ from ductor_bot.config import (
     CLAUDE_MODELS_ORDERED,
     CLAUDE_SUPPORTED_EFFORTS,
     CODEX_SUPPORTED_EFFORTS_FALLBACK,
-    get_grok_models_ordered,
     GROK_SUPPORTED_EFFORTS,
     get_antigravity_models,
     get_gemini_models,
+    get_grok_models_ordered,
     update_config_file_async,
 )
 from ductor_bot.i18n import t
@@ -569,15 +569,22 @@ async def _build_model_step(
     codex_cache: CodexModelCache | None = None,
 ) -> SelectorResponse:
     """Build the model selection keyboard for a provider."""
-    if provider == "claude":
-        buttons = [Button(text=m.upper(), callback_data=f"ms:m:{m}") for m in CLAUDE_MODELS_ORDERED]
+    if provider in ("claude", "grok"):
+        if provider == "claude":
+            buttons = [
+                Button(text=m.upper(), callback_data=f"ms:m:{m}") for m in CLAUDE_MODELS_ORDERED
+            ]
+            prompt = t("model.select_claude")
+        else:
+            buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in get_grok_models_ordered()]
+            prompt = t("model.select_grok")
         keyboard = ButtonGrid(
             rows=[
                 *_rows_of(buttons),
                 [Button(text=t("model.btn_back"), callback_data="ms:b:root")],
             ]
         )
-        return SelectorResponse(text=f"{header}\n\n{t('model.select_claude')}", buttons=keyboard)
+        return SelectorResponse(text=f"{header}\n\n{prompt}", buttons=keyboard)
 
     if provider == "gemini":
         gemini_models = _gemini_models_for_selector()
@@ -603,20 +610,6 @@ async def _build_model_step(
         keyboard = ButtonGrid(rows=antigravity_rows)
         return SelectorResponse(
             text=f"{header}\n\n{t('model.select_antigravity')}", buttons=keyboard
-        )
-
-    if provider == "grok":
-        grok_models = get_grok_models_ordered()
-        buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in grok_models]
-        keyboard = ButtonGrid(
-            rows=[
-                *_rows_of(buttons),
-                [Button(text=t("model.btn_back"), callback_data="ms:b:root")],
-            ]
-        )
-        return SelectorResponse(
-            text=f"{header}\n\nSelect a Grok Build model:",
-            buttons=keyboard,
         )
 
     # Use cache instead of live discovery

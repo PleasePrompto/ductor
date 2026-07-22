@@ -74,6 +74,26 @@ class TaskExecutionConfig:
     file_access: str
 
 
+def _static_effort(
+    requested: str,
+    supported: tuple[str, ...],
+    provider_label: str,
+    model: str,
+    *,
+    explicit: bool,
+) -> str:
+    """Validate an effort against a static support list (Claude / Grok)."""
+    if requested in supported:
+        return requested
+    if explicit:
+        msg = (
+            f"Invalid reasoning effort '{requested}' for {provider_label} model {model}. "
+            f"Supported: {', '.join(supported)}"
+        )
+        raise DuctorError(msg)
+    return ""
+
+
 def _resolve_reasoning_effort(
     provider: str,
     model: str,
@@ -90,27 +110,15 @@ def _resolve_reasoning_effort(
     if not requested_effort or requested_effort == "default":
         return ""
 
+    explicit = overrides.reasoning_effort is not None
     if provider == "claude":
-        if requested_effort in CLAUDE_SUPPORTED_EFFORTS:
-            return requested_effort
-        if overrides.reasoning_effort is not None:
-            msg = (
-                f"Invalid reasoning effort '{requested_effort}' for Claude model {model}. "
-                f"Supported: {', '.join(CLAUDE_SUPPORTED_EFFORTS)}"
-            )
-            raise DuctorError(msg)
-        return ""
-
+        return _static_effort(
+            requested_effort, CLAUDE_SUPPORTED_EFFORTS, "Claude", model, explicit=explicit
+        )
     if provider == "grok":
-        if requested_effort in GROK_SUPPORTED_EFFORTS:
-            return requested_effort
-        if overrides.reasoning_effort is not None:
-            msg = (
-                f"Invalid reasoning effort '{requested_effort}' for Grok model {model}. "
-                f"Supported: {', '.join(GROK_SUPPORTED_EFFORTS)}"
-            )
-            raise DuctorError(msg)
-        return ""
+        return _static_effort(
+            requested_effort, GROK_SUPPORTED_EFFORTS, "Grok", model, explicit=explicit
+        )
 
     if provider == "codex" and codex_cache:
         model_info = codex_cache.get_model(model)
@@ -179,8 +187,7 @@ def resolve_cli_config(
         known = GROK_MODELS | get_grok_models()
         if model not in known and not model.startswith("grok-"):
             msg = (
-                f"Invalid Grok model: {model}. Must be one of {sorted(known)} "
-                "or a grok-* model ID"
+                f"Invalid Grok model: {model}. Must be one of {sorted(known)} or a grok-* model ID"
             )
             raise DuctorError(msg)
     else:  # codex

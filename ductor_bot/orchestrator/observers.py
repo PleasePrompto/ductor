@@ -203,18 +203,17 @@ class ObserverManager:
         if self.cron:
             await self.cron.stop()
         await self.cleanup.stop()
-        if self.codex_cache_obs:
-            await self.codex_cache_obs.stop()
-            self.codex_cache_obs = None
-        if self.gemini_cache_obs:
-            await self.gemini_cache_obs.stop()
-            self.gemini_cache_obs = None
-        if self.antigravity_cache_obs:
-            await self.antigravity_cache_obs.stop()
-            self.antigravity_cache_obs = None
-        if self.grok_cache_obs:
-            await self.grok_cache_obs.stop()
-            self.grok_cache_obs = None
+        cache_observer_attrs = (
+            "codex_cache_obs",
+            "gemini_cache_obs",
+            "antigravity_cache_obs",
+            "grok_cache_obs",
+        )
+        for attr in cache_observer_attrs:
+            observer = getattr(self, attr)
+            if observer:
+                await observer.stop()
+                setattr(self, attr, None)
         for task in (self._rule_sync_task, self._skill_sync_task):
             if task and not task.done():
                 task.cancel()

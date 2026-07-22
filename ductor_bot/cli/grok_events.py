@@ -3,13 +3,13 @@
 Headless JSON (``--output-format json``) returns one object::
 
     {
-      "text": "...",
-      "stopReason": "EndTurn",
-      "sessionId": "...",
-      "usage": {...},
-      "num_turns": 1,
-      "modelUsage": {...},
-      "total_cost_usd": 0.01
+        "text": "...",
+        "stopReason": "EndTurn",
+        "sessionId": "...",
+        "usage": {...},
+        "num_turns": 1,
+        "modelUsage": {...},
+        "total_cost_usd": 0.01,
     }
 
 Streaming JSON (``--output-format streaming-json``) is NDJSON::
@@ -22,14 +22,15 @@ Streaming JSON (``--output-format streaming-json``) is NDJSON::
 
 Optional tool events (when present) use::
 
-    {"type":"tool_use"|"tool","name":"...","id":"...","input":{...}}
-    {"type":"tool_result","id":"...","status":"...","output":"..."}
+    {"type": "tool_use" | "tool", "name": "...", "id": "...", "input": {...}}
+    {"type": "tool_result", "id": "...", "status": "...", "output": "..."}
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from ductor_bot.cli.stream_events import (
@@ -82,7 +83,7 @@ def parse_grok_json(
     num_turns = data.get("num_turns")
     if not isinstance(num_turns, int):
         num_turns = None
-    is_error = _is_error_payload(data, text)
+    is_error = _is_error_payload(data)
     return text, session_id, usage, model_usage, num_turns, is_error, total_cost
 
 
@@ -93,119 +94,131 @@ def parse_grok_stream_line(line: str) -> list[StreamEvent]:
         return []
 
     try:
-        data: dict[str, Any] = json.loads(stripped)
+        payload: Any = json.loads(stripped)
     except json.JSONDecodeError:
         logger.debug("Grok: unparseable stream line: %.200s", stripped)
         return []
 
-    if not isinstance(data, dict):
+    if not isinstance(payload, dict):
         return []
+    data: dict[str, Any] = payload
 
     event_type = str(data.get("type", "")).lower()
+    handler = _stream_handler_for(event_type)
+    if handler is None:
+        logger.debug("Grok: ignoring stream event type=%s", event_type)
+        return []
+    return handler(event_type, data)
 
-    if event_type in {"thought", "thinking", "reasoning"}:
-        text = _as_str(data.get("data") or data.get("text") or data.get("content") or "")
-        return [ThinkingEvent(type="assistant", text=text)] if text else []
 
-    if event_type in {"text", "assistant", "message", "agent_message"}:
-        text = _as_str(data.get("data") or data.get("text") or data.get("content") or "")
-        return [AssistantTextDelta(type="assistant", text=text)] if text else []
+def _parse_thinking(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
+    text = _as_str(data.get("data") or data.get("text") or data.get("content") or "")
+    return [ThinkingEvent(type="assistant", text=text)] if text else []
 
-    if event_type in {"tool_use", "tool", "tool_call"}:
-        name = _as_str(data.get("name") or data.get("tool_name") or data.get("tool") or "tool")
-        tool_id = _as_str(data.get("id") or data.get("tool_id") or "") or None
-        params = data.get("input") or data.get("parameters") or data.get("arguments")
-        if not isinstance(params, dict):
-            params = None
-        return [
-            ToolUseEvent(
-                type="assistant",
-                tool_name=name,
-                tool_id=tool_id,
-                parameters=params,
-            )
-        ]
 
-    if event_type in {"tool_result", "tool_output"}:
-        return [
-            ToolResultEvent(
-                type="tool_result",
-                tool_id=_as_str(data.get("id") or data.get("tool_id") or ""),
-                status=_as_str(data.get("status") or ""),
-                output=_as_str(data.get("output") or data.get("data") or data.get("content") or ""),
-            )
-        ]
+def _parse_text(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
+    text = _as_str(data.get("data") or data.get("text") or data.get("content") or "")
+    return [AssistantTextDelta(type="assistant", text=text)] if text else []
 
-    # Failure path: emit a terminal ResultEvent so the stream ends cleanly.
-    if event_type == "error":
-        usage_err, model_usage_err, cost_err = _extract_spend(data)
-        msg = _as_str(data.get("message") or data.get("error") or data.get("data") or "Grok error")
-        session_id = _as_str(data.get("sessionId") or data.get("session_id") or "") or None
-        return [
-            ResultEvent(
-                type="result",
-                session_id=session_id,
-                result=msg,
-                is_error=True,
-                usage=usage_err,
-                model_usage=model_usage_err,
-                total_cost_usd=cost_err,
-            )
-        ]
 
-    # Compaction boundary → orchestrator memory flush (same as Claude compact_boundary).
-    if event_type.startswith("auto_compact") or event_type in {
-        "compact",
-        "compact_boundary",
-        "compaction",
-    }:
-        pre_tokens = data.get("pre_tokens")
-        if not isinstance(pre_tokens, int):
-            pre_tokens = data.get("tokens")
-        if not isinstance(pre_tokens, int):
-            pre_tokens = 0
-        return [
-            CompactBoundaryEvent(
-                type="system",
-                subtype="compact_boundary",
-                trigger=_as_str(data.get("trigger") or event_type),
-                pre_tokens=pre_tokens,
-            )
-        ]
+def _parse_tool_use(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
+    name = _as_str(data.get("name") or data.get("tool_name") or data.get("tool") or "tool")
+    tool_id = _as_str(data.get("id") or data.get("tool_id") or "") or None
+    params = data.get("input") or data.get("parameters") or data.get("arguments")
+    if not isinstance(params, dict):
+        params = None
+    return [ToolUseEvent(type="assistant", tool_name=name, tool_id=tool_id, parameters=params)]
 
-    if event_type == "max_turns_reached":
-        return [
-            SystemStatusEvent(
-                type="system",
-                subtype="status",
-                status="max_turns_reached",
-            )
-        ]
 
-    if event_type in {"end", "result", "done", "final"}:
-        session_id = _as_str(data.get("sessionId") or data.get("session_id") or "") or None
-        usage_end, model_usage_end, cost_end = _extract_spend(data)
-        result_text = _as_str(data.get("text") or data.get("result") or data.get("data") or "")
-        num_turns = data.get("num_turns")
-        if not isinstance(num_turns, int):
-            num_turns = None
-        is_error = _is_error_payload(data, result_text)
-        return [
-            ResultEvent(
-                type="result",
-                session_id=session_id,
-                result=result_text,
-                is_error=is_error,
-                usage=usage_end,
-                model_usage=model_usage_end,
-                num_turns=num_turns,
-                total_cost_usd=cost_end,
-            )
-        ]
+def _parse_tool_result(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
+    return [
+        ToolResultEvent(
+            type="tool_result",
+            tool_id=_as_str(data.get("id") or data.get("tool_id") or ""),
+            status=_as_str(data.get("status") or ""),
+            output=_as_str(data.get("output") or data.get("data") or data.get("content") or ""),
+        )
+    ]
 
-    # Unknown event type — ignore quietly.
-    logger.debug("Grok: ignoring stream event type=%s", event_type)
-    return []
+
+def _parse_error(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
+    """Failure path: emit a terminal ResultEvent so the stream ends cleanly."""
+    usage_err, model_usage_err, cost_err = _extract_spend(data)
+    msg = _as_str(data.get("message") or data.get("error") or data.get("data") or "Grok error")
+    session_id = _as_str(data.get("sessionId") or data.get("session_id") or "") or None
+    return [
+        ResultEvent(
+            type="result",
+            session_id=session_id,
+            result=msg,
+            is_error=True,
+            usage=usage_err,
+            model_usage=model_usage_err,
+            total_cost_usd=cost_err,
+        )
+    ]
+
+
+def _parse_compact(event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
+    """Compaction boundary → orchestrator memory flush (same as Claude compact_boundary)."""
+    pre_tokens = data.get("pre_tokens")
+    if not isinstance(pre_tokens, int):
+        pre_tokens = data.get("tokens")
+    if not isinstance(pre_tokens, int):
+        pre_tokens = 0
+    return [
+        CompactBoundaryEvent(
+            type="system",
+            subtype="compact_boundary",
+            trigger=_as_str(data.get("trigger") or event_type),
+            pre_tokens=pre_tokens,
+        )
+    ]
+
+
+def _parse_max_turns(_event_type: str, _data: dict[str, Any]) -> list[StreamEvent]:
+    return [SystemStatusEvent(type="system", subtype="status", status="max_turns_reached")]
+
+
+def _parse_end(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
+    session_id = _as_str(data.get("sessionId") or data.get("session_id") or "") or None
+    usage_end, model_usage_end, cost_end = _extract_spend(data)
+    result_text = _as_str(data.get("text") or data.get("result") or data.get("data") or "")
+    num_turns = data.get("num_turns")
+    if not isinstance(num_turns, int):
+        num_turns = None
+    return [
+        ResultEvent(
+            type="result",
+            session_id=session_id,
+            result=result_text,
+            is_error=_is_error_payload(data),
+            usage=usage_end,
+            model_usage=model_usage_end,
+            num_turns=num_turns,
+            total_cost_usd=cost_end,
+        )
+    ]
+
+
+_StreamHandler = Callable[[str, dict[str, Any]], list[StreamEvent]]
+
+_STREAM_HANDLERS: dict[str, _StreamHandler] = {
+    **dict.fromkeys(("thought", "thinking", "reasoning"), _parse_thinking),
+    **dict.fromkeys(("text", "assistant", "message", "agent_message"), _parse_text),
+    **dict.fromkeys(("tool_use", "tool", "tool_call"), _parse_tool_use),
+    **dict.fromkeys(("tool_result", "tool_output"), _parse_tool_result),
+    "error": _parse_error,
+    **dict.fromkeys(("compact", "compact_boundary", "compaction"), _parse_compact),
+    "max_turns_reached": _parse_max_turns,
+    **dict.fromkeys(("end", "result", "done", "final"), _parse_end),
+}
+
+
+def _stream_handler_for(event_type: str) -> _StreamHandler | None:
+    if event_type.startswith("auto_compact"):
+        return _parse_compact
+    return _STREAM_HANDLERS.get(event_type)
 
 
 def _extract_spend(
@@ -237,7 +250,7 @@ def _extract_spend(
     return usage, model_usage, total_cost
 
 
-def _is_error_payload(data: dict[str, Any], text: str) -> bool:
+def _is_error_payload(data: dict[str, Any]) -> bool:
     if data.get("is_error") is True or data.get("isError") is True:
         return True
     if data.get("error"):

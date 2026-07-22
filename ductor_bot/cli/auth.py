@@ -505,7 +505,13 @@ def _grok_cli_logged_in(binary: str) -> bool:
     output = f"{proc.stdout}\n{proc.stderr}".lower()
     if any(
         token in output
-        for token in ("not logged in", "sign in", "login required", "unauthorized", "run `grok login`")
+        for token in (
+            "not logged in",
+            "sign in",
+            "login required",
+            "unauthorized",
+            "run `grok login`",
+        )
     ):
         return False
     return proc.returncode == 0 and bool(proc.stdout.strip())
