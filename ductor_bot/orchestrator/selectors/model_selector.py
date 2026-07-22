@@ -391,9 +391,17 @@ async def _persist_switch_target(
                 model=ctx.model_id,
                 reasoning_effort=effort,
             )
-    elif ctx.is_topic and active_session is not None and effort is not None:
+    elif ctx.is_topic and effort is not None:
         # effort-only change inside a topic: persist to the topic session only.
-        await orch._sessions.sync_session_target(active_session, reasoning_effort=effort)
+        if active_session is not None:
+            await orch._sessions.sync_session_target(active_session, reasoning_effort=effort)
+        else:
+            await orch._sessions.resolve_session_target(
+                key,
+                provider=ctx.new_provider,
+                model=ctx.model_id,
+                reasoning_effort=effort,
+            )
 
     return _resume_state_for_provider(resume_source, ctx.new_provider)
 
