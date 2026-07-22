@@ -128,6 +128,28 @@ class TestAuthMiddleware:
         handler.assert_not_called()
         assert result is None
 
+    async def test_group_allowlist_hot_reload_via_shared_set_identity(self) -> None:
+        """In-place updates to the caller's set (hot-reload) reach the middleware.
+
+        Regression for #177: an empty set was replaced by a private copy,
+        so hot-reloaded group ids never reached the auth filter.
+        """
+        from ductor_bot.messenger.telegram.middleware import AuthMiddleware
+
+        shared_groups: set[int] = set()
+        mw = AuthMiddleware(allowed_user_ids={100}, allowed_group_ids=shared_groups)
+        handler = AsyncMock(return_value="ok")
+        msg = _make_message(user_id=100, chat_type="group", chat_id=-1001)
+
+        assert await mw(handler, msg, {}) is None
+        handler.assert_not_called()
+
+        shared_groups.update({-1001})
+
+        result = await mw(handler, msg, {})
+        handler.assert_called_once()
+        assert result == "ok"
+
     async def test_supergroup_uses_group_check(self) -> None:
         """Supergroups also go through group allowlist check."""
         from ductor_bot.messenger.telegram.middleware import AuthMiddleware
