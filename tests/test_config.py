@@ -297,3 +297,20 @@ def test_memory_compaction_accepts_target_eq_trigger() -> None:
     cfg = MemoryCompactionConfig(trigger_lines=50, target_lines=50)
     assert cfg.target_lines == 50
     assert cfg.trigger_lines == 50
+
+
+def test_update_config_file_does_not_log_values(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Config values (api tokens, keys) must never reach the log (#175 follow-up)."""
+    from ductor_bot.config import update_config_file
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+
+    with caplog.at_level("DEBUG", logger="ductor_bot.config"):
+        update_config_file(config_path, api={"token": "SUPERSECRET-TOKEN"})
+        update_config_file(config_path, api={"token": "SUPERSECRET-TOKEN"})  # unchanged path
+
+    assert "SUPERSECRET-TOKEN" not in caplog.text
+    assert "api" in caplog.text
