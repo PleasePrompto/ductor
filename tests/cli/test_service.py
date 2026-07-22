@@ -286,6 +286,48 @@ def test_make_cli_docker_mode_ignores_resolver() -> None:
     assert calls == []  # resolver must not even be consulted in docker mode
 
 
+def test_make_cli_override_appends_absolute_memory_note() -> None:
+    """With a cwd override the agent is told the absolute bot-memory path."""
+    svc = _make_service(working_dir="/default/workspace")
+    svc.set_working_dir_resolver(lambda _req: "/projects/alpha")
+
+    with patch("ductor_bot.cli.service.create_cli") as mock_create:
+        svc._make_cli(
+            AgentRequest(prompt="hi", chat_id=1, topic_id=5, append_system_prompt="MEMORY DUMP")
+        )
+
+    cli_config = mock_create.call_args.args[0]
+    assert cli_config.working_dir == "/projects/alpha"
+    assert cli_config.append_system_prompt.startswith("MEMORY DUMP")
+    assert "/default/workspace/memory_system/MAINMEMORY.md" in cli_config.append_system_prompt
+
+
+def test_make_cli_memory_flush_in_project_root_keeps_workspace_memory_path() -> None:
+    """Regression (#178): flush/compact/heartbeat resume in the project cwd and
+    must keep writing bot memory into the workspace, not the user's repo."""
+    svc = _make_service(working_dir="/default/workspace")
+    svc.set_working_dir_resolver(lambda _req: "/projects/alpha")
+
+    with patch("ductor_bot.cli.service.create_cli") as mock_create:
+        svc._make_cli(
+            AgentRequest(prompt="flush", chat_id=1, topic_id=5, process_label="memory_flush")
+        )
+
+    cli_config = mock_create.call_args.args[0]
+    assert "/default/workspace/memory_system/MAINMEMORY.md" in cli_config.append_system_prompt
+
+
+def test_make_cli_no_override_leaves_append_prompt_untouched() -> None:
+    svc = _make_service(working_dir="/default/workspace")
+    svc.set_working_dir_resolver(lambda _req: None)
+
+    with patch("ductor_bot.cli.service.create_cli") as mock_create:
+        svc._make_cli(AgentRequest(prompt="hi", chat_id=1, append_system_prompt="MEMORY DUMP"))
+
+    cli_config = mock_create.call_args.args[0]
+    assert cli_config.append_system_prompt == "MEMORY DUMP"
+
+
 def test_docker_enabled_property() -> None:
     assert _make_service().docker_enabled is False
     assert _make_service(docker_container="ductor-sandbox").docker_enabled is True

@@ -367,8 +367,23 @@ class CLIService:
         # mode: docker_wrap maps cwd into the container via relative_to() and
         # would fail on a path outside the workspace.
         working_dir = self._config.working_dir
+        append_prompt = request.append_system_prompt
         if self._working_dir_resolver is not None and not self._config.docker_container:
-            working_dir = self._working_dir_resolver(request) or working_dir
+            override = self._working_dir_resolver(request)
+            if override is not None:
+                working_dir = override
+                # Applied here at the single choke point so every execution
+                # path (normal turns, memory flush/compact, heartbeat) keeps
+                # addressing the bot memory by absolute path — a relative
+                # memory_system/ reference would otherwise land inside the
+                # user's project repo.
+                note = (
+                    f"[ductor] Project cwd override active. The shared bot workspace "
+                    f"(tools/, memory_system/) is at {self._config.working_dir}. Bot memory "
+                    f"lives at {self._config.working_dir}/memory_system/MAINMEMORY.md — always "
+                    f"address it by this absolute path, never via a relative path."
+                )
+                append_prompt = f"{append_prompt}\n\n{note}" if append_prompt else note
 
         return create_cli(
             CLIConfig(
@@ -376,7 +391,7 @@ class CLIService:
                 working_dir=working_dir,
                 model=model,
                 system_prompt=request.system_prompt,
-                append_system_prompt=request.append_system_prompt,
+                append_system_prompt=append_prompt,
                 max_turns=self._config.max_turns,
                 max_budget_usd=self._config.max_budget_usd,
                 permission_mode=self._config.permission_mode,

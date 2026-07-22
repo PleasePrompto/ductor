@@ -6,6 +6,10 @@ in instead of the shared workspace. Keys are matched in priority order:
 1. the human-readable topic name (as shown in Telegram),
 2. ``"<chat_id>:<topic_id>"`` — disambiguates equal topic ids across chats,
 3. ``"<topic_id>"`` — plain topic id.
+
+Security note: topic NAMES are set by anyone with Telegram's "Manage Topics"
+right, so in multi-admin groups a name key can be claimed by renaming an
+unrelated topic. Prefer ``"<chat_id>:<topic_id>"`` keys for sensitive roots.
 """
 
 from __future__ import annotations
@@ -50,6 +54,8 @@ def resolve_project_root(
             continue
         path = Path(raw).expanduser()
         if path.is_dir():
-            return str(path.resolve())
+            resolved = str(path.resolve())
+            logger.info("project_roots matched key=%r -> %s", key, resolved)
+            return resolved
         logger.warning("project_roots[%r] points to non-existent directory: %s", key, raw)
     return None

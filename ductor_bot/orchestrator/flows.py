@@ -7,7 +7,7 @@ import contextlib
 import logging
 import signal
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -162,28 +162,7 @@ async def _prepare_normal(
         timeout_seconds=timeout_secs,
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
-    request = _with_project_cwd_note(orch, request)
     return request, session
-
-
-def _with_project_cwd_note(orch: Orchestrator, request: AgentRequest) -> AgentRequest:
-    """Point the agent back at the shared workspace when a cwd override applies.
-
-    When ``project_roots`` moves the CLI into a project directory, the agent
-    no longer sees ``memory_system/`` and ``tools/`` in its cwd. Append a
-    short note so it knows where the shared workspace lives. No-op when the
-    override does not apply (Docker mode, named sessions, no matching root).
-    """
-    if orch.cli_service.docker_enabled:
-        return request
-    if orch._resolve_request_working_dir(request) is None:
-        return request
-    note = (
-        f"[ductor] Shared workspace (memory_system/, tools/) is at "
-        f"{orch.paths.workspace}; project cwd is intentional."
-    )
-    combined = f"{request.append_system_prompt}\n\n{note}" if request.append_system_prompt else note
-    return replace(request, append_system_prompt=combined)
 
 
 async def _update_session(
