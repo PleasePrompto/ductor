@@ -19,7 +19,14 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from _shared import CRON_TASKS_DIR, HOOKS_PATH, load_hooks_or_default, sanitize_name, save_hooks
+from _shared import (
+    CRON_TASKS_DIR,
+    HOOKS_PATH,
+    load_hooks_or_default,
+    reject_wake_overrides,
+    sanitize_name,
+    save_hooks,
+)
 
 _TUTORIAL = """\
 WEBHOOK ADD -- Register a new webhook endpoint.
@@ -43,7 +50,8 @@ OPTIONAL:
   --hmac-header       Header name containing the HMAC signature (required for --auth-mode hmac).
                       Examples: "X-Hub-Signature-256" (GitHub), "Stripe-Signature" (Stripe).
 
-EXECUTION OVERRIDES (optional, for mode "cron_task"):
+EXECUTION OVERRIDES (optional, ONLY for mode "cron_task" — rejected for mode "wake",
+which resumes the live session with its current provider/model):
   --provider          CLI provider: 'claude', 'codex', or 'gemini'
   --model             Model name (e.g. 'opus', 'sonnet', 'gpt-5.5', 'gemini-2.5-pro')
   --reasoning-effort  Thinking level for Codex: 'low', 'medium', 'high', 'xhigh'
@@ -286,6 +294,17 @@ def main() -> None:
 
     if args.mode == "cron_task" and not args.task_folder:
         print(json.dumps({"error": "--task-folder is required for mode 'cron_task'"}))
+        sys.exit(1)
+
+    override_error = reject_wake_overrides(
+        args.mode,
+        provider=args.provider,
+        model=args.model,
+        reasoning_effort=args.reasoning_effort,
+        cli_parameters=args.cli_parameters,
+    )
+    if override_error:
+        print(json.dumps({"error": override_error}))
         sys.exit(1)
 
     if args.auth_mode == "hmac":

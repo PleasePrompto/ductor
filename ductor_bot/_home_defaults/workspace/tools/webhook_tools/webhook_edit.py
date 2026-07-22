@@ -14,7 +14,13 @@ import json
 import secrets
 import sys
 
-from _shared import HOOKS_PATH, available_hook_ids, load_hooks_strict, save_hooks
+from _shared import (
+    HOOKS_PATH,
+    available_hook_ids,
+    load_hooks_strict,
+    reject_wake_overrides,
+    save_hooks,
+)
 
 _TUTORIAL = """\
 WEBHOOK EDIT -- Modify an existing webhook in place.
@@ -38,10 +44,11 @@ OPTIONS:
   --hmac-sig-regex      Regex to extract signature (group 1)
   --hmac-payload-prefix-regex  Regex on header; group 1 prepended to body with "."
   --regenerate-token    Generate a new random Bearer token (bearer mode only)
-  --provider "..."      Change CLI provider (claude, codex, or gemini)
-  --model "..."         Change model name
-  --reasoning-effort    Change thinking level for Codex (low, medium, high, xhigh)
-  --cli-parameters      Change CLI flags as JSON array
+  --provider "..."      Change CLI provider (claude, codex, or gemini) — cron_task hooks only
+  --model "..."         Change model name — cron_task hooks only
+  --reasoning-effort    Change thinking level for Codex (low, medium, high, xhigh) — cron_task only
+  --cli-parameters      Change CLI flags as JSON array — cron_task hooks only
+                        (wake hooks resume the live session; overrides are rejected)
   --quiet-start <hour>  Start of quiet hours (0-23, webhook won't run during this time)
   --quiet-end <hour>    End of quiet hours (0-23, exclusive)
   --dependency "..."    Resource dependency (e.g. 'chrome_browser', 'api_rate_limit')
@@ -220,6 +227,16 @@ def main() -> None:
         hook["token"] = new_token
         changes["token_regenerated"] = True
         changes["new_bearer_token"] = new_token
+    override_error = reject_wake_overrides(
+        str(hook.get("mode", "")),
+        provider=args.provider,
+        model=args.model,
+        reasoning_effort=args.reasoning_effort,
+        cli_parameters=args.cli_parameters,
+    )
+    if override_error:
+        print(json.dumps({"error": override_error}))
+        sys.exit(1)
     if args.provider:
         hook["provider"] = args.provider
         changes["provider"] = args.provider

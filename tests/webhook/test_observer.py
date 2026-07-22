@@ -136,6 +136,25 @@ class TestDispatchRouting:
         assert "Wake response text" in result.result_text
         wake_handler.assert_awaited_once()
 
+    async def test_dispatch_wake_with_legacy_overrides_warns_and_dispatches(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Pre-#176 hooks carrying overrides still dispatch, but loudly (#176)."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        mgr.add_hook(_make_hook("wake-hook", mode="wake", provider="codex", model="gpt-5.5"))
+        observer = _make_observer(paths, mgr, allowed_user_ids=[100])
+
+        wake_handler = AsyncMock(return_value="ok")
+        observer.set_wake_handler(wake_handler)
+
+        with caplog.at_level("WARNING", logger="ductor_bot.webhook.observer"):
+            result = await observer._dispatch("wake-hook", {"msg": "hello"})
+
+        assert result.status == "success"
+        wake_handler.assert_awaited_once()
+        assert any("ignores execution overrides" in r.message for r in caplog.records)
+
     async def test_dispatch_wake_no_handler(self, tmp_path: Path) -> None:
         paths = _make_paths(tmp_path)
         mgr = _make_manager(paths)

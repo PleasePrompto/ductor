@@ -50,6 +50,41 @@ def find_hook(hooks: list[dict[str, Any]], hook_id: str) -> dict[str, Any] | Non
     return find_by_id(hooks, hook_id)
 
 
+def reject_wake_overrides(
+    mode: str,
+    *,
+    provider: str | None,
+    model: str | None,
+    reasoning_effort: str | None,
+    cli_parameters: str | list[str] | None,
+) -> str | None:
+    """Return an error message when execution overrides are set on a wake hook.
+
+    Wake resumes the live session: provider/model/effort/cli_parameters cannot
+    apply there and were silently ignored before (#176). ``cron_task`` hooks
+    run a fresh one-shot session and keep full override support.
+    """
+    if mode != "wake":
+        return None
+    offending = [
+        flag
+        for flag, value in (
+            ("--provider", provider),
+            ("--model", model),
+            ("--reasoning-effort", reasoning_effort),
+            ("--cli-parameters", cli_parameters),
+        )
+        if value
+    ]
+    if not offending:
+        return None
+    return (
+        f"Execution overrides ({', '.join(offending)}) are not supported for mode 'wake' — "
+        "a wake resumes the live session with its current provider/model. "
+        "Use mode 'cron_task' for webhook-specific execution settings."
+    )
+
+
 def load_webhook_config() -> dict[str, Any]:
     """Load the webhooks section from config.json."""
     if not CONFIG_PATH.exists():

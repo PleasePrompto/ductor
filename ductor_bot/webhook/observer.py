@@ -145,6 +145,15 @@ class WebhookObserver(BaseTaskObserver):
         logger.info("Webhook dispatch starting hook=%s mode=%s", hook_id, hook.mode)
         try:
             if hook.mode == "wake":
+                if hook.provider or hook.model or hook.reasoning_effort or hook.cli_parameters:
+                    # Pre-#176 or hand-edited hooks may still carry overrides;
+                    # they cannot apply to a resumed session (tools reject them
+                    # at creation time now) — warn instead of silently dropping.
+                    logger.warning(
+                        "Webhook hook=%s mode=wake ignores execution overrides "
+                        "(provider/model/effort/cli_parameters); use mode=cron_task",
+                        hook_id,
+                    )
                 result = await self._dispatch_wake(hook_id, hook.title, safe_prompt)
             elif hook.mode == "cron_task":
                 # Build TaskOverrides from hook
