@@ -1,3 +1,3 @@
 """ductor: Telegram bot powered by Claude Code CLI and Codex CLI."""
 
-__version__ = "0.19.0"
+__version__ = "0.20.0"
