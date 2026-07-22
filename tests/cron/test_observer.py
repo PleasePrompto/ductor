@@ -549,6 +549,70 @@ class TestCronObserverExecution:
         assert job.last_delivery_error == "TelegramNetworkError"
         assert job.last_result_text == "All done."
 
+    async def test_retries_preserved_result_without_rerunning_agent(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        job = _make_job(
+            "daily",
+            title="My Daily Task",
+            last_run_status="success",
+            last_delivery_status="failed",
+            last_delivery_error="TelegramNetworkError",
+            last_result_text="Preserved result",
+            chat_id=42,
+            topic_id=7,
+        )
+        mgr.add_job(job)
+        observer = _make_observer(
+            paths,
+            mgr,
+            cron_delivery_retry={"enabled": True, "interval_seconds": 60},
+        )
+        callback = AsyncMock(return_value=(True, ""))
+        observer.set_result_handler(callback)
+
+        with patch("ductor_bot.cron.observer.execute_in_task_folder") as execute:
+            await observer._retry_failed_deliveries()
+
+        execute.assert_not_called()
+        callback.assert_awaited_once_with(
+            "My Daily Task", "Preserved result", "success", 42, 7, "tg"
+        )
+        assert job.last_delivery_status == "ok"
+        assert job.last_result_text is None
+        assert job.delivery_retry_attempts == 0
+
+    async def test_failed_retry_obeys_cooldown_and_attempt_limit(self, tmp_path: Path) -> None:
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        job = _make_job(
+            "daily",
+            last_run_status="success",
+            last_delivery_status="failed",
+            last_result_text="Preserved result",
+        )
+        mgr.add_job(job)
+        observer = _make_observer(
+            paths,
+            mgr,
+            cron_delivery_retry={
+                "enabled": True,
+                "interval_seconds": 60,
+                "max_attempts": 1,
+            },
+        )
+        callback = AsyncMock(return_value=(False, "still offline"))
+        observer.set_result_handler(callback)
+
+        await observer._retry_failed_deliveries()
+        await observer._retry_failed_deliveries()
+
+        callback.assert_awaited_once()
+        assert job.last_delivery_status == "failed"
+        assert job.last_result_text == "Preserved result"
+        assert job.delivery_retry_attempts == 1
+        assert job.next_delivery_retry_at is not None
+
     async def test_execute_job_timeout_kills_process(self, tmp_path: Path) -> None:
         """Subprocess that exceeds cli_timeout is killed and reported as timeout."""
         paths = _make_paths(tmp_path)

@@ -7,7 +7,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from cronsim import CronSim, CronSimError
@@ -68,6 +68,7 @@ class CronObserver(BaseTaskObserver):
         self._executing: set[str] = set()
         self._reschedule_lock = asyncio.Lock()
         self._requested_reschedule_task: asyncio.Task[None] | None = None
+        self._delivery_retry_task: asyncio.Task[None] | None = None
         self._running = False
         self._watcher = FileWatcher(
             paths.cron_jobs_path,
@@ -83,12 +84,19 @@ class CronObserver(BaseTaskObserver):
         self._running = True
         await self._schedule_all()
         await self._watcher.start()
+        if self._config.cron_delivery_retry.enabled:
+            self._delivery_retry_task = asyncio.create_task(self._delivery_retry_loop())
         logger.info("CronObserver started (%d jobs scheduled)", len(self._scheduled))
 
     async def stop(self) -> None:
         """Stop the observer: cancel all scheduled jobs and the watcher."""
         self._running = False
         await self._watcher.stop()
+        retry_task = self._delivery_retry_task
+        self._delivery_retry_task = None
+        if retry_task is not None:
+            retry_task.cancel()
+            await asyncio.gather(retry_task, return_exceptions=True)
         request_task = self._requested_reschedule_task
         self._requested_reschedule_task = None
         if request_task is not None:
@@ -327,6 +335,69 @@ class CronObserver(BaseTaskObserver):
         except Exception as exc:
             logger.exception("Error in cron result handler for job %s", job_id)
             return False, type(exc).__name__
+
+    async def _delivery_retry_loop(self) -> None:
+        """Periodically retry preserved delivery failures without rerunning the agent."""
+        interval = self._config.cron_delivery_retry.interval_seconds
+        while self._running:
+            await asyncio.sleep(interval)
+            try:
+                await self._retry_failed_deliveries()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Cron delivery retry sweep failed")
+
+    async def _retry_failed_deliveries(self) -> None:
+        """Retry every due failed delivery once, preserving failures for later sweeps."""
+        retry_config = self._config.cron_delivery_retry
+        now = datetime.now(UTC)
+        changed = False
+        for job in self._manager.list_jobs():
+            if job.last_delivery_status != "failed" or not job.last_result_text:
+                continue
+            if job.delivery_retry_attempts >= retry_config.max_attempts:
+                continue
+            if job.next_delivery_retry_at:
+                try:
+                    if datetime.fromisoformat(job.next_delivery_retry_at) > now:
+                        continue
+                except ValueError:
+                    logger.warning(
+                        "Invalid next_delivery_retry_at for cron job %s; retrying now",
+                        job.id,
+                    )
+
+            routing = (job.chat_id, job.topic_id, job.transport)
+            delivered, error = await self._deliver_result(
+                job.id,
+                job.title,
+                job.last_result_text,
+                job.last_run_status or "success",
+                routing,
+            )
+            next_attempt = None
+            if not delivered:
+                next_attempt = (now + timedelta(seconds=retry_config.interval_seconds)).isoformat()
+            self._manager.update_delivery_retry(
+                job.id,
+                delivered=delivered,
+                delivery_error=error,
+                next_attempt_at=next_attempt,
+            )
+            changed = True
+            if delivered:
+                logger.info("Cron delivery retry succeeded job=%s", job.title)
+            else:
+                logger.warning(
+                    "Cron delivery retry failed job=%s attempt=%d/%d error=%s",
+                    job.title,
+                    job.delivery_retry_attempts,
+                    retry_config.max_attempts,
+                    error,
+                )
+        if changed:
+            await self._watcher.update_mtime()
 
     async def _execute_job(
         self,
