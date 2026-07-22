@@ -1,0 +1,36 @@
+name: Security audit
+
+# Supply-chain gate for community PRs: ductor runs provider CLIs with full host
+# access, so a merged malicious change reaches every installation. Two cheap,
+# automatic checks per PR — before a human reviews.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  code-scan:
+    name: Malicious-pattern scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan added code for high-signal patterns
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: .github/scripts/malice-scan.sh "origin/$BASE_REF"
+
+  dependency-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Export locked dependencies
+        run: uv export --format requirements-txt --all-extras --no-emit-project --no-hashes > requirements-audit.txt
+      - name: Audit locked dependencies
+        run: uvx pip-audit -r requirements-audit.txt
