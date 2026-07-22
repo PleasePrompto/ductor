@@ -93,7 +93,7 @@ Observer / TaskHub / InterAgentBus callback
   - Zone 2 overwrite: `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, framework-managed tool scripts
   - Zone 3 seed-once: user-owned files
 - Rule sync is mtime-based for sibling `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`; cron task folders additionally get missing rule backfill.
-- Skill sync spans `~/.ductor/workspace/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/skills`:
+- Skill sync spans `~/.ductor/workspace/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/skills`, `~/.grok/skills`:
   - normal mode: links/junctions
   - Docker mode: managed copies (`.ductor_managed`)
 - `ductor agents add` is a Telegram-focused scaffold; Matrix sub-agents are supported through `agents.json` or the bundled agent tool scripts.
@@ -110,10 +110,13 @@ All run as in-process asyncio tasks:
 - `CodexCacheObserver`
 - `GeminiCacheObserver`
 - `AntigravityCacheObserver`
+- `GrokCacheObserver`
 - config reloader
 - rule sync watcher
 - skill sync watcher
 - update observer (upgradeable installs)
+
+The four model-cache observers start only for provider CLIs found by startup auth detection (`installed_providers`), not by a plain PATH lookup.
 
 ## Service Backends
 

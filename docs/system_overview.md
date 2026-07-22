@@ -21,7 +21,7 @@ Each agent stack contains:
   multiple entries)
 - `Orchestrator` (routing + flows)
 - `CLIService` (provider wrappers)
-- provider subprocesses (`claude`, `codex`, `gemini`, `agy`)
+- provider subprocesses (`claude`, `codex`, `gemini`, `agy`, `grok`)
 
 ## 2) Primary message path
 

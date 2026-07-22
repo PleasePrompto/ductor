@@ -114,9 +114,10 @@ Status values:
 
 Behavior:
 
-- user-created cap: `MAX_SESSIONS_PER_CHAT = 10`
+- user-created cap: `MAX_SESSIONS_PER_CHAT = 10` (only `/session`-created names count; the `ia-`/`ia.` namespace is excluded via `active_names`)
+- inter-agent cap: `MAX_INTERAGENT_SESSIONS_PER_CHAT = 32`, enforced in `add()` with oldest-idle eviction (running scoped sessions are never evicted); scoped sessions bypass `create()` and its quota
 - persisted `running` entries are downgraded to `idle` on load
-- recovered-running sessions are tracked for startup recovery
+- recovered-running sessions are tracked for startup recovery (inter-agent names are excluded from recovery)
 - inter-agent conversations use deterministic scoped names `ia.<sender-slug>.t<topic>.x<hash>`, or legacy `ia-<sender>` without source context
 - stale CLI session IDs on those named sessions are retried once with a fresh session after update/cache-clear style failures
 

@@ -41,7 +41,7 @@ ductor
 
 The onboarding wizard handles CLI checks, transport setup, timezone, optional Docker, and optional background service install.
 
-**Requirements:** Python 3.11+, at least one CLI installed (`claude`, `codex`, `gemini`, or `agy`), and either:
+**Requirements:** Python 3.11+, at least one CLI installed (`claude`, `codex`, `gemini`, `agy`, or `grok`), and either:
 
 - a Telegram Bot Token from [@BotFather](https://t.me/BotFather), or
 - a Matrix account on a homeserver (homeserver URL, user ID, password/access token), or
@@ -58,7 +58,7 @@ ductor gives you multiple ways to interact with your coding agents. Each level b
 
 ### 1. Single chat (your main agent)
 
-This is where everyone starts. You get a private 1:1 chat with your bot (Telegram or Matrix). Every message goes to the CLI you have active (`claude`, `codex`, `gemini`, or `agy`), responses stream back in real time.
+This is where everyone starts. You get a private 1:1 chat with your bot (Telegram or Matrix). Every message goes to the CLI you have active (`claude`, `codex`, `gemini`, `agy`, or `grok`), responses stream back in real time.
 
 ```text
 You:   "Explain the auth flow in this codebase"
@@ -198,7 +198,8 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Real-time streaming** — live message edits (Telegram) or segment-based output (Matrix)
 - **Telegram reasoning + tool UX controls** — optional reasoning stream, live tool progress, and separate thinking indicator controls
 - **Quoted-reply context** — replying to a message (Telegram) carries the cited text into the agent prompt, so follow-ups like "expand on this" keep their reference
-- **Four coding agents** — Claude Code, Codex CLI, Gemini CLI, and Antigravity (`agy`), switchable per chat/topic with `/model` (never blocks, even during active processes)
+- **Five coding agents** — Claude Code, Codex CLI, Gemini CLI, Antigravity (`agy`), and Grok Build (`grok`), switchable per chat/topic with `/model` (never blocks, even during active processes)
+- **Per-topic project roots** — map a forum topic to its own working directory (`project_roots`) so the agent runs inside that repo instead of the shared workspace
 - **Persistent memory** — plain Markdown files that survive across sessions
 - **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
 - **Cron jobs** — in-process scheduler with timezone support, per-job overrides, optional silent-on-success, result routing to originating chat
@@ -481,7 +482,7 @@ Full config reference: [`docs/config.md`](docs/config.md) — full example with 
 
 Other projects manipulate SDKs or patch CLIs and risk violating provider terms of service. ductor simply runs the official CLI binaries as subprocesses — nothing more.
 
-- Official CLIs only (`claude`, `codex`, `gemini`, `agy`)
+- Official CLIs only (`claude`, `codex`, `gemini`, `agy`, `grok`)
 - Rule files are plain Markdown (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`)
 - Memory is one Markdown file per agent
 - All state is JSON — no database, no external services

@@ -81,6 +81,7 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `cli_timeout` | `float` | `1800.0` | Legacy/global timeout. Still used by cron/webhook `cron_task`, inter-agent turns, stale-process heartbeat cleanup, and as fallback for unknown timeout paths |
 | `reasoning_effort` | `str` | `"medium"` | Default reasoning effort for Claude (`--effort`) and Codex (`-c model_reasoning_effort`); per-session override via `/effort` |
 | `append_system_prompt_files` | `list[str]` | `[]` | Workspace-relative files appended to the system prompt on every agent-driven turn (chat, named sessions, inter-agent, tasks); paths escaping the workspace and files over 256 KiB are skipped |
+| `project_roots` | `dict[str, str]` | `{}` | Per-topic working-directory override: maps a topic key to a directory the CLI runs in instead of the shared workspace (see below) |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
 | `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"` or `"matrix"` |
@@ -104,6 +105,8 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `image` | `ImageConfig` | see below | Incoming image processing settings |
 | `timeouts` | `TimeoutConfig` | see below | Path-specific timeout policy (`normal`, `background`, `subagent`) |
 | `tasks` | `TasksConfig` | see below | Delegated background task system (`TaskHub`) |
+| `cron_delivery_retry` | `CronDeliveryRetryConfig` | see below | Opt-in resend of preserved cron results after a delivery failure |
+| `cron_preflight` | `CronPreflightConfig` | see below | Opt-in task-local gate that can skip a cron agent run |
 | `scene` | `SceneConfig` | see below | Scene indicators and technical footer |
 | `notifications` | `NotificationsConfig` | see below | Targeted startup/upgrade notification routing |
 | `transcription` | `TranscriptionConfig` | see below | External audio/video transcription command hooks |
@@ -119,6 +122,38 @@ is used. When `transports` contains multiple entries (e.g.
 transports in parallel and `transport` is auto-set to the first
 entry. A model validator normalizes both fields at load time so
 they stay consistent.
+
+### `project_roots`
+
+Maps a forum topic to a working directory the CLI runs in instead of the shared
+workspace (`resolve_project_root` in `workspace/project_roots.py`, wired through
+`Orchestrator._resolve_request_working_dir` and applied at the single
+`CLIService._make_cli` choke point).
+
+Keys are tried in priority order; the first that maps to an existing directory wins:
+
+1. the human-readable topic name (as shown in Telegram),
+2. `"<chat_id>:<topic_id>"` (disambiguates equal topic ids across chats),
+3. `"<topic_id>"` (plain topic id).
+
+```json
+{
+  "project_roots": {
+    "backend": "~/code/backend",
+    "-1001234567890:42": "~/code/secret-service",
+    "99": "~/code/scratch"
+  }
+}
+```
+
+Behavior:
+
+- only applies inside a topic (`topic_id` set); the general chat and named sessions (`ns:` — resume consistency) always keep the default workspace.
+- skipped in Docker mode: `docker_wrap` maps cwd into the container relative to the workspace and would fail on an outside path.
+- when an override is active, a note is appended to the system prompt telling the agent to address bot memory (`memory_system/MAINMEMORY.md`) by its absolute workspace path, so a relative reference does not land inside the user's project repo.
+- hot-reloadable.
+
+Security note: topic **names** are set by anyone with Telegram's "Manage Topics" right, so in a multi-admin group a name key can be claimed by renaming an unrelated topic. Prefer `"<chat_id>:<topic_id>"` keys for sensitive roots.
 
 ## `MatrixConfig`
 
@@ -148,6 +183,7 @@ Notes:
 | `codex` | `list[str]` | `[]` | Extra args appended to Codex CLI command |
 | `gemini` | `list[str]` | `[]` | Extra args appended to Gemini CLI command |
 | `antigravity` | `list[str]` | `[]` | Extra args appended to Antigravity (`agy`) CLI command |
+| `grok` | `list[str]` | `[]` | Extra args appended to Grok Build (`grok`) CLI command |
 
 Used by `CLIServiceConfig` for main-chat calls.
 
@@ -202,6 +238,39 @@ Implementation status note:
 | `timeout_seconds` | `float` | `3600.0` | Timeout per delegated task run |
 | `finished_retention_hours` | `int` | `168` | Age limit for finished task history (done/failed/cancelled); `0` disables age pruning |
 | `finished_keep_last` | `int` | `100` | Max finished tasks kept (newest first); `0` disables count pruning. Age and count are independent limits |
+
+## `CronDeliveryRetryConfig`
+
+Opt-in resend of cron results whose delivery failed, without re-running the agent (`#160` delivery tracking).
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | When `true`, `CronObserver` starts a background retry sweep at startup |
+| `interval_seconds` | `int` | `300` | Sweep interval and delay between attempts (`>= 1`) |
+| `max_attempts` | `int` | `12` | Max retry attempts per job before the preserved result is abandoned (`>= 1`) |
+
+Behavior:
+
+- only jobs with `last_delivery_status == "failed"` and a preserved `last_result_text` are retried; a job currently executing is skipped so a retry never races a fresh run.
+- at-least-once semantics: a successful retry only clears the preserved result when it still matches the text that was resent (a newer failed result landing mid-flight is kept for the next sweep).
+- restart-required: toggling `enabled` starts/stops the sweep loop, so it does not hot-reload.
+
+## `CronPreflightConfig`
+
+Opt-in deterministic gate that can skip a scheduled agent run before the CLI subprocess is spawned.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `bool` | `false` | When `true`, each cron run first checks for a task-local preflight script |
+| `timeout_seconds` | `float` | `15.0` | Preflight subprocess timeout (`> 0`) |
+| `skip_marker` | `str` | `"HEARTBEAT_OK"` | Last non-empty stdout line that signals "skip the agent run" |
+
+Behavior:
+
+- script path: `cron_tasks/<task_folder>/scripts/preflight.py`, run with `sys.executable` in the task folder (`DUCTOR_HOME` exported).
+- skip decision: preflight exits `0` and its last non-empty stdout line equals `skip_marker` → the agent is not run (status `success:preflight`, delivery status `skipped`).
+- fail-open: a missing script, a spawn failure (EMFILE/ENOMEM/permissions), a timeout, or a nonzero/`2` exit or non-empty stderr all let the agent run anyway; the gate never suppresses a run on its own error.
+- timeout kill is process-group-wide on POSIX (`start_new_session` + `killpg`) so grandchildren cannot survive.
 
 ## Task-Level Automation Overrides
 
@@ -499,6 +568,7 @@ Runtime note (`Orchestrator._start_api_server` + `ApiServer._authenticate`):
 | `claude` | `bool` | `true` | Include `~/.claude/skills` in cross-tool sync |
 | `codex` | `bool` | `true` | Include `~/.codex/skills` (or `$CODEX_HOME/skills`) in cross-tool sync |
 | `gemini` | `bool` | `true` | Include `~/.gemini/skills` in cross-tool sync |
+| `grok` | `bool` | `true` | Include `~/.grok/skills` in cross-tool sync |
 
 Toggles are read live from `config.json` on each skill-sync tick (independent of `ConfigReloader`), so changes take effect within one sync interval without restart. A disabled provider is dropped from the sync, so its skill dir is neither linked into nor used as a source; existing ductor-created links are not actively removed (cleared on shutdown cleanup or manually).
 
@@ -513,6 +583,7 @@ Hot-reloadable top-level fields:
 - `idle_timeout_minutes`, `session_age_warning_hours`, `daily_reset_hour`, `daily_reset_enabled`
 - `permission_mode`, `file_access`, `user_timezone`
 - `streaming`, `heartbeat`, `cleanup`, `cli_parameters`, `scene`, `image`, `language`
+- `project_roots` (per-topic working-dir overrides take effect on the next turn)
 - `allowed_user_ids`, `allowed_group_ids`, `group_mention_only`
 
 Current non-hot fields that often surprise people:
@@ -531,6 +602,7 @@ Restart-required top-level fields:
 - `transport`, `telegram_token`, `matrix`
 - `docker`, `api`, `webhooks`
 - `ductor_home`, `log_level`, `gemini_api_key`, `notifications`, `transcription`, `timeouts`, `tasks`
+- `cron_delivery_retry`, `cron_preflight` (both start/stop or re-gate observer behavior at startup)
 
 Restart classification is computed from `AgentConfig` top-level schema fields.
 
@@ -545,10 +617,12 @@ Restart classification is computed from `AgentConfig` top-level schema fields.
   The Telegram `/model` selector currently exposes only `antigravity-default`
   because `agy` model selection is not reliable there; discovered display names
   are still known to directives and API provider metadata.
+- Grok Build models have a hardcoded fallback list (`grok-4.5`, `grok-composer-2.5-fast`) and refresh from `grok models` at startup (discovery order preserved). The Telegram `/model` selector shows the discovery-ordered IDs via `get_grok_models_ordered()`.
 - Provider resolution (`provider_for(model_id)`):
   - Claude when in `CLAUDE_MODELS` or when model looks like `claude-*`,
   - Gemini when in aliases/discovered set or when model looks like `gemini-*`/`auto-gemini-*`,
   - Antigravity when in the built-in/discovered set or when model looks like `antigravity-*`,
+  - Grok when in `GROK_MODELS`/discovered set or when model looks like `grok-*`,
   - otherwise Codex.
 
 ## Timezone Resolution
@@ -566,7 +640,7 @@ Returns `ZoneInfo` when available, otherwise a UTC tzinfo fallback object with `
 
 ## `reasoning_effort`
 
-UI values: `low`, `medium`, `high`, `xhigh` (Codex and Claude); Claude additionally supports `max`.
+UI values: `low`, `medium`, `high`, `xhigh` (Codex and Claude); Claude additionally supports `max`. Grok Build accepts a wider headless set (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) applied via `--reasoning-effort`.
 
 Effort is resolved **per session**: each forum topic can run at its own effort
 (`/effort` or the `/model` thinking-level step), the main chat / DM sets the
@@ -615,6 +689,21 @@ Behavior:
 - refresh callback updates runtime Antigravity model registry (`set_antigravity_models(...)`) used by directives and API provider metadata.
 - the Telegram `/model` selector intentionally offers only `antigravity-default`
   and displays the current `agy` model-selection limitation.
+
+## Grok Model Cache
+
+Path: `~/.ductor/config/grok_models.json` (per-agent home).
+
+Behavior:
+
+- loaded at orchestrator startup (`GrokCacheObserver.start()`),
+- startup load uses cached data when fresh and refreshes only when stale/missing,
+- refreshed hourly in background,
+- refresh callback updates the runtime Grok model registry (`set_grok_models(...)`), preserving discovery order for the `/model` selector.
+
+## Model-cache observer gating
+
+The Gemini, Antigravity, Grok, and Codex cache observers are only created for providers found by the startup auth detection (`installed_providers`), which is fallback-aware (e.g. finds a Gemini CLI under NVM that a plain PATH lookup would miss). A provider whose CLI is not detected gets no cache observer at all.
 
 ## `agents.json` (Multi-Agent Registry)
 

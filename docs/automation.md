@@ -28,7 +28,7 @@ Key properties:
 - `/status` shows active background tasks
 - `/session` background timeout uses `config.timeouts.background`
 
-Inter-agent sessions use deterministic scoped names (`ia.<sender-slug>.t<topic>.x<hash>`, or legacy `ia-<sender>` without source context) and are not created through `/session`.
+Inter-agent sessions use deterministic scoped names (`ia.<sender-slug>.t<topic>.x<hash>`, or legacy `ia-<sender>` without source context) and are not created through `/session`. They live in the same `named_sessions.json` registry but are capped separately: max 32 per chat with oldest-idle eviction, and they never count against the 10-session user quota above.
 
 Restart behavior:
 
@@ -87,15 +87,16 @@ Runtime behavior:
 
 1. dependency lock (`dependency_queue`)
 2. quiet-hour check (only when `job.quiet_*` is set; no fallback to global heartbeat quiet hours)
-3. folder check
-4. resolve task overrides (`provider/model/reasoning/cli_parameters`)
-5. build provider command (`claude`, `codex`, or `gemini`)
-6. execute with timeout (`cli_timeout`)
-7. parse output
-8. send result callback to chat when the run actually executes and produces a callback path
+3. optional preflight gate (`cron_preflight.enabled`): runs `cron_tasks/<task_folder>/scripts/preflight.py`; when it exits `0` and prints `skip_marker` as its last line, the agent run is skipped (status `success:preflight`). Fail-open otherwise.
+4. folder check
+5. resolve task overrides (`provider/model/reasoning/cli_parameters`)
+6. build provider command (`claude`, `codex`, `gemini`, or `grok`)
+7. execute with timeout (`cli_timeout`)
+8. parse output
+9. send result callback to chat when the run actually executes and produces a callback path
    - routing: UNICAST to originating chat when the job has `chat_id` set; BROADCAST to all users when `chat_id` is zero/unset
    - if UNICAST delivery fails (e.g. transport unavailable), the bus cascading fallback delivers to an available transport with an explanation
-9. persist status (`last_run_status`, `last_run_at`)
+10. persist status (`last_run_status`, `last_run_at`); execution and delivery status are tracked separately, and a failed delivery preserves `last_result_text` for a later resend
 
 Cron and webhook `cron_task` one-shot execution does not support Antigravity. Set a supported provider override when the global chat provider is `antigravity`.
 
@@ -123,6 +124,7 @@ Notes:
 - quiet-hour skips do not emit result callbacks and do not update `last_run_status`.
 - `silent_on_success` (default `false`) suppresses the result callback when the run succeeds (status `success`) but still updates `last_run_status`; failures are always delivered.
 - routing fields (`chat_id`, `topic_id`, `transport`) can be redirected on an existing job via the `cron_edit` tool (`--chat-id`, `--topic-id`, `--transport`, `--clear-topic-id`); `cron_add` seeds them from the creating chat/topic.
+- when `cron_delivery_retry.enabled` is set, a background sweep periodically resends preserved delivery failures without re-running the agent (at-least-once, `interval_seconds` apart, up to `max_attempts`); jobs mid-execution are skipped so a retry never races a fresh run.
 
 ## Webhooks
 
@@ -146,6 +148,8 @@ Modes:
 Prompt payload is wrapped with safety markers before execution.
 
 `cron_task` mode supports the same override/quiet/dependency fields as cron jobs.
+
+Execution overrides (`provider`, `model`, `reasoning_effort`, `cli_parameters`) apply only to `mode=cron_task`. `wake` resumes the live chat session with its current provider/model, so the `webhook_add` / `webhook_edit` tools reject those flags on a wake hook (they were silently ignored before). A pre-existing wake hook that still carries overrides logs a warning and ignores them at dispatch.
 
 Quiet-hour behavior in `cron_task` mode:
 

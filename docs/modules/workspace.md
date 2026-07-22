@@ -170,6 +170,7 @@ Path traversal protection is enforced for create/delete operations.
 - `~/.claude/skills`
 - `~/.codex/skills`
 - `~/.gemini/skills`
+- `~/.grok/skills` (or `$GROK_HOME/skills`)
 
 Default mode uses symlinks/junctions. Docker mode uses managed directory copies (`.ductor_managed`) so paths resolve inside container namespace.
 

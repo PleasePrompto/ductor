@@ -37,10 +37,12 @@ Bearer fallback behavior:
 - for `auth_mode="bearer"`, validation uses `hook.token` when set
 - otherwise it falls back to global `webhooks.token`
 
-Execution overrides (`cron_task`):
+Execution overrides (`cron_task` only):
 
 - `provider`, `model`, `reasoning_effort`, `cli_parameters`
 - `quiet_start`, `quiet_end`, `dependency`
+
+Execution overrides apply only to `cron_task`. A `wake` hook resumes the live chat session with its current provider/model, so `webhook_add` / `webhook_edit` reject `--provider` / `--model` / `--reasoning-effort` / `--cli-parameters` on a wake hook (via `reject_wake_overrides`). A legacy wake hook that still carries overrides logs a warning at dispatch and ignores them.
 
 Quiet-hour note:
 
@@ -109,7 +111,7 @@ One-shot isolated run in task folder:
 2. quiet-hour gate (hook-level only; no heartbeat quiet-hour fallback)
 3. dependency lock
 4. resolve task execution config
-5. build provider command (Claude/Codex/Gemini)
+5. build provider command (Claude/Codex/Gemini/Grok)
 6. execute with timeout
 7. parse result and return `WebhookResult`
 
@@ -126,6 +128,7 @@ Antigravity is not supported in webhook `cron_task` mode because that path uses 
 - `error:cli_not_found_claude`
 - `error:cli_not_found_codex`
 - `error:cli_not_found_gemini`
+- `error:cli_not_found_grok`
 - `error:timeout`
 - `error:exit_<code>`
 - `skipped:quiet_hours`

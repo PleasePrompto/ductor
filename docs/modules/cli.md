@@ -138,6 +138,7 @@ Recovery triggers handled in orchestrator flows:
 - non-streaming uses `--output-format json`
 - streaming uses `--output-format stream-json`
 - respects `--max-turns`, `--max-budget-usd`, session resume/continue
+- an `--append-system-prompt` value over 96 KiB would exceed the kernel per-argument limit (`execve` E2BIG), so it is written to a temp file and passed via `--append-system-prompt-file` instead (cleaned up after the run; in Docker mode the container-side path under the `/ductor` mount is passed)
 
 ### Codex
 
@@ -187,6 +188,8 @@ Statuses: `AUTHENTICATED`, `INSTALLED`, `NOT_FOUND`.
 - Grok: `~/.grok/auth.json`, then `XAI_API_KEY`, then `grok models` probe; install markers: binary or `config.toml`
 
 ## Model caches
+
+Each provider's cache observer is created only when the startup auth detection reports that provider as installed (`installed_providers`). The detection is fallback-aware (e.g. finds a CLI under NVM that a plain PATH lookup would miss); providers without a detected CLI get no cache observer.
 
 ### Codex cache
 

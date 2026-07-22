@@ -70,17 +70,34 @@ Watcher:
 
 When a job fires:
 
-1. acquire dependency lock when configured
-2. quiet-hour gate (only when `job.quiet_*` is set; no fallback to global heartbeat quiet hours)
-3. resolve/validate task folder (`workspace/cron_tasks/<task_folder>`)
-4. resolve `TaskExecutionConfig` via `resolve_cli_config(...)`
-5. enrich prompt with `<task_folder>_MEMORY.md` instructions
-6. build provider command (`build_cmd`)
-7. execute one-shot subprocess with timeout
-8. parse provider output
-9. invoke optional result callback when the execution path reaches callback emission
-10. update run status (`last_run_status`, `last_run_at`)
-11. schedule next occurrence
+1. quiet-hour gate (only when `job.quiet_*` is set; no fallback to global heartbeat quiet hours)
+2. optional preflight gate (`cron_preflight.enabled`) — see below
+3. acquire dependency lock when configured
+4. resolve/validate task folder (`workspace/cron_tasks/<task_folder>`)
+5. resolve `TaskExecutionConfig` via `resolve_cli_config(...)`
+6. enrich prompt with `<task_folder>_MEMORY.md` instructions
+7. build provider command (`build_cmd`)
+8. execute one-shot subprocess with timeout
+9. parse provider output
+10. invoke optional result callback when the execution path reaches callback emission
+11. update run status (`last_run_status`, `last_run_at`)
+12. schedule next occurrence
+
+## Preflight gate (`cron_preflight`)
+
+Opt-in (`cron_preflight.enabled=false` by default). Before the agent subprocess is built, `CronObserver._run_preflight(...)` runs `cron_tasks/<task_folder>/scripts/preflight.py` with `sys.executable` in the task folder (`DUCTOR_HOME` exported).
+
+- skip: the script exits `0` and its last non-empty stdout line equals `cron_preflight.skip_marker` (default `HEARTBEAT_OK`) → the agent run is skipped with status `success:preflight` and delivery status `skipped`.
+- fail-open: a missing script, spawn failure, timeout (`cron_preflight.timeout_seconds`, default `15.0`), or nonzero/`2` exit or non-empty stderr all let the agent run normally — the gate never suppresses a run on its own failure.
+- on timeout the preflight is killed process-group-wide on POSIX (`start_new_session` + `killpg`) so grandchildren cannot survive.
+
+## Delivery retry (`cron_delivery_retry`)
+
+Opt-in (`cron_delivery_retry.enabled=false` by default). When enabled, `CronObserver` starts a background sweep (`_delivery_retry_loop`) that resends preserved delivery failures without re-running the agent.
+
+- eligible jobs: `last_delivery_status == "failed"` with a preserved `last_result_text`, not currently executing, under `max_attempts`, and past `next_delivery_retry_at`.
+- at-least-once: a successful retry only clears the preserved result when it still matches the text that was resent (a newer failed result that landed mid-flight is kept for the next sweep).
+- sweep cadence and per-attempt backoff use `interval_seconds`; the sweep touches the jobs-file mtime after changes but avoids triggering a full reschedule.
 
 ## Command builders (`execution.py`)
 
@@ -89,6 +106,7 @@ Supported providers:
 - Claude
 - Codex
 - Gemini
+- Grok Build
 
 Antigravity is not supported in the cron one-shot command builder. Use a supported provider override for cron jobs when the global chat provider is `antigravity`.
 
@@ -97,21 +115,25 @@ Examples:
 - Claude: `claude -p --output-format json ... --no-session-persistence -- <prompt>`
 - Codex: `codex exec --json ... -- <prompt>`
 - Gemini: `gemini -p "" --output-format json --include-directories . ...` (prompt passed via stdin)
+- Grok: `grok --output-format json --model <id> --permission-mode <mode> ... -p <prompt>` (prompts over ~24k chars use `--prompt-file`)
 
 `bypassPermissions` behavior:
 
 - Codex: `--dangerously-bypass-approvals-and-sandbox`
 - Gemini: `--approval-mode yolo`
+- Grok: `--always-approve` (alongside `--permission-mode`)
 
 ## Status values
 
 Typical values:
 
 - `success`
+- `success:preflight` (agent run skipped by the task-local preflight gate)
 - `error:folder_missing`
 - `error:cli_not_found_claude`
 - `error:cli_not_found_codex`
 - `error:cli_not_found_gemini`
+- `error:cli_not_found_grok`
 - `error:timeout`
 - `error:exit_<code>`
 

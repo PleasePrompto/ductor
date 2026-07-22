@@ -100,7 +100,7 @@ Responsibilities:
 
 Directive resolution supports:
 
-- provider directives (`@codex`, `@gemini`, `@claude`, `@antigravity`)
+- provider directives (`@codex`, `@gemini`, `@claude`, `@antigravity`, `@grok`)
 - model directives (`@opus`, `@flash`, cache-backed IDs)
 
 ## Selector subsystem (`orchestrator/selectors/`)
