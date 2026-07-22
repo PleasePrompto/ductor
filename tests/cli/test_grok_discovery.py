@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -101,7 +102,7 @@ async def test_cache_persists_discovered_models(tmp_path: Path) -> None:
         cache = await GrokModelCache.load_or_refresh(path, force_refresh=True)
     assert cache.models == ("grok-4.5", "grok-future")
     assert path.is_file()
-    loaded = GrokModelCache.from_json(__import__("json").loads(path.read_text()))
+    loaded = GrokModelCache.from_json(json.loads(path.read_text()))
     assert loaded.models == cache.models
 
 
