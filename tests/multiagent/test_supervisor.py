@@ -15,6 +15,7 @@ from ductor_bot.multiagent.models import SubAgentConfig
 from ductor_bot.multiagent.supervisor import (
     _MAX_RESTART_RETRIES,
     AgentSupervisor,
+    _is_transient,
 )
 
 
@@ -395,16 +396,48 @@ class TestHandleCrash:
     """Test _handle_crash() recovery logic."""
 
     async def test_main_crash_terminates(self, supervisor: AgentSupervisor) -> None:
-        """Main agent crash sets main_done event."""
+        """Main agent crash on a fatal (non-transient) error terminates the supervisor."""
         health = AgentHealth(name="main")
         supervisor._health["main"] = health
         stack = MagicMock()
 
         _, _, should_return = await supervisor._handle_crash(
-            "main", stack, health, 1, "fatal error"
+            "main", stack, health, 1, RuntimeError("fatal error")
         )
         assert should_return is True
         assert supervisor._main_done.is_set()
+
+    async def test_main_transient_network_retries(self, supervisor: AgentSupervisor) -> None:
+        """Main agent retries transient network errors instead of terminating.
+
+        Regression for #181: a network blip in the startup window must trigger
+        backoff + rebuild, not kill the supervisor. The exception is faked by
+        class name only, mirroring the name-based ``_is_transient`` classifier.
+        """
+        health = AgentHealth(name="main")
+        supervisor._health["main"] = health
+        stack = MagicMock()
+        stack.shutdown = AsyncMock()
+
+        exc = type("TelegramNetworkError", (Exception,), {})("connection reset")
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch.object(
+                supervisor, "_rebuild_stack", new_callable=AsyncMock, return_value=MagicMock()
+            ) as mock_rebuild,
+        ):
+            _stack, _count, should_return = await supervisor._handle_crash(
+                "main", stack, health, 1, exc
+            )
+
+        assert should_return is False
+        # _capped_backoff(1) = 5 seconds
+        mock_sleep.assert_called_once_with(5)
+        mock_rebuild.assert_called_once()
+        assert not supervisor._main_done.is_set()
+        assert not supervisor._main_ready.is_set()
+        assert health.status == "starting"
 
     async def test_sub_agent_max_retries_exceeded(self, supervisor: AgentSupervisor) -> None:
         """After max retries, sub-agent is given up."""
@@ -416,7 +449,7 @@ class TestHandleCrash:
 
         retry_count = _MAX_RESTART_RETRIES + 1
         _, _, should_return = await supervisor._handle_crash(
-            "sub1", stack, health, retry_count, "keeps crashing"
+            "sub1", stack, health, retry_count, RuntimeError("keeps crashing")
         )
         assert should_return is True
 
@@ -434,7 +467,7 @@ class TestHandleCrash:
             ),
         ):
             _new_stack, _new_count, should_return = await supervisor._handle_crash(
-                "sub1", stack, health, 1, "transient error"
+                "sub1", stack, health, 1, RuntimeError("transient error")
             )
 
         assert should_return is False
@@ -565,3 +598,23 @@ class TestAbortAllAgents:
         killed = await supervisor.abort_all_agents()
         assert killed == 2
         supervisor._bus.cancel_all_async.assert_called_once()
+
+
+class TestIsTransient:
+    """Test _is_transient() network-error classification (#181)."""
+
+    def test_connection_error_is_transient(self) -> None:
+        assert _is_transient(ConnectionError("reset")) is True
+
+    def test_timeout_error_is_transient(self) -> None:
+        assert _is_transient(TimeoutError("timed out")) is True
+
+    def test_telegram_network_error_name_is_transient(self) -> None:
+        """Matched by class name — supervisor must not import aiogram."""
+        exc = type("TelegramNetworkError", (Exception,), {})("net down")
+        assert _is_transient(exc) is True
+
+    def test_fatal_error_is_not_transient(self) -> None:
+        """Auth/conflict errors (and anything unknown) must terminate the supervisor."""
+        exc = type("TelegramUnauthorizedError", (Exception,), {})("bad token")
+        assert _is_transient(exc) is False

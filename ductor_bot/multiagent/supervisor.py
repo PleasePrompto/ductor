@@ -28,6 +28,35 @@ logger = logging.getLogger(__name__)
 
 _MAX_RESTART_RETRIES = 5
 _RESTART_BACKOFF_BASE = 5  # seconds, doubles each retry
+_MAX_BACKOFF = 60  # seconds; cap for the main agent's unbounded transient retries
+_MAX_BACKOFF_SHIFT = 6  # clamp the doubling exponent so unbounded retries stay a small int
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Classify an exception as a transient (retryable) network failure.
+
+    Name-based for transport error types: the supervisor is transport-agnostic
+    and must not import aiogram (or any transport SDK). Matches the transient
+    branch of aiogram's error hierarchy (``TelegramNetworkError``,
+    ``TelegramServerError``, both subclasses of ``TelegramAPIError``) plus the
+    stdlib connection/timeout errors. Deliberately excludes fatal errors such as
+    ``TelegramUnauthorizedError`` (bad token) and ``TelegramConflictError``
+    (double polling), which must terminate the supervisor.
+    """
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    return type(exc).__name__ in {"TelegramNetworkError", "TelegramServerError"}
+
+
+def _capped_backoff(retry_count: int) -> int:
+    """Exponential backoff in seconds, capped at ``_MAX_BACKOFF`` (5, 10, 20, 40, 60, 60, …).
+
+    ``retry_count`` is 1-based and unbounded for the main agent, which retries
+    transient network errors indefinitely; the exponent is clamped so the
+    intermediate value never grows large.
+    """
+    shift = min(retry_count - 1, _MAX_BACKOFF_SHIFT)
+    return min(_RESTART_BACKOFF_BASE * (1 << shift), _MAX_BACKOFF)
 
 
 def _config_changed(new: AgentConfig, old: AgentConfig) -> bool:
@@ -243,14 +272,41 @@ class AgentSupervisor:
         stack: AgentStack,
         health: AgentHealth,
         retry_count: int,
-        error_msg: str,
+        exc: Exception,
     ) -> tuple[AgentStack, int, bool]:
         """Handle a crash in ``_supervised_run``.
 
         Returns ``(stack, retry_count, should_return)`` — when *should_return*
         is True the caller must ``return 1``.
+
+        The main agent terminates the supervisor on fatal errors, but retries
+        transient network failures (see ``_is_transient``) indefinitely with
+        capped backoff — an early-startup network blip must not take down the
+        whole service. Sub-agents retry any crash up to ``_MAX_RESTART_RETRIES``
+        times.
         """
+        error_msg = f"{type(exc).__name__}: {exc}"
         health.mark_crashed(error_msg)
+
+        if name == "main":
+            if not _is_transient(exc):
+                logger.exception(
+                    "Main agent crashed (fatal), terminating supervisor: %s", error_msg
+                )
+                self._main_ready.set()  # unblock sub-agent startup if still waiting
+                self._main_done.set()
+                return stack, retry_count, True
+
+            logger.warning(
+                "Main agent crashed (transient, attempt %d): %s — retrying",
+                retry_count,
+                error_msg,
+            )
+            stack = await self._backoff_and_rebuild(
+                name, stack, health, _capped_backoff(retry_count)
+            )
+            return stack, retry_count, False
+
         logger.exception(
             "Agent '%s' crashed (attempt %d/%d): %s",
             name,
@@ -258,12 +314,6 @@ class AgentSupervisor:
             _MAX_RESTART_RETRIES,
             error_msg,
         )
-
-        if name == "main":
-            logger.exception("Main agent crashed, terminating supervisor")
-            self._main_ready.set()  # unblock sub-agent startup if still waiting
-            self._main_done.set()
-            return stack, retry_count, True
 
         if retry_count > _MAX_RESTART_RETRIES:
             logger.exception(
@@ -277,6 +327,18 @@ class AgentSupervisor:
             return stack, retry_count, True
 
         wait = _RESTART_BACKOFF_BASE * (2 ** (retry_count - 1))
+        stack = await self._backoff_and_rebuild(name, stack, health, wait)
+        return stack, retry_count, False
+
+    async def _backoff_and_rebuild(
+        self, name: str, stack: AgentStack, health: AgentHealth, wait: int
+    ) -> AgentStack:
+        """Sleep for *wait* seconds, then shut down and rebuild the agent stack.
+
+        Shared by the sub-agent recovery path and the main-agent transient-retry
+        path. Rebuild failures are logged and swallowed so the supervised loop
+        retries again on its next iteration.
+        """
         logger.info("Agent '%s' restarting in %ds", name, wait)
         await asyncio.sleep(wait)
 
@@ -288,13 +350,16 @@ class AgentSupervisor:
         except Exception:
             logger.exception("Failed to rebuild agent '%s'", name)
 
-        return stack, retry_count, False
+        return stack
 
     async def _supervised_run(self, name: str, stack: AgentStack) -> int:
         """Run an agent with automatic crash recovery.
 
-        On crash: retry with exponential backoff (5s, 10s, 20s, 40s, 80s).
-        After ``_MAX_RESTART_RETRIES`` consecutive failures, give up.
+        On crash:
+          - Sub-agents: retry with exponential backoff (5s, 10s, 20s, 40s, 80s);
+            give up after ``_MAX_RESTART_RETRIES`` consecutive failures.
+          - Main agent: fatal errors terminate the supervisor; transient network
+            errors (see ``_is_transient``) retry indefinitely with capped backoff.
         On clean exit: return the exit code.
         On restart request (exit code 42):
           - Main agent: propagate EXIT_RESTART to trigger full service restart.
@@ -332,13 +397,12 @@ class AgentSupervisor:
 
             except Exception as exc:
                 retry_count += 1
-                error_msg = f"{type(exc).__name__}: {exc}"
                 stack, retry_count, should_return = await self._handle_crash(
                     name,
                     stack,
                     health,
                     retry_count,
-                    error_msg,
+                    exc,
                 )
                 if should_return:
                     return 1
