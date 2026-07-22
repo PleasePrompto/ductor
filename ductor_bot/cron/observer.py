@@ -348,31 +348,42 @@ class CronObserver(BaseTaskObserver):
             except Exception:
                 logger.exception("Cron delivery retry sweep failed")
 
+    def _delivery_retry_due(self, job: CronJob, now: datetime) -> bool:
+        """Whether *job* has a preserved failed delivery that is due for a retry."""
+        if job.id in self._executing:
+            # A regular execution is in flight; it may replace the preserved
+            # result at any moment — never race it with a retry delivery.
+            return False
+        if job.last_delivery_status != "failed" or not job.last_result_text:
+            return False
+        if job.delivery_retry_attempts >= self._config.cron_delivery_retry.max_attempts:
+            return False
+        if job.next_delivery_retry_at:
+            try:
+                if datetime.fromisoformat(job.next_delivery_retry_at) > now:
+                    return False
+            except (ValueError, TypeError):
+                logger.warning(
+                    "Invalid next_delivery_retry_at for cron job %s; retrying now",
+                    job.id,
+                )
+        return True
+
     async def _retry_failed_deliveries(self) -> None:
         """Retry every due failed delivery once, preserving failures for later sweeps."""
         retry_config = self._config.cron_delivery_retry
         now = datetime.now(UTC)
         changed = False
         for job in self._manager.list_jobs():
-            if job.last_delivery_status != "failed" or not job.last_result_text:
+            if not self._delivery_retry_due(job, now):
                 continue
-            if job.delivery_retry_attempts >= retry_config.max_attempts:
-                continue
-            if job.next_delivery_retry_at:
-                try:
-                    if datetime.fromisoformat(job.next_delivery_retry_at) > now:
-                        continue
-                except ValueError:
-                    logger.warning(
-                        "Invalid next_delivery_retry_at for cron job %s; retrying now",
-                        job.id,
-                    )
 
+            retried_text = job.last_result_text or ""
             routing = (job.chat_id, job.topic_id, job.transport)
             delivered, error = await self._deliver_result(
                 job.id,
                 job.title,
-                job.last_result_text,
+                retried_text,
                 job.last_run_status or "success",
                 routing,
             )
@@ -384,6 +395,7 @@ class CronObserver(BaseTaskObserver):
                 delivered=delivered,
                 delivery_error=error,
                 next_attempt_at=next_attempt,
+                expected_text=retried_text,
             )
             changed = True
             if delivered:

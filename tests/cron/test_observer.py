@@ -613,6 +613,101 @@ class TestCronObserverExecution:
         assert job.delivery_retry_attempts == 1
         assert job.next_delivery_retry_at is not None
 
+    async def test_failed_retry_cooldown_skips_before_next_attempt_time(
+        self, tmp_path: Path
+    ) -> None:
+        """With attempt budget left, the cooldown alone must gate the next retry."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        job = _make_job(
+            "daily",
+            last_run_status="success",
+            last_delivery_status="failed",
+            last_result_text="Preserved result",
+        )
+        mgr.add_job(job)
+        observer = _make_observer(
+            paths,
+            mgr,
+            cron_delivery_retry={
+                "enabled": True,
+                "interval_seconds": 300,
+                "max_attempts": 5,
+            },
+        )
+        callback = AsyncMock(return_value=(False, "still offline"))
+        observer.set_result_handler(callback)
+
+        await observer._retry_failed_deliveries()
+        await observer._retry_failed_deliveries()
+
+        callback.assert_awaited_once()
+        assert job.delivery_retry_attempts == 1
+        assert job.next_delivery_retry_at is not None
+
+    async def test_retry_sweep_skips_currently_executing_job(self, tmp_path: Path) -> None:
+        """A job whose regular execution is in flight is never retried concurrently."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        job = _make_job(
+            "daily",
+            last_run_status="success",
+            last_delivery_status="failed",
+            last_result_text="Preserved result",
+        )
+        mgr.add_job(job)
+        observer = _make_observer(
+            paths,
+            mgr,
+            cron_delivery_retry={
+                "enabled": True,
+                "interval_seconds": 60,
+                "max_attempts": 3,
+            },
+        )
+        callback = AsyncMock(return_value=(True, ""))
+        observer.set_result_handler(callback)
+        observer._executing.add(job.id)
+
+        await observer._retry_failed_deliveries()
+
+        callback.assert_not_awaited()
+        assert job.last_result_text == "Preserved result"
+
+    async def test_retry_success_keeps_newer_result_preserved(self, tmp_path: Path) -> None:
+        """A newer failed result that lands mid-retry is not cleared by the old ack."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        job = _make_job(
+            "daily",
+            last_run_status="success",
+            last_delivery_status="failed",
+            last_result_text="Old result",
+        )
+        mgr.add_job(job)
+        observer = _make_observer(
+            paths,
+            mgr,
+            cron_delivery_retry={
+                "enabled": True,
+                "interval_seconds": 60,
+                "max_attempts": 3,
+            },
+        )
+
+        async def _deliver_and_race(*_args: object, **_kwargs: object) -> tuple[bool, str]:
+            job.last_result_text = "New result"
+            job.delivery_retry_attempts = 0
+            return (True, "")
+
+        callback = AsyncMock(side_effect=_deliver_and_race)
+        observer.set_result_handler(callback)
+
+        await observer._retry_failed_deliveries()
+
+        assert job.last_result_text == "New result"
+        assert job.last_delivery_status == "failed"
+
     async def test_execute_job_timeout_kills_process(self, tmp_path: Path) -> None:
         """Subprocess that exceeds cli_timeout is killed and reported as timeout."""
         paths = _make_paths(tmp_path)

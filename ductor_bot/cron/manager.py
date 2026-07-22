@@ -234,12 +234,20 @@ class CronManager:
         delivered: bool,
         delivery_error: str = "",
         next_attempt_at: str | None = None,
+        expected_text: str | None = None,
     ) -> None:
-        """Persist one delivery retry without changing the job execution status."""
+        """Persist one delivery retry without changing the job execution status.
+
+        When *expected_text* is given, a successful retry only clears the
+        preserved result if it still matches — a newer failed result that
+        landed while the retry was in flight is kept for the next sweep.
+        """
         job = self.get_job(job_id)
         if job is None:
             return
         if delivered:
+            if expected_text is not None and job.last_result_text != expected_text:
+                return
             job.last_delivery_status = "ok"
             job.last_delivery_error = ""
             job.last_result_text = None
