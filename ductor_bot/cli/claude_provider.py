@@ -9,6 +9,7 @@ from pathlib import Path
 from shutil import which
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.cli.base import (
     _IS_WINDOWS,
     BaseCLI,
@@ -162,10 +163,11 @@ def _add_opt(cmd: list[str], flag: str, value: str | None) -> None:
 
 
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:
-    """Log the CLI command with truncated long values."""
+    """Log the CLI command with redacted and truncated long values."""
+    redacted_cmd = redact_cmd_for_log(cmd)
     safe_cmd = [
-        (c[:80] + "...") if len(c) > 80 and i > 0 and cmd[i - 1].startswith("--") else c
-        for i, c in enumerate(cmd)
+        (c[:80] + "...") if len(c) > 80 and i > 0 and redacted_cmd[i - 1].startswith("--") else c
+        for i, c in enumerate(redacted_cmd)
     ]
     prefix = "CLI stream cmd" if streaming else "CLI cmd"
     logger.info("%s: %s", prefix, " ".join(safe_cmd))

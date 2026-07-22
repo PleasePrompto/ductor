@@ -9,6 +9,7 @@ from pathlib import Path
 from shutil import which
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.cli.base import (
     BaseCLI,
     CLIConfig,
@@ -418,7 +419,7 @@ def _extract_codex_error_detail(raw: str) -> str:
 
 
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:
-    """Log the CLI command with truncated long values."""
-    safe_cmd = [(c[:80] + "...") if len(c) > 80 else c for c in cmd]
+    """Log the CLI command with redacted and truncated long values."""
+    safe_cmd = [(c[:80] + "...") if len(c) > 80 else c for c in redact_cmd_for_log(cmd)]
     prefix = "Codex stream cmd" if streaming else "Codex cmd"
     logger.info("%s: %s", prefix, " ".join(safe_cmd))

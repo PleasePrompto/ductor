@@ -13,6 +13,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.cli.auth import gemini_api_key_mode_selected
 from ductor_bot.cli.base import (
     BaseCLI,
@@ -577,27 +578,15 @@ async def _cleanup_file(path: str | None) -> None:
         await asyncio.to_thread(Path(path).unlink, missing_ok=True)
 
 
-_SENSITIVE_ENV_KEYS = ("GEMINI_API_KEY",)
-
-
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:
-    """Log the CLI command with sensitive env values masked."""
-    safe: list[str] = []
-    mask_next = False
-    for i, c in enumerate(cmd):
-        if mask_next:
-            safe.append(c[:4] + "***" if len(c) > 4 else "***")
-            mask_next = False
-            continue
-        if c == "-e" and i + 1 < len(cmd):
-            nxt = cmd[i + 1]
-            if any(nxt.startswith(f"{k}=") for k in _SENSITIVE_ENV_KEYS):
-                mask_next = True
-        if len(c) > 80 and i > 0 and cmd[i - 1].startswith("--"):
-            safe.append(c[:80] + "...")
-        else:
-            safe.append(c)
-    logger.info("%s: %s", "Gemini stream cmd" if streaming else "Gemini cmd", " ".join(safe))
+    """Log the CLI command with redacted and truncated long values."""
+    redacted_cmd = redact_cmd_for_log(cmd)
+    safe = [
+        (c[:80] + "...") if len(c) > 80 and i > 0 and redacted_cmd[i - 1].startswith("--") else c
+        for i, c in enumerate(redacted_cmd)
+    ]
+    prefix = "Gemini stream cmd" if streaming else "Gemini cmd"
+    logger.info("%s: %s", prefix, " ".join(safe))
 
 
 def _gemini_settings_path(env: dict[str, str]) -> Path:

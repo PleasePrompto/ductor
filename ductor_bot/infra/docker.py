@@ -13,6 +13,7 @@ from pathlib import Path
 from shutil import which
 from typing import TYPE_CHECKING, ClassVar
 
+from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.config import DockerConfig
 from ductor_bot.workspace.paths import DuctorPaths
 
@@ -398,7 +399,7 @@ class DockerManager:
         cmd.append(image)
 
         logger.info("Starting Docker container '%s' from image '%s'", name, image)
-        logger.debug("docker run cmd: %s", " ".join(cmd))
+        logger.debug("docker run cmd: %s", " ".join(redact_cmd_for_log(cmd)))
         rc, output = await self._exec(*cmd)
         if rc != 0:
             logger.error("docker run failed:\n%s", output[-2000:])
