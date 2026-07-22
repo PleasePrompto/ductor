@@ -273,6 +273,14 @@ class CronDeliveryRetryConfig(BaseModel):
     max_attempts: int = Field(default=12, ge=1)
 
 
+class CronPreflightConfig(BaseModel):
+    """Task-local deterministic gate that can skip a cron agent run."""
+
+    enabled: bool = False
+    timeout_seconds: float = Field(default=15.0, gt=0)
+    skip_marker: str = "HEARTBEAT_OK"
+
+
 class TimeoutConfig(BaseModel):
     """Per-execution-path timeout settings."""
 
@@ -472,6 +480,7 @@ class AgentConfig(BaseModel):
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     cron_delivery_retry: CronDeliveryRetryConfig = Field(default_factory=CronDeliveryRetryConfig)
+    cron_preflight: CronPreflightConfig = Field(default_factory=CronPreflightConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     transcription: TranscriptionConfig = Field(default_factory=TranscriptionConfig)

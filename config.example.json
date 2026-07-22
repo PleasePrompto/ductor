@@ -142,5 +142,10 @@
         "interval_seconds": 300,
         "max_attempts": 12
     },
+    "cron_preflight": {
+        "enabled": false,
+        "timeout_seconds": 15.0,
+        "skip_marker": "HEARTBEAT_OK"
+    },
     "interagent_port": 8799
 }

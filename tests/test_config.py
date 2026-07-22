@@ -42,6 +42,9 @@ def test_agent_config_defaults() -> None:
     assert cfg.cron_delivery_retry.enabled is False
     assert cfg.cron_delivery_retry.interval_seconds == 300
     assert cfg.cron_delivery_retry.max_attempts == 12
+    assert cfg.cron_preflight.enabled is False
+    assert cfg.cron_preflight.timeout_seconds == 15.0
+    assert cfg.cron_preflight.skip_marker == "HEARTBEAT_OK"
 
 
 def test_agent_config_normalizes_nullish_gemini_api_key() -> None:
