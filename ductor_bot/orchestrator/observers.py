@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
@@ -68,35 +69,43 @@ class ObserverManager:
         on_antigravity_refresh: Callable[[tuple[str, ...]], None],
     ) -> CodexModelCache:
         """Start Gemini, Antigravity, and Codex cache observers, return Codex cache."""
-        # Gemini
-        gemini_cache_path = self._paths.config_path.parent / "gemini_models.json"
-        gemini_observer = GeminiCacheObserver(gemini_cache_path, on_refresh=on_gemini_refresh)
-        await gemini_observer.start()
-        self.gemini_cache_obs = gemini_observer
+        # Optional provider observers are useful only when their CLIs are installed.
+        if shutil.which("gemini"):
+            gemini_cache_path = self._paths.config_path.parent / "gemini_models.json"
+            gemini_observer = GeminiCacheObserver(gemini_cache_path, on_refresh=on_gemini_refresh)
+            await gemini_observer.start()
+            self.gemini_cache_obs = gemini_observer
 
-        if not get_gemini_models():
-            logger.warning("Gemini cache is empty after startup (Gemini may not be installed)")
+            if not get_gemini_models():
+                logger.warning("Gemini cache is empty after startup")
+        else:
+            logger.debug("Gemini CLI not found; cache observer disabled")
 
-        # Antigravity
-        antigravity_cache_path = self._paths.config_path.parent / "antigravity_models.json"
-        antigravity_observer = AntigravityCacheObserver(
-            antigravity_cache_path, on_refresh=on_antigravity_refresh
-        )
-        await antigravity_observer.start()
-        self.antigravity_cache_obs = antigravity_observer
+        if shutil.which("agy"):
+            antigravity_cache_path = self._paths.config_path.parent / "antigravity_models.json"
+            antigravity_observer = AntigravityCacheObserver(
+                antigravity_cache_path, on_refresh=on_antigravity_refresh
+            )
+            await antigravity_observer.start()
+            self.antigravity_cache_obs = antigravity_observer
 
-        if not get_antigravity_models():
-            logger.warning("Antigravity cache is empty after startup (agy may not be installed)")
+            if not get_antigravity_models():
+                logger.warning("Antigravity cache is empty after startup")
+        else:
+            logger.debug("Antigravity CLI not found; cache observer disabled")
 
-        # Codex
-        codex_cache_path = self._paths.config_path.parent / "codex_models.json"
-        codex_observer = CodexCacheObserver(codex_cache_path)
-        await codex_observer.start()
-        self.codex_cache_obs = codex_observer
-        codex_cache = codex_observer.get_cache()
+        codex_cache: CodexModelCache | None = None
+        if shutil.which("codex"):
+            codex_cache_path = self._paths.config_path.parent / "codex_models.json"
+            codex_observer = CodexCacheObserver(codex_cache_path)
+            await codex_observer.start()
+            self.codex_cache_obs = codex_observer
+            codex_cache = codex_observer.get_cache()
 
-        if not codex_cache or not codex_cache.models:
-            logger.warning("Codex cache is empty after startup (Codex may not be authenticated)")
+            if not codex_cache or not codex_cache.models:
+                logger.warning("Codex cache is empty after startup")
+        else:
+            logger.debug("Codex CLI not found; cache observer disabled")
 
         return codex_cache or CodexModelCache("", [])
 
