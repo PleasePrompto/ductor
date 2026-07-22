@@ -128,6 +128,8 @@ _NOUNS: tuple[str, ...] = (
 )
 
 MAX_SESSIONS_PER_CHAT = 10
+# ponytail: flat per-chat cap for inter-agent sessions; per-sender quotas if it ever matters
+MAX_INTERAGENT_SESSIONS_PER_CHAT = 32
 
 _MAX_NAME_ATTEMPTS = 50
 
@@ -333,9 +335,34 @@ class NamedSessionRegistry:
 
         Use this when the caller needs full control over the session name
         and fields (e.g. inter-agent sessions with deterministic names).
+        Inter-agent sessions bypass the ``create()`` quota, so they get their
+        own cap here: scoped names grow with every distinct (sender, chat,
+        topic) origin and are never ended, which would otherwise leak memory
+        and rewrite an ever-growing JSON on every add.
         """
+        if session.name.startswith(("ia-", "ia.")):
+            self._evict_oldest_interagent(session.chat_id)
         self._sessions[(session.chat_id, session.name)] = session
         self._persist()
+
+    def _evict_oldest_interagent(self, chat_id: int) -> None:
+        """Drop oldest non-running inter-agent sessions above the per-chat cap."""
+        idle = sorted(
+            (
+                s
+                for s in self._sessions.values()
+                if s.chat_id == chat_id
+                and s.name.startswith(("ia-", "ia."))
+                and s.status != "running"
+            ),
+            key=lambda s: s.created_at,
+        )
+        overflow = len(idle) - (MAX_INTERAGENT_SESSIONS_PER_CHAT - 1)
+        if overflow <= 0:
+            return
+        for victim in idle[:overflow]:
+            del self._sessions[(victim.chat_id, victim.name)]
+            logger.info("Evicted idle inter-agent session %s (cap)", victim.name)
 
     def mark_running(
         self,
@@ -383,7 +410,17 @@ class NamedSessionRegistry:
         return sorted(results, key=lambda s: s.created_at)
 
     def active_names(self, chat_id: int) -> set[str]:
-        """Return the set of active session names for collision checks."""
+        """Return active user session names for the quota and name generation.
+
+        Inter-agent sessions (``ia-``/``ia.`` namespace) are excluded: they are
+        capped separately in :meth:`add` and must never consume the user's
+        ``/session`` quota. Generated animal names cannot collide with the
+        ``ia`` namespace, so excluding them here is collision-safe.
+        """
         return {
-            s.name for s in self._sessions.values() if s.chat_id == chat_id and s.status != "ended"
+            s.name
+            for s in self._sessions.values()
+            if s.chat_id == chat_id
+            and s.status != "ended"
+            and not s.name.startswith(("ia-", "ia."))
         }

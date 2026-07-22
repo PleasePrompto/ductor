@@ -170,3 +170,64 @@ class TestReasoningEffort:
         reg2 = _make_registry(tmp_path)  # reload from disk
         loaded = next(iter(reg2._sessions.values()))
         assert loaded.reasoning_effort == "high"
+
+
+class TestInteragentQuotaIsolation:
+    """Inter-agent sessions must not starve the user quota and must stay bounded (#174)."""
+
+    def _ia_session(self, name: str, created_at: float, status: str = "idle") -> object:
+        from ductor_bot.session.named import NamedSession
+
+        return NamedSession(
+            name=name,
+            chat_id=1,
+            provider="claude",
+            model="opus",
+            session_id="",
+            prompt_preview="Inter-agent session",
+            status=status,
+            created_at=created_at,
+        )
+
+    def test_ia_sessions_do_not_consume_user_session_quota(self, tmp_path: Path) -> None:
+        from ductor_bot.session.named import MAX_SESSIONS_PER_CHAT
+
+        reg = _make_registry(tmp_path)
+        for i in range(MAX_SESSIONS_PER_CHAT + 2):
+            reg.add(self._ia_session(f"ia.agent{i}.t{i}.xdeadbeef", created_at=float(i)))
+
+        ns = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="mine")
+        assert not ns.name.startswith("ia")
+
+    def test_ia_sessions_evicted_oldest_first_at_cap(self, tmp_path: Path) -> None:
+        from ductor_bot.session.named import MAX_INTERAGENT_SESSIONS_PER_CHAT
+
+        reg = _make_registry(tmp_path)
+        for i in range(MAX_INTERAGENT_SESSIONS_PER_CHAT + 5):
+            reg.add(self._ia_session(f"ia.agent{i}.t{i}.xdeadbeef", created_at=float(i)))
+
+        ia_names = {s.name for s in reg._sessions.values() if s.name.startswith(("ia-", "ia."))}
+        assert len(ia_names) == MAX_INTERAGENT_SESSIONS_PER_CHAT
+        assert "ia.agent0.t0.xdeadbeef" not in ia_names  # oldest evicted
+        last = MAX_INTERAGENT_SESSIONS_PER_CHAT + 4
+        assert f"ia.agent{last}.t{last}.xdeadbeef" in ia_names  # newest kept
+
+    def test_ia_eviction_never_touches_running_sessions(self, tmp_path: Path) -> None:
+        from ductor_bot.session.named import MAX_INTERAGENT_SESSIONS_PER_CHAT
+
+        reg = _make_registry(tmp_path)
+        reg.add(self._ia_session("ia.busy.t1.xdeadbeef", created_at=0.0, status="running"))
+        for i in range(MAX_INTERAGENT_SESSIONS_PER_CHAT + 3):
+            reg.add(self._ia_session(f"ia.agent{i}.t{i}.xdeadbeef", created_at=float(i + 1)))
+
+        assert reg.get(1, "ia.busy.t1.xdeadbeef") is not None
+
+    def test_user_sessions_never_evicted_by_ia_cap(self, tmp_path: Path) -> None:
+        from ductor_bot.session.named import MAX_INTERAGENT_SESSIONS_PER_CHAT
+
+        reg = _make_registry(tmp_path)
+        user = reg.create(chat_id=1, provider="claude", model="opus", prompt_preview="mine")
+        for i in range(MAX_INTERAGENT_SESSIONS_PER_CHAT + 3):
+            reg.add(self._ia_session(f"ia.agent{i}.t{i}.xdeadbeef", created_at=float(i)))
+
+        assert reg.get(1, user.name) is not None
