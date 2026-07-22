@@ -465,6 +465,8 @@ class AgentConfig(BaseModel):
     reasoning_effort: str = "medium"
     file_access: str = "all"
     append_system_prompt_files: list[str] = Field(default_factory=list)
+    # Per-topic project roots: topic name | "<topic_id>" | "<chat_id>:<topic_id>" -> path
+    project_roots: dict[str, str] = Field(default_factory=dict)
     gemini_api_key: str | None = None
     streaming: StreamingConfig = Field(default_factory=StreamingConfig)
     docker: DockerConfig = Field(default_factory=DockerConfig)

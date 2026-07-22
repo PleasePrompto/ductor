@@ -144,6 +144,20 @@ class CLIService:
         self._models = models
         self._available_providers = available_providers
         self._process_registry = process_registry
+        self._working_dir_resolver: Callable[[AgentRequest], str | None] | None = None
+
+    def set_working_dir_resolver(self, resolver: Callable[[AgentRequest], str | None]) -> None:
+        """Register a callback that maps a request to a per-request working dir.
+
+        The resolver returns an absolute path to use as the CLI working
+        directory, or ``None`` to keep the configured default workspace.
+        """
+        self._working_dir_resolver = resolver
+
+    @property
+    def docker_enabled(self) -> bool:
+        """True when CLI calls run inside a Docker container."""
+        return bool(self._config.docker_container)
 
     def update_available_providers(self, providers: frozenset[str]) -> None:
         self._available_providers = providers
@@ -349,10 +363,17 @@ class CLIService:
         # (mirrors model_override or default_model).
         effort = request.effort_override or self._config.reasoning_effort
 
+        # Per-request working dir override (project_roots). Skipped in Docker
+        # mode: docker_wrap maps cwd into the container via relative_to() and
+        # would fail on a path outside the workspace.
+        working_dir = self._config.working_dir
+        if self._working_dir_resolver is not None and not self._config.docker_container:
+            working_dir = self._working_dir_resolver(request) or working_dir
+
         return create_cli(
             CLIConfig(
                 provider=provider,
-                working_dir=self._config.working_dir,
+                working_dir=working_dir,
                 model=model,
                 system_prompt=request.system_prompt,
                 append_system_prompt=request.append_system_prompt,
