@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
+import signal
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -30,6 +32,32 @@ if TYPE_CHECKING:
     from ductor_bot.workspace.paths import DuctorPaths
 
 logger = logging.getLogger(__name__)
+
+
+def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
+    """Kill a preflight including grandchildren (POSIX process group; plain kill elsewhere).
+
+    Safety invariant: killpg only ever runs for a verified pid > 1 and a
+    pgid > 1. killpg(0) would signal our own group, killpg(1) becomes
+    kill(-1) and terminates every process of this user — a mocked or
+    corrupted pid must never be able to reach the syscall.
+    """
+    pid = proc.pid
+    if sys.platform != "win32" and isinstance(pid, int) and pid > 1:
+        try:
+            pgid = os.getpgid(pid)
+        except (ProcessLookupError, PermissionError):
+            pgid = 0
+        if pgid > 1:
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            else:
+                return
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
+
 
 # Callback signature: (job_title, result_text, status, chat_id, topic_id, transport)
 # Returns (delivered, delivery_error) — the delivery acknowledgement (#160).
@@ -559,20 +587,33 @@ class CronObserver(BaseTaskObserver):
 
         env = os.environ.copy()
         env["DUCTOR_HOME"] = str(self._paths.ductor_home)
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(script),
-            cwd=str(folder),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(script),
+                cwd=str(folder),
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=sys.platform != "win32",
+            )
+        except OSError:
+            # Fail open: a preflight that cannot even spawn (EMFILE, ENOMEM,
+            # permissions) must never suppress the scheduled agent run.
+            logger.warning("Cron preflight spawn failed job=%s; running agent", job_title)
+            return False
         try:
             async with asyncio.timeout(preflight.timeout_seconds):
                 stdout, stderr = await proc.communicate()
         except TimeoutError:
-            proc.kill()
-            await proc.communicate()
+            _kill_process_group(proc)
+            try:
+                async with asyncio.timeout(5):
+                    await proc.communicate()
+            except TimeoutError:
+                # A grandchild kept the pipes open past SIGKILL; abandon the
+                # reap rather than hanging this job's coroutine forever.
+                logger.warning("Cron preflight unreapable after kill job=%s", job_title)
             logger.warning("Cron preflight timed out job=%s", job_title)
             return False
 

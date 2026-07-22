@@ -310,6 +310,102 @@ class TestCronObserverExecution:
         with patch("asyncio.create_subprocess_exec", return_value=preflight_proc):
             assert await observer._run_preflight("Daily Report", "daily") is False
 
+    async def test_preflight_end_to_end_real_script_skip(self, tmp_path: Path) -> None:
+        """Unmocked run: a real script printing the marker skips the agent."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        scripts = paths.cron_tasks_dir / "daily" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "preflight.py").write_text("print('checked')\nprint('HEARTBEAT_OK')\n")
+        observer = _make_observer(paths, mgr, cron_preflight={"enabled": True})
+
+        assert await observer._run_preflight("Daily Report", "daily") is True
+
+    async def test_preflight_end_to_end_real_script_fails_open(self, tmp_path: Path) -> None:
+        """Unmocked run: a real script exiting non-zero lets the agent run."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        scripts = paths.cron_tasks_dir / "daily" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "preflight.py").write_text("raise SystemExit(2)\n")
+        observer = _make_observer(paths, mgr, cron_preflight={"enabled": True})
+
+        assert await observer._run_preflight("Daily Report", "daily") is False
+
+    async def test_preflight_spawn_failure_fails_open(self, tmp_path: Path) -> None:
+        """A preflight that cannot even spawn must not suppress the agent run."""
+        paths = _make_paths(tmp_path)
+        mgr = _make_manager(paths)
+        scripts = paths.cron_tasks_dir / "daily" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "preflight.py").write_text("print('HEARTBEAT_OK')\n")
+        observer = _make_observer(paths, mgr, cron_preflight={"enabled": True})
+
+        with patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=OSError(24, "Too many open files"),
+        ):
+            assert await observer._run_preflight("Daily Report", "daily") is False
+
+    def test_kill_process_group_kills_group_for_real_pid(self) -> None:
+        from ductor_bot.cron.observer import _kill_process_group
+
+        proc = MagicMock()
+        proc.pid = 1234
+        with (
+            patch("ductor_bot.cron.observer.os.getpgid", return_value=1234) as getpgid,
+            patch("ductor_bot.cron.observer.os.killpg") as killpg,
+        ):
+            _kill_process_group(proc)
+
+        getpgid.assert_called_once_with(1234)
+        killpg.assert_called_once()
+        proc.kill.assert_not_called()
+
+    def test_kill_process_group_never_signals_pgid_one(self) -> None:
+        """pgid <= 1 would become kill(-1) and take down the whole user session."""
+        from ductor_bot.cron.observer import _kill_process_group
+
+        proc = MagicMock()
+        proc.pid = 1234
+        with (
+            patch("ductor_bot.cron.observer.os.getpgid", return_value=1),
+            patch("ductor_bot.cron.observer.os.killpg") as killpg,
+        ):
+            _kill_process_group(proc)
+
+        killpg.assert_not_called()
+        proc.kill.assert_called_once()
+
+    def test_kill_process_group_rejects_non_int_pid(self) -> None:
+        """A mocked/corrupted pid must never reach getpgid/killpg."""
+        from ductor_bot.cron.observer import _kill_process_group
+
+        proc = MagicMock()  # proc.pid is a MagicMock, not an int
+        with (
+            patch("ductor_bot.cron.observer.os.getpgid") as getpgid,
+            patch("ductor_bot.cron.observer.os.killpg") as killpg,
+        ):
+            _kill_process_group(proc)
+
+        getpgid.assert_not_called()
+        killpg.assert_not_called()
+        proc.kill.assert_called_once()
+
+    def test_kill_process_group_falls_back_when_group_gone(self) -> None:
+        from ductor_bot.cron.observer import _kill_process_group
+
+        proc = MagicMock()
+        proc.pid = 1234
+        with (
+            patch("ductor_bot.cron.observer.os.getpgid", side_effect=ProcessLookupError),
+            patch("ductor_bot.cron.observer.os.killpg") as killpg,
+        ):
+            _kill_process_group(proc)
+
+        killpg.assert_not_called()
+        proc.kill.assert_called_once()
+
     async def test_preflight_timeout_kills_process_and_fails_open(self, tmp_path: Path) -> None:
         paths = _make_paths(tmp_path)
         mgr = _make_manager(paths)
