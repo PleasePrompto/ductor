@@ -35,7 +35,7 @@ class RecoveryPlanner:
     - Max 1 foreground recovery per chat_id
     - Skip ``is_recovery=True`` entries (prevents infinite loops)
     - Skip entries older than ``max_age_seconds``
-    - Skip inter-agent sessions (``ia-`` prefix)
+    - Skip inter-agent sessions (``ia-`` or ``ia.`` prefix)
     - Skip named sessions without a session_id (never started)
     - Skip named sessions that are not in "idle" status
     - Use ``--resume`` via session_id when available
@@ -84,7 +84,7 @@ class RecoveryPlanner:
         """Plan named session recovery from session registry."""
         actions: list[RecoveryAction] = []
         for ns in self._named_sessions:
-            if ns.name.startswith("ia-"):
+            if ns.name.startswith(("ia-", "ia.")):
                 continue
             if ns.status != "idle":
                 continue

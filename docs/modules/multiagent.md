@@ -109,7 +109,7 @@ Shared across process:
 - sync: waits for target response (`send`)
 - async: returns task ID immediately (`send_async`)
 
-Recipient processing uses deterministic named session `ia-<sender>`.
+Recipient processing uses deterministic scoped session `ia.<sender-slug>.t<topic>.x<hash>`, or legacy `ia-<sender>` without source context.
 
 Async send metadata currently supports:
 
@@ -121,7 +121,7 @@ Async send metadata currently supports:
 
 Provider-switch safeguard:
 
-- if recipient provider changed since prior `ia-<sender>` session, old session is ended and recreated
+- if the recipient provider changed since the prior scoped or legacy inter-agent session, the old session is ended and recreated
 - provider-switch notice is surfaced back to sender side
 - when `reply_to` is set, async result handler lookup uses that agent name instead of `sender`
 - recipient notifications are skipped when `silent=true` or `reply_to` is set

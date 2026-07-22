@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from ductor_bot.cli.types import AgentRequest
 from ductor_bot.orchestrator.flows import _is_invalid_session, _update_session
 from ductor_bot.session.key import SessionKey
-from ductor_bot.session.named import NamedSession
+from ductor_bot.session.named import NamedSession, interagent_session_name
 from ductor_bot.workspace.loader import build_appended_files_block
 
 if TYPE_CHECKING:
@@ -98,11 +98,13 @@ def _get_or_create_interagent_session(
     sender: str,
     *,
     new_session: bool = False,
+    source_chat_id: int = 0,
+    source_topic_id: int | None = None,
 ) -> tuple[NamedSession, bool, str]:
     """Get or create a Named Session for an inter-agent conversation.
 
-    Uses a deterministic name ``ia-{sender}`` so follow-up messages from
-    the same sender automatically resume the same session.
+    Uses a deterministic name scoped by sender chat/topic. Calls without
+    source context keep the legacy ``ia-{sender}`` name.
 
     If *new_session* is True, any existing session for this sender is
     ended first so a fresh one is created.
@@ -114,7 +116,7 @@ def _get_or_create_interagent_session(
     Returns ``(session, is_new, provider_switch_notice)``.
     """
     chat_id = _interagent_chat_id(orch)
-    session_name = f"ia-{sender}"
+    session_name = interagent_session_name(sender, source_chat_id, source_topic_id)
     provider_switch_notice = ""
 
     if new_session and orch._named_sessions.end_session(chat_id, session_name):
@@ -164,18 +166,22 @@ def _get_or_create_interagent_session(
 # ---------------------------------------------------------------------------
 
 
-async def handle_interagent_message(
+async def handle_interagent_message(  # noqa: PLR0913
     orch: Orchestrator,
     sender: str,
     message: str,
     *,
     new_session: bool = False,
+    source_chat_id: int = 0,
+    source_topic_id: int | None = None,
 ) -> tuple[str, str, str]:
     """Process a message from another agent via the InterAgentBus.
 
-    Uses a Named Session per sender so that context is preserved across
-    multiple inter-agent interactions.  The session can also be resumed
-    manually from Telegram via ``@ia-{sender} <message>``.
+    With source context, uses a sender/chat/topic-scoped Named Session and
+    reuses it for follow-up messages from the same chat/topic. Calls without
+    source context keep the legacy ``ia-{sender}`` name. The exact session name
+    is returned so callers can report it and users can resume it manually from
+    Telegram via ``@<session-name> <message>``.
 
     Returns ``(result_text, session_name, provider_switch_notice)``.
     The *provider_switch_notice* is non-empty when a provider change
@@ -188,6 +194,8 @@ async def handle_interagent_message(
         orch,
         sender,
         new_session=new_session,
+        source_chat_id=source_chat_id,
+        source_topic_id=source_topic_id,
     )
 
     prompt = (
@@ -239,7 +247,13 @@ async def handle_interagent_message(
             stale_id,
         )
         orch._named_sessions.end_session(chat_id, ns.name)
-        ns, _, _ = _get_or_create_interagent_session(orch, sender, new_session=True)
+        ns, _, _ = _get_or_create_interagent_session(
+            orch,
+            sender,
+            new_session=True,
+            source_chat_id=source_chat_id,
+            source_topic_id=source_topic_id,
+        )
         ns.status = "running"
         files_block = await build_appended_files_block(
             orch.paths, orch._config.append_system_prompt_files

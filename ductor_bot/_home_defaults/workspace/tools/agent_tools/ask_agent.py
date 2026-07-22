@@ -49,6 +49,12 @@ def main() -> None:
     body: dict[str, object] = {"from": sender, "to": target, "message": message}
     if new_session:
         body["new_session"] = True
+    chat_id = os.environ.get("DUCTOR_CHAT_ID", "")
+    topic_id = os.environ.get("DUCTOR_TOPIC_ID", "")
+    if chat_id:
+        body["chat_id"] = int(chat_id)
+    if topic_id:
+        body["topic_id"] = int(topic_id)
     payload = json.dumps(body).encode()
 
     req = urllib.request.Request(

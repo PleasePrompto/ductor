@@ -28,7 +28,7 @@ Key properties:
 - `/status` shows active background tasks
 - `/session` background timeout uses `config.timeouts.background`
 
-Inter-agent sessions (`ia-<sender>`) use a deterministic registry path and are not created through `/session`.
+Inter-agent sessions use deterministic scoped names (`ia.<sender-slug>.t<topic>.x<hash>`, or legacy `ia-<sender>` without source context) and are not created through `/session`.
 
 Restart behavior:
 

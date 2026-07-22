@@ -285,5 +285,5 @@ Rule sync:
 - sub-agents are full stacks with own transport credentials/workspace/session files (each sub-agent can use a different transport)
 - all stacks share one event loop, inter-agent bus, and optional shared task hub
 - async inter-agent results are injected via bus envelopes
-- provider switch during `ia-<sender>` conversations auto-resets that named session and surfaces a provider-switch notice
+- provider switch during scoped `ia.<sender-slug>.t<topic>.x<hash>` conversations (legacy `ia-<sender>` without source context) auto-resets that named session and surfaces a provider-switch notice
 - async agent-tool pipelines can route replies explicitly via `reply_to` and suppress recipient noise via `silent`

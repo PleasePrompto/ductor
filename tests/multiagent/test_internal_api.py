@@ -144,6 +144,8 @@ class TestNewSessionFlag:
                 "to": "target",
                 "message": "Hello",
                 "new_session": True,
+                "chat_id": 777,
+                "topic_id": 10,
             },
         )
         assert resp.status == 200
@@ -151,6 +153,8 @@ class TestNewSessionFlag:
             "sender",
             "Hello",
             new_session=True,
+            source_chat_id=777,
+            source_topic_id=10,
         )
 
     async def test_send_defaults_new_session_false(

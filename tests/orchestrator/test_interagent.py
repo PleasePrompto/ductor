@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
+import json
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -14,7 +18,10 @@ from ductor_bot.orchestrator.injection import (
     _get_or_create_interagent_session,
     _interagent_chat_id,
 )
+from ductor_bot.session.named import interagent_session_name
 from ductor_bot.workspace.paths import DuctorPaths
+
+_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -114,6 +121,14 @@ class TestGetOrCreateInteragentSession:
         assert is_new is False
         assert notice == ""
 
+    def test_scopes_names_by_source_chat_and_topic(self) -> None:
+        topic_10 = interagent_session_name("main", 777, 10)
+        topic_20 = interagent_session_name("main", 777, 20)
+        assert topic_10 != topic_20
+        assert topic_10.startswith("ia.main.t10.x")
+        assert len(topic_10) <= 40
+        assert interagent_session_name("main") == "ia-main"
+
 
 class TestHandleInteragentMessage:
     """Test handle_interagent_message."""
@@ -163,6 +178,97 @@ class TestHandleInteragentMessage:
         call_args = orch_ia._cli_service.execute.call_args
         request = call_args[0][0]
         assert request.resume_session is None
+
+    async def test_same_topic_reuses_scoped_session(self, orch_ia: Orchestrator) -> None:
+        _, first_name, _ = await orch_ia.handle_interagent_message(
+            "main", "Task 1", source_chat_id=777, source_topic_id=10
+        )
+        _, second_name, _ = await orch_ia.handle_interagent_message(
+            "main", "Task 2", source_chat_id=777, source_topic_id=10
+        )
+        assert second_name == first_name
+        assert orch_ia._cli_service.execute.call_args.args[0].resume_session == "sess-001"
+
+    async def test_different_topics_use_different_scoped_sessions(
+        self, orch_ia: Orchestrator
+    ) -> None:
+        _, topic_10, _ = await orch_ia.handle_interagent_message(
+            "main", "Task 1", source_chat_id=777, source_topic_id=10
+        )
+        _, topic_20, _ = await orch_ia.handle_interagent_message(
+            "main", "Task 2", source_chat_id=777, source_topic_id=20
+        )
+        assert topic_10 != topic_20
+
+    async def test_new_keeps_scoped_destination(self, orch_ia: Orchestrator) -> None:
+        _, first_name, _ = await orch_ia.handle_interagent_message(
+            "main", "Task 1", source_chat_id=777, source_topic_id=10
+        )
+        _, new_name, _ = await orch_ia.handle_interagent_message(
+            "main",
+            "Task 2",
+            new_session=True,
+            source_chat_id=777,
+            source_topic_id=10,
+        )
+        assert new_name == first_name
+        assert orch_ia._cli_service.execute.call_args.args[0].resume_session is None
+
+    async def test_interagent_request_uses_recipient_anchor(self, orch_ia: Orchestrator) -> None:
+        await orch_ia.handle_interagent_message(
+            "main", "Task", source_chat_id=777, source_topic_id=10
+        )
+        request = orch_ia._cli_service.execute.call_args.args[0]
+        assert request.chat_id == 12345
+        assert request.chat_id != 777
+
+    async def test_task_delivery_keeps_recipient_anchor(
+        self, orch_ia: Orchestrator, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from ductor_bot.cli.base import CLIConfig
+        from ductor_bot.cli.executor import build_subprocess_env
+
+        await orch_ia.handle_interagent_message(
+            "main", "Create a task", source_chat_id=777, source_topic_id=10
+        )
+        request = orch_ia._cli_service.execute.call_args.args[0]
+        assert request.chat_id == 12345
+
+        monkeypatch.delenv("DUCTOR_CHAT_ID", raising=False)
+        monkeypatch.delenv("DUCTOR_TOPIC_ID", raising=False)
+        env = build_subprocess_env(
+            CLIConfig(
+                working_dir="/tmp/workspace",
+                chat_id=request.chat_id,
+                topic_id=request.topic_id,
+                transport=request.transport,
+            )
+        )
+        assert env is not None
+        monkeypatch.setenv("DUCTOR_CHAT_ID", env["DUCTOR_CHAT_ID"])
+
+        tool = _ROOT / "ductor_bot/_home_defaults/workspace/tools/task_tools/create_task.py"
+        spec = importlib.util.spec_from_file_location("create_task_tool", tool)
+        assert spec is not None
+        assert spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        captured: dict[str, object] = {}
+
+        def post_json(_url: str, body: dict[str, object], *, timeout: int) -> dict[str, object]:
+            assert timeout == 10
+            captured.update(body)
+            return {"success": True, "task_id": "task-1"}
+
+        monkeypatch.setattr(
+            mod,
+            "_load_shared",
+            lambda: (lambda _path: "http://example.invalid", post_json, lambda: "codex"),
+        )
+        monkeypatch.setattr(sys, "argv", ["create_task.py", "do work"])
+        mod.main()
+        assert captured["chat_id"] == 12345
+        assert "topic_id" not in captured
 
     async def test_prompt_contains_interagent_markers(self, orch_ia: Orchestrator) -> None:
         await orch_ia.handle_interagent_message("main", "Hello world")
@@ -326,3 +432,31 @@ class TestHandleAsyncInteragentResult:
         call_args = orch_ia._cli_service.execute.call_args
         request = call_args[0][0]
         assert request.resume_session == "active-session-999"
+
+
+def test_ask_agent_forwards_source_chat_topic(monkeypatch: pytest.MonkeyPatch) -> None:
+    tool = _ROOT / "ductor_bot/_home_defaults/workspace/tools/agent_tools/ask_agent.py"
+    spec = importlib.util.spec_from_file_location("ask_agent_tool", tool)
+    assert spec is not None
+    assert spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps(
+        {"success": True, "text": "ok"}
+    ).encode()
+    captured: dict[str, object] = {}
+
+    def urlopen(request: object, timeout: int) -> MagicMock:
+        assert timeout == 300
+        captured.update(json.loads(request.data.decode()))
+        return response
+
+    monkeypatch.setattr(mod.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(sys, "argv", ["ask_agent.py", "codex", "hello"])
+    monkeypatch.setenv("DUCTOR_AGENT_NAME", "main")
+    monkeypatch.setenv("DUCTOR_CHAT_ID", "777")
+    monkeypatch.setenv("DUCTOR_TOPIC_ID", "10")
+    mod.main()
+    assert captured["chat_id"] == 777
+    assert captured["topic_id"] == 10

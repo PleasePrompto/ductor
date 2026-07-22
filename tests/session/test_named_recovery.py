@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from ductor_bot.session.key import SessionKey
 from ductor_bot.session.named import NamedSessionRegistry
 
@@ -126,8 +128,9 @@ class TestRecoveredRunning:
         assert len(reg.pop_recovered_running(transport="tg")) == 0
         assert len(reg.pop_recovered_running(transport="sl")) == 1
 
-    def test_ia_sessions_excluded(self, tmp_path: Path) -> None:
-        path = self._persist_running_session(tmp_path, name="ia-sub1")
+    @pytest.mark.parametrize("name", ["ia-sub1", "ia.main.t3892.xf47692", "ia.main.t10.x255106fd"])
+    def test_ia_sessions_excluded(self, tmp_path: Path, name: str) -> None:
+        path = self._persist_running_session(tmp_path, name=name)
         reg = NamedSessionRegistry(path)
         assert len(reg.pop_recovered_running()) == 0
 

@@ -99,7 +99,7 @@ Consumer-facing nuance:
 Purpose:
 
 - background `/session` registry
-- deterministic inter-agent sessions (`ia-<sender>`)
+- deterministic inter-agent sessions (`ia.<sender-slug>.t<topic>.x<hash>`, or legacy `ia-<sender>` without source context)
 
 Model fields:
 
@@ -117,7 +117,7 @@ Behavior:
 - user-created cap: `MAX_SESSIONS_PER_CHAT = 10`
 - persisted `running` entries are downgraded to `idle` on load
 - recovered-running sessions are tracked for startup recovery
-- inter-agent conversations use deterministic names `ia-<sender>`
+- inter-agent conversations use deterministic scoped names `ia.<sender-slug>.t<topic>.x<hash>`, or legacy `ia-<sender>` without source context
 - stale CLI session IDs on those named sessions are retried once with a fresh session after update/cache-clear style failures
 
 ## Persistence

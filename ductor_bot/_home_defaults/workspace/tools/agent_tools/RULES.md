@@ -207,19 +207,21 @@ python3 tools/agent_tools/ask_agent.py --new "agent-name" "Brand new question"
 
 ### Named Sessions for inter-agent work
 
-Each inter-agent conversation creates a **Named Session** on the recipient
-agent called `ia-{sender}` (e.g. if `main` sends to `codex`, the session
-is `ia-main` on codex).
+With source chat/topic context, each inter-agent conversation creates a
+**Named Session** on the recipient agent with a sender/chat/topic-scoped name
+(for example, `ia.main.t12345.xab12cd34`). Follow-up messages from the same
+chat/topic reuse that session. Calls without source context use the legacy
+`ia-{sender}` name.
 
 These sessions:
 - Persist across messages and survive bot restarts
 - Run in the background, independent of the recipient's direct chat
-- Can be continued by the user directly in the recipient's chat
-  via `@ia-{sender} <message>` (e.g. `@ia-main tell me more`)
 - Are visible in the recipient's `/sessions` list
 
-When reporting async results to the user, mention the session name so they
-can follow up directly with the sub-agent if needed.
+Async responses report the exact session name. To continue it directly in the
+recipient's chat, use the reported name exactly: `@<session-name> <message>`.
+Synchronous responses do not include the session name; use async or find it in
+the recipient's `/sessions` list. Do not guess session names.
 
 ## Shared Knowledge
 

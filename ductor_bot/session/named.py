@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import re
 import secrets
 import time
 from dataclasses import asdict, dataclass
@@ -14,6 +16,23 @@ from ductor_bot.infra.json_store import atomic_json_save, load_json
 from ductor_bot.session.key import SessionKey
 
 logger = logging.getLogger(__name__)
+
+
+def interagent_session_name(
+    sender: str,
+    source_chat_id: int = 0,
+    source_topic_id: int | None = None,
+) -> str:
+    """Return the legacy or chat/topic-scoped inter-agent session name."""
+    if not source_chat_id:
+        return f"ia-{sender}"
+    slug = re.sub(r"[^a-z0-9]+", "-", sender.lower()).strip("-")[:12] or "agent"
+    topic = f"t{source_topic_id}" if source_topic_id is not None else "t0"
+    digest = hashlib.sha256(f"{sender}\0{source_chat_id}\0{source_topic_id}".encode()).hexdigest()[
+        :8
+    ]
+    return f"{f'ia.{slug}.{topic}'[:30]}.x{digest}"
+
 
 _ADJECTIVES: tuple[str, ...] = (
     "bold",
@@ -346,7 +365,7 @@ class NamedSessionRegistry:
 
         If *chat_id* is given, only return sessions for that chat.
         If *transport* is given, only return sessions for that transport.
-        Excludes inter-agent sessions (``ia-`` prefix).
+        Excludes inter-agent sessions (``ia-`` or ``ia.`` prefix).
         """
         results: list[NamedSession] = []
         to_remove: list[tuple[int, str]] = []
@@ -355,7 +374,7 @@ class NamedSessionRegistry:
                 continue
             if transport is not None and ns.transport != transport:
                 continue
-            if ns.name.startswith("ia-"):
+            if ns.name.startswith(("ia-", "ia.")):
                 continue
             results.append(ns)
             to_remove.append(key)
