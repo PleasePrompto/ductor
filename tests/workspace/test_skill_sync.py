@@ -14,6 +14,7 @@ import pytest
 from ductor_bot.workspace.paths import DuctorPaths
 from ductor_bot.workspace.skill_sync import (
     _MANAGED_MARKER,
+    _SYNCABLE_PROVIDERS,
     _clean_broken_links,
     _clean_invalid_workspace_skill_links,
     _cli_skill_dirs,
@@ -937,7 +938,7 @@ def test_bundled_docker_replaces_old_symlink(tmp_path: Path) -> None:
 # Group: skill sync toggle config (#141)
 # ---------------------------------------------------------------------------
 
-_ALL_PROVIDERS = frozenset({"claude", "codex", "gemini"})
+_ALL_PROVIDERS = _SYNCABLE_PROVIDERS  # the real constant — keeps this in sync with new providers
 
 
 def test_load_skill_sync_config_missing_file(tmp_path: Path) -> None:
@@ -966,7 +967,7 @@ def test_load_skill_sync_config_per_provider_opt_out(tmp_path: Path) -> None:
     cfg.write_text(json.dumps({"skills": {"sync": {"codex": False}}}))
     enabled, providers = _load_skill_sync_config(cfg)
     assert enabled is True
-    assert providers == frozenset({"claude", "gemini"})
+    assert providers == _SYNCABLE_PROVIDERS - {"codex"}
 
 
 def test_cli_skill_dirs_filters_disabled_provider(

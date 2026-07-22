@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from ductor_bot.cli.auth import AuthResult, AuthStatus
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_discovery import CodexModelInfo
 
@@ -45,7 +46,10 @@ async def test_orchestrator_starts_cache_observer(mock_codex_cache: CodexModelCa
         patch("ductor_bot.orchestrator.observers.CodexCacheObserver", return_value=mock_observer),
         patch("ductor_bot.orchestrator.lifecycle.resolve_paths"),
         patch("ductor_bot.orchestrator.lifecycle.inject_runtime_environment"),
-        patch("ductor_bot.cli.auth.check_all_auth", return_value={}),
+        patch(
+            "ductor_bot.cli.auth.check_all_auth",
+            return_value={"codex": AuthResult("codex", AuthStatus.INSTALLED)},
+        ),
     ):
         orch = await Orchestrator.create(mock_config)
 
@@ -87,7 +91,10 @@ async def test_orchestrator_passes_cache_to_observers(
         patch("ductor_bot.orchestrator.observers.WebhookObserver", mock_webhook_class),
         patch("ductor_bot.orchestrator.lifecycle.resolve_paths"),
         patch("ductor_bot.orchestrator.lifecycle.inject_runtime_environment"),
-        patch("ductor_bot.cli.auth.check_all_auth", return_value={}),
+        patch(
+            "ductor_bot.cli.auth.check_all_auth",
+            return_value={"codex": AuthResult("codex", AuthStatus.INSTALLED)},
+        ),
     ):
         orch = await Orchestrator.create(mock_config)
 
@@ -125,7 +132,10 @@ async def test_orchestrator_stops_cache_observer(mock_codex_cache: CodexModelCac
         patch("ductor_bot.orchestrator.observers.CodexCacheObserver", return_value=mock_observer),
         patch("ductor_bot.orchestrator.lifecycle.resolve_paths"),
         patch("ductor_bot.orchestrator.lifecycle.inject_runtime_environment"),
-        patch("ductor_bot.cli.auth.check_all_auth", return_value={}),
+        patch(
+            "ductor_bot.cli.auth.check_all_auth",
+            return_value={"codex": AuthResult("codex", AuthStatus.INSTALLED)},
+        ),
     ):
         orch = await Orchestrator.create(mock_config)
 
