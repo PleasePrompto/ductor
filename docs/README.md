@@ -56,6 +56,7 @@ Runtime behavior notes:
 - [System Overview](system_overview.md)
 - [Installation](installation.md)
 - [Matrix Setup](matrix-setup.md)
+- [Slack Setup](slack-setup.md)
 - [Automation Quickstart](automation.md)
 - [Developer Quickstart](developer_quickstart.md)
 - [Configuration](config.md)
