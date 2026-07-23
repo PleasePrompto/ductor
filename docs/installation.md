@@ -7,7 +7,10 @@
 3. At least one authenticated provider CLI:
    - Claude Code CLI: `npm install -g @anthropic-ai/claude-code && claude auth`
    - Codex CLI: `npm install -g @openai/codex && codex auth`
-   - Gemini CLI: `npm install -g @google/gemini-cli` and authenticate in `gemini`
+   - Gemini CLI: `npm install -g @google/gemini-cli` and authenticate in `gemini`.
+     Note: since 2026-06-18 Gemini CLI no longer serves requests for individual
+     Google accounts (free/Pro/Ultra) — it requires an API key or a Gemini Code
+     Assist license. For the free individual tier, use Antigravity (`agy`) instead.
 4. One of these messaging transports:
     - **Telegram**: Bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
     - **Matrix**: install Matrix support first (`ductor install matrix` or `pip install \"ductor[matrix]\"`), then provide homeserver URL, user ID, and password/access token
