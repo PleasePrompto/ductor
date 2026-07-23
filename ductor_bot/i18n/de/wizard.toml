@@ -44,7 +44,7 @@ body = """\
 [bold]Wähle, wie Nutzer mit dem Bot kommunizieren:[/bold]\n
   [bold cyan]Telegram[/bold cyan]  — Benötigt einen Bot-Token von @BotFather
   [bold cyan]Matrix[/bold cyan]    — Benötigt ein Matrix-Konto auf einem Homeserver (z.B. Element)
-  [bold cyan]Slack[/bold cyan]     — Requires Slack bot/app tokens and the Slack extra"""
+  [bold cyan]Slack[/bold cyan]     — Benötigt Slack Bot-/App-Token und das Slack-Extra"""
 prompt = "Transport wählen:"
 
 [telegram.token]
@@ -111,40 +111,40 @@ error = "[red]Ungültiges Format. Erwartet: @user:domain (z.B. @nik:matrix.org)[
 [slack.bot_token]
 title = "[bold]Slack Bot Token[/bold]"
 body = """\
-[bold]Enter your Slack bot token.[/bold]\n
-  Copy the [bold cyan]Bot User OAuth Token[/bold cyan] from your Slack app.\n
+[bold]Gib deinen Slack Bot-Token ein.[/bold]\n
+  Kopiere den [bold cyan]Bot User OAuth Token[/bold cyan] aus deiner Slack-App.\n
 [dim]Format: xoxb-...[/dim]"""
-prompt = "Bot token:"
-error = "[red]Invalid bot token. Expected a token starting with xoxb-[/red]"
+prompt = "Bot-Token:"
+error = "[red]Ungültiger Bot-Token. Erwartet wird ein Token, der mit xoxb- beginnt[/red]"
 
 [slack.app_token]
 title = "[bold]Slack App Token[/bold]"
 body = """\
-[bold]Enter your Slack app-level token.[/bold]\n
-  Enable Socket Mode in your Slack app and create an app token with
-  the [bold cyan]connections:write[/bold cyan] scope.\n
+[bold]Gib deinen Slack App-Level-Token ein.[/bold]\n
+  Aktiviere Socket Mode in deiner Slack-App und erstelle einen App-Token
+  mit dem Scope [bold cyan]connections:write[/bold cyan].\n
 [dim]Format: xapp-...[/dim]"""
-prompt = "App token:"
-error = "[red]Invalid app token. Expected a token starting with xapp-[/red]"
+prompt = "App-Token:"
+error = "[red]Ungültiger App-Token. Erwartet wird ein Token, der mit xapp- beginnt[/red]"
 
 [slack.allowed_channels]
-title = "[bold]Allowed Channels[/bold]"
+title = "[bold]Erlaubte Channels[/bold]"
 body = """\
-[bold]Which Slack channels should the bot accept messages from?[/bold]\n
-  Enter one or more channel IDs separated by commas or spaces.\n
-  Leave blank to allow any channel the bot is invited into.\n
-[dim]Examples: C0123456789, G0123456789[/dim]"""
-prompt = "Allowed channel IDs (optional):"
-error = "[red]Invalid Slack channel ID. Use C... or G... IDs separated by commas/spaces.[/red]"
+[bold]Aus welchen Slack-Channels soll der Bot Nachrichten akzeptieren?[/bold]\n
+  Gib eine oder mehrere Channel-IDs ein, getrennt durch Kommas oder Leerzeichen.\n
+  Leer lassen, um jeden Channel zu erlauben, in den der Bot eingeladen wird.\n
+[dim]Beispiele: C0123456789, G0123456789[/dim]"""
+prompt = "Erlaubte Channel-IDs (optional):"
+error = "[red]Ungültige Slack Channel-ID. Verwende C...- oder G...-IDs, getrennt durch Kommas/Leerzeichen.[/red]"
 
 [slack.allowed_users]
-title = "[bold]Allowed Users[/bold]"
+title = "[bold]Erlaubte Nutzer[/bold]"
 body = """\
-[bold]Which Slack users should be allowed to talk to the bot?[/bold]\n
-  Enter one or more Slack user IDs separated by commas or spaces.\n
-[dim]Example: U0123456789[/dim]"""
-prompt = "Allowed user IDs:"
-error = "[red]Invalid Slack user ID. Use one or more U... IDs separated by commas/spaces.[/red]"
+[bold]Welche Slack-Nutzer dürfen mit dem Bot reden?[/bold]\n
+  Gib eine oder mehrere Slack User-IDs ein, getrennt durch Kommas oder Leerzeichen.\n
+[dim]Beispiel: U0123456789[/dim]"""
+prompt = "Erlaubte User-IDs:"
+error = "[red]Ungültige Slack User-ID. Verwende eine oder mehrere U...-IDs, getrennt durch Kommas/Leerzeichen.[/red]"
 
 [docker]
 title = "[bold]Docker Sandboxing[/bold]"

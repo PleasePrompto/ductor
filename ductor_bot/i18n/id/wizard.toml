@@ -44,7 +44,7 @@ body = """\
 [bold]Pilih cara pengguna berkomunikasi dengan bot:[/bold]\n
   [bold cyan]Telegram[/bold cyan]  — Memerlukan token bot dari @BotFather
   [bold cyan]Matrix[/bold cyan]    — Memerlukan akun Matrix di homeserver (mis. Element)
-  [bold cyan]Slack[/bold cyan]     — Requires Slack bot/app tokens and the Slack extra"""
+  [bold cyan]Slack[/bold cyan]     — Memerlukan token bot/app Slack dan ekstra Slack"""
 prompt = "Pilih transport:"
 
 [telegram.token]
@@ -109,42 +109,42 @@ prompt = "ID pengguna Matrix Anda:"
 error = "[red]Format tidak valid. Diharapkan: @user:domain (mis. @nik:matrix.org)[/red]"
 
 [slack.bot_token]
-title = "[bold]Slack Bot Token[/bold]"
+title = "[bold]Token Bot Slack[/bold]"
 body = """\
-[bold]Enter your Slack bot token.[/bold]\n
-  Copy the [bold cyan]Bot User OAuth Token[/bold cyan] from your Slack app.\n
+[bold]Masukkan token bot Slack Anda.[/bold]\n
+  Salin [bold cyan]Bot User OAuth Token[/bold cyan] dari aplikasi Slack Anda.\n
 [dim]Format: xoxb-...[/dim]"""
-prompt = "Bot token:"
-error = "[red]Invalid bot token. Expected a token starting with xoxb-[/red]"
+prompt = "Token bot:"
+error = "[red]Token bot tidak valid. Diharapkan token yang diawali dengan xoxb-[/red]"
 
 [slack.app_token]
-title = "[bold]Slack App Token[/bold]"
+title = "[bold]Token Aplikasi Slack[/bold]"
 body = """\
-[bold]Enter your Slack app-level token.[/bold]\n
-  Enable Socket Mode in your Slack app and create an app token with
-  the [bold cyan]connections:write[/bold cyan] scope.\n
+[bold]Masukkan token tingkat aplikasi Slack Anda.[/bold]\n
+  Aktifkan Socket Mode di aplikasi Slack Anda dan buat token aplikasi dengan
+  scope [bold cyan]connections:write[/bold cyan].\n
 [dim]Format: xapp-...[/dim]"""
-prompt = "App token:"
-error = "[red]Invalid app token. Expected a token starting with xapp-[/red]"
+prompt = "Token aplikasi:"
+error = "[red]Token aplikasi tidak valid. Diharapkan token yang diawali dengan xapp-[/red]"
 
 [slack.allowed_channels]
-title = "[bold]Allowed Channels[/bold]"
+title = "[bold]Channel yang Diizinkan[/bold]"
 body = """\
-[bold]Which Slack channels should the bot accept messages from?[/bold]\n
-  Enter one or more channel IDs separated by commas or spaces.\n
-  Leave blank to allow any channel the bot is invited into.\n
-[dim]Examples: C0123456789, G0123456789[/dim]"""
-prompt = "Allowed channel IDs (optional):"
-error = "[red]Invalid Slack channel ID. Use C... or G... IDs separated by commas/spaces.[/red]"
+[bold]Dari channel Slack mana bot boleh menerima pesan?[/bold]\n
+  Masukkan satu atau beberapa ID channel yang dipisahkan koma atau spasi.\n
+  Biarkan kosong untuk mengizinkan semua channel tempat bot diundang.\n
+[dim]Contoh: C0123456789, G0123456789[/dim]"""
+prompt = "ID channel yang diizinkan (opsional):"
+error = "[red]ID channel Slack tidak valid. Gunakan ID C... atau G... yang dipisahkan koma/spasi.[/red]"
 
 [slack.allowed_users]
-title = "[bold]Allowed Users[/bold]"
+title = "[bold]Pengguna yang Diizinkan[/bold]"
 body = """\
-[bold]Which Slack users should be allowed to talk to the bot?[/bold]\n
-  Enter one or more Slack user IDs separated by commas or spaces.\n
-[dim]Example: U0123456789[/dim]"""
-prompt = "Allowed user IDs:"
-error = "[red]Invalid Slack user ID. Use one or more U... IDs separated by commas/spaces.[/red]"
+[bold]Pengguna Slack mana yang diizinkan berbicara dengan bot?[/bold]\n
+  Masukkan satu atau beberapa ID pengguna Slack yang dipisahkan koma atau spasi.\n
+[dim]Contoh: U0123456789[/dim]"""
+prompt = "ID pengguna yang diizinkan:"
+error = "[red]ID pengguna Slack tidak valid. Gunakan satu atau beberapa ID U... yang dipisahkan koma/spasi.[/red]"
 
 [docker]
 title = "[bold]Docker Sandboxing[/bold]"

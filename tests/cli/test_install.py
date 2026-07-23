@@ -57,6 +57,11 @@ class TestCmdInstall:
             cmd_install(["install", "api"])
             mock_install.assert_called_once_with("api")
 
+    def test_valid_extra_slack_calls_install(self) -> None:
+        with patch("ductor_bot.cli_commands.install._install_extra") as mock_install:
+            cmd_install(["install", "slack"])
+            mock_install.assert_called_once_with("slack")
+
 
 class TestInstallExtra:
     """Tests for _install_extra."""

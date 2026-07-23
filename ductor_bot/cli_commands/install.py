@@ -15,6 +15,7 @@ from ductor_bot.infra.install import detect_install_mode
 # Available extras and their key package + description
 _EXTRAS: dict[str, tuple[str, str]] = {
     "matrix": ("nio", "Matrix messenger support (matrix-nio)"),
+    "slack": ("slack_bolt", "Slack messenger support (slack-bolt)"),
     "api": ("nacl", "WebSocket API with E2E encryption (PyNaCl)"),
 }
 

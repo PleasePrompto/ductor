@@ -28,7 +28,7 @@ Covers `ductor` command behavior, onboarding flow, and lifecycle commands.
 - `ductor docker <rebuild|enable|disable|mount|unmount|mounts|extras|extras-add|extras-remove>`
 - `ductor api <enable|disable>`
 - `ductor agents <list|add|remove>`
-- `ductor install <matrix|api>`
+- `ductor install <matrix|slack|api>`
 - `ductor help`
 
 ## Configuration gate
