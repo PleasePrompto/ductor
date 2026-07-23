@@ -17,32 +17,8 @@ DEFAULT_EMPTY_GEMINI_API_KEY: str = "null"
 # Public exposure is gated by ``allow_public`` + a prominent warning at startup.
 _BIND_ALL_INTERFACES: str = ".".join(["0"] * 4)
 
-# Pre-build a safe UTC fallback.  On Windows without the ``tzdata`` package
-# (now a declared dependency), ``ZoneInfo("UTC")`` raises.  The fallback
-# is a minimal ``datetime.tzinfo`` subclass with a ``.key`` attribute so
-# callers that log ``tz.key`` keep working.
-try:
-    _SAFE_UTC: ZoneInfo = ZoneInfo("UTC")
-except (ZoneInfoNotFoundError, KeyError):
-    import datetime as _dt
-
-    class _UTCFallback(_dt.tzinfo):  # pragma: no cover
-        """Minimal UTC stand-in for systems without IANA timezone data."""
-
-        key: str = "UTC"
-        _ZERO = _dt.timedelta(0)
-
-        def utcoffset(self, dt: _dt.datetime | None) -> _dt.timedelta:
-            return self._ZERO
-
-        def tzname(self, dt: _dt.datetime | None) -> str:
-            return "UTC"
-
-        def dst(self, dt: _dt.datetime | None) -> _dt.timedelta:
-            return self._ZERO
-
-    _SAFE_UTC = _UTCFallback()  # type: ignore[assignment]
-    logger.warning("tzdata package missing — using built-in UTC fallback")
+# ``tzdata`` is a declared hard dependency, so ``ZoneInfo("UTC")`` cannot fail.
+_SAFE_UTC: ZoneInfo = ZoneInfo("UTC")
 
 
 class StreamingConfig(BaseModel):

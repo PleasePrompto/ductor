@@ -105,27 +105,3 @@ class TranslationStore:
                 logger.warning("Translation key %s: missing placeholder %s", key, exc)
                 return raw
         return raw
-
-    def all_chat_keys(self) -> set[str]:
-        """Return all English chat keys (for validation)."""
-        return set(self._en_chat)
-
-    def all_cli_keys(self) -> set[str]:
-        """Return all English CLI keys (for validation)."""
-        return set(self._en_cli)
-
-    def all_cmd_keys(self) -> set[str]:
-        """Return all English command keys (for validation)."""
-        return set(self._en_cmd)
-
-    def lang_chat_keys(self) -> set[str]:
-        """Return translated chat keys (for completeness checks)."""
-        return set(self._chat)
-
-    def lang_cli_keys(self) -> set[str]:
-        """Return translated CLI keys (for completeness checks)."""
-        return set(self._cli)
-
-    def lang_cmd_keys(self) -> set[str]:
-        """Return translated command keys (for completeness checks)."""
-        return set(self._cmd)

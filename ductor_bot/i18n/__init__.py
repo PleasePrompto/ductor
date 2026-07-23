@@ -71,13 +71,3 @@ def t_plural(key: str, count: int, **kwargs: object) -> str:
     """Translate with simple plural rules (_one / _other suffix)."""
     suffix = "_one" if count == 1 else "_other"
     return t(f"{key}{suffix}", count=count, **kwargs)
-
-
-def get_language() -> str:
-    """Return the active language code."""
-    return _get_store().language
-
-
-def get_store() -> TranslationStore:
-    """Return the active TranslationStore (for validation/testing)."""
-    return _get_store()

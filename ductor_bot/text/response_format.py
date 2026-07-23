@@ -105,33 +105,6 @@ def stop_text(killed: bool, provider: str) -> str:
     return fmt(t("stop.header"), SEP, body)
 
 
-# -- Timeout messages --
-
-
-def timeout_warning_text(remaining: float) -> str:
-    """Warning text shown when a timeout is approaching."""
-    if remaining >= 60:
-        mins = int(remaining // 60)
-        return t("timeout.warning_minutes", mins=mins)
-    secs = int(remaining)
-    return t("timeout.warning_seconds", secs=secs)
-
-
-def timeout_extended_text(extension: float, remaining_ext: int) -> str:
-    """Notification that the timeout was extended due to activity."""
-    secs = int(extension)
-    return t("timeout.extended", secs=secs, remaining=remaining_ext)
-
-
-def timeout_result_text(elapsed: float, configured: float) -> str:
-    """Error text when a CLI process hit its timeout."""
-    return fmt(
-        t("timeout.result_header"),
-        SEP,
-        t("timeout.result_body", elapsed=int(elapsed), configured=int(configured)),
-    )
-
-
 # -- Startup lifecycle messages --
 
 

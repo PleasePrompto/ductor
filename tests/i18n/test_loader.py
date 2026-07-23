@@ -5,10 +5,19 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
-from ductor_bot.i18n import LANGUAGES, get_language, get_store, init, t, t_cmd, t_plural, t_rich
+from ductor_bot.i18n import LANGUAGES, init, t, t_cmd, t_plural, t_rich
 from ductor_bot.i18n.loader import TranslationStore, _flatten, _load_toml
+
+_I18N_ROOT = Path(__file__).resolve().parent.parent.parent / "ductor_bot" / "i18n"
+
+
+def _en_chat_keys() -> set[str]:
+    return set(_load_toml(_I18N_ROOT / "en" / "chat.toml"))
+
+
+def _en_cmd_keys() -> set[str]:
+    return set(_load_toml(_I18N_ROOT / "en" / "commands.toml"))
+
 
 # -- _flatten ------------------------------------------------------------------
 
@@ -56,9 +65,10 @@ def test_load_toml_valid(tmp_path: Path) -> None:
 
 def test_store_english() -> None:
     store = TranslationStore("en")
+    assert store.language == "en"
     # chat.toml must have at least some keys.
-    assert len(store.all_chat_keys()) > 0
-    assert len(store.all_cmd_keys()) > 0
+    assert len(_en_chat_keys()) > 0
+    assert len(_en_cmd_keys()) > 0
 
 
 def test_store_fallback_missing_key() -> None:
@@ -87,17 +97,17 @@ def test_store_missing_placeholder_graceful() -> None:
 
 def test_init_default() -> None:
     init()
-    assert get_language() == "en"
+    assert "Session Error" in t("session.error_header")
 
 
 def test_init_english() -> None:
     init("en")
-    assert get_language() == "en"
+    assert "Session Error" in t("session.error_header")
 
 
 def test_init_unknown_falls_back_to_english() -> None:
     init("xx_unknown")
-    assert get_language() == "en"
+    assert "Session Error" in t("session.error_header")
 
 
 def test_t_returns_string() -> None:
@@ -142,29 +152,26 @@ def test_t_plural_many() -> None:
 # -- TOML file integrity -------------------------------------------------------
 
 
-@pytest.fixture
-def en_store() -> TranslationStore:
-    init("en")
-    return get_store()
-
-
-def test_all_chat_keys_resolvable(en_store: TranslationStore) -> None:
+def test_all_chat_keys_resolvable() -> None:
     """Every English chat key should resolve without error."""
-    for key in en_store.all_chat_keys():
-        result = en_store.chat(key)
+    init("en")
+    for key in _en_chat_keys():
+        result = t(key)
         assert "[MISSING:" not in result, f"Key {key!r} is missing"
 
 
-def test_all_cmd_keys_resolvable(en_store: TranslationStore) -> None:
-    for key in en_store.all_cmd_keys():
-        result = en_store.cmd(key)
+def test_all_cmd_keys_resolvable() -> None:
+    init("en")
+    for key in _en_cmd_keys():
+        result = t_cmd(key)
         assert "[MISSING:" not in result, f"Key {key!r} is missing"
 
 
-def test_no_empty_values(en_store: TranslationStore) -> None:
+def test_no_empty_values() -> None:
     """No chat key should have an empty string value."""
-    for key in en_store.all_chat_keys():
-        result = en_store.chat(key)
+    init("en")
+    for key in _en_chat_keys():
+        result = t(key)
         # Skip keys that are legitimately short.
         assert result.strip(), f"Key {key!r} has empty value"
 
@@ -172,9 +179,8 @@ def test_no_empty_values(en_store: TranslationStore) -> None:
 def test_command_descriptions_short() -> None:
     """Bot command descriptions must fit Telegram's ≤256 char limit."""
     init("en")
-    store = get_store()
-    for key in store.all_cmd_keys():
-        val = store.cmd(key)
+    for key in _en_cmd_keys():
+        val = t_cmd(key)
         assert len(val) <= 256, f"Command {key!r} too long: {len(val)} chars"
 
 
@@ -187,10 +193,11 @@ def _extract_placeholders(text: str) -> set[str]:
     return set(_PLACEHOLDER_RE.findall(text))
 
 
-def test_chat_placeholders_are_valid(en_store: TranslationStore) -> None:
+def test_chat_placeholders_are_valid() -> None:
     """All placeholders in chat strings should be simple {word} format."""
-    for key in en_store.all_chat_keys():
-        val = en_store.chat(key)
+    init("en")
+    for key in _en_chat_keys():
+        val = t(key)
         placeholders = _extract_placeholders(val)
         for ph in placeholders:
             assert ph.isidentifier(), f"Bad placeholder {{{ph}}} in {key}"
@@ -204,7 +211,6 @@ def test_languages_has_en() -> None:
 
 
 def test_all_language_dirs_exist() -> None:
-    i18n_dir = Path(__file__).resolve().parent.parent.parent / "ductor_bot" / "i18n"
     for lang_code in LANGUAGES:
-        lang_dir = i18n_dir / lang_code
+        lang_dir = _I18N_ROOT / lang_code
         assert lang_dir.is_dir(), f"Language dir missing: {lang_dir}"

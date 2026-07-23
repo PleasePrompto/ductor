@@ -1,42 +1,11 @@
-"""Tests for timeout, startup, and recovery message formatters."""
+"""Tests for startup and recovery message formatters."""
 
 from __future__ import annotations
 
 from ductor_bot.text.response_format import (
     recovery_notification_text,
     startup_notification_text,
-    timeout_extended_text,
-    timeout_result_text,
-    timeout_warning_text,
 )
-
-
-class TestTimeoutWarningText:
-    def test_minutes(self) -> None:
-        result = timeout_warning_text(120.0)
-        assert "2 min" in result
-
-    def test_seconds(self) -> None:
-        result = timeout_warning_text(30.0)
-        assert "30s" in result
-
-    def test_boundary_60(self) -> None:
-        result = timeout_warning_text(60.0)
-        assert "1 min" in result
-
-
-class TestTimeoutExtendedText:
-    def test_format(self) -> None:
-        result = timeout_extended_text(120.0, 2)
-        assert "+120s" in result
-        assert "2 left" in result
-
-
-class TestTimeoutResultText:
-    def test_contains_times(self) -> None:
-        result = timeout_result_text(600.0, 600.0)
-        assert "600" in result
-        assert "Timeout" in result
 
 
 class TestStartupNotificationText:
