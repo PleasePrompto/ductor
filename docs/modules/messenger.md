@@ -1,6 +1,6 @@
 # messenger/
 
-Transport abstraction layer: protocols, capabilities, registry, and
+Transport abstraction layer: protocols, registry, and
 multi-transport adapter. Everything in this package is
 transport-agnostic. Concrete transports live in sub-packages
 (`messenger/telegram/`, `messenger/matrix/`, `messenger/slack/`).
@@ -16,7 +16,6 @@ For transport-specific details see [bot.md](bot.md) (Telegram) and
 | `messenger/commands.py` | Shared direct/orchestrator/multi-agent command sets + `classify_command()` |
 | `messenger/callback_router.py` | Shared callback-data dispatch helpers for selector/button routing |
 | `messenger/protocol.py` | `BotProtocol` — runtime-checkable interface every transport implements |
-| `messenger/capabilities.py` | `MessengerCapabilities` dataclass + per-transport presets |
 | `messenger/registry.py` | `create_bot()` factory + `_TRANSPORT_FACTORIES` dispatch table |
 | `messenger/notifications.py` | `NotificationService` protocol + `CompositeNotificationService` fan-out |
 | `messenger/send_opts.py` | Base send-option model shared by transport senders |
@@ -47,37 +46,9 @@ Required surface:
 
 `TelegramBot`, `MatrixBot`, and `SlackBot` implement this protocol.
 
-## MessengerCapabilities
+## Seen indicators
 
-`MessengerCapabilities` (`capabilities.py`) is a frozen, slotted
-dataclass that declares what a transport supports:
-
-| Field | Type | Default |
-|---|---|---|
-| `name` | `str` | `""` |
-| `supports_inline_buttons` | `bool` | `False` |
-| `supports_reactions` | `bool` | `False` |
-| `supports_message_editing` | `bool` | `False` |
-| `supports_threads` | `bool` | `False` |
-| `supports_typing_indicator` | `bool` | `True` |
-| `supports_file_send` | `bool` | `True` |
-| `supports_streaming_edit` | `bool` | `False` |
-| `supports_seen_indicator` | `bool` | `False` |
-| `max_message_length` | `int` | `4096` |
-
-Two presets are shipped:
-
-| Preset | Key differences |
-|---|---|
-| `TELEGRAM_CAPABILITIES` | inline buttons, message editing, threads, streaming edit, seen indicator, 4096 char limit |
-| `MATRIX_CAPABILITIES` | reactions (no inline buttons), no message editing, no threads, seen indicator, 40000 char limit |
-| `SLACK_CAPABILITIES` | threads, message editing, file send, 40000 char limit |
-
-Orchestrator and delivery code queries capabilities at runtime to
-decide between streaming-edit vs. segment-based streaming, inline
-buttons vs. reaction buttons, etc.
-
-`supports_seen_indicator` signals whether the transport can acknowledge incoming messages with a "seen" indicator. Telegram uses an emoji reaction; Matrix uses a read receipt. The feature is gated by `config.scene.seen_reaction` -- even when the capability is `True`, seen indicators are only sent when enabled in config.
+Telegram and Matrix can acknowledge incoming messages with a "seen" indicator: Telegram uses an emoji reaction, Matrix a read receipt. The feature is gated by `config.scene.seen_reaction` -- indicators are only sent when enabled in config.
 
 Telegram's newer stage-based `scene.status_reaction` behavior is intentionally transport-specific and currently lives in `messenger/telegram/message_dispatch.py`; it is not modeled through `supports_reactions`.
 
@@ -189,17 +160,7 @@ All bots in a `MultiBotAdapter` share:
 1. **Create the sub-package** `messenger/<name>/` with at least a bot
    module implementing `BotProtocol`.
 
-2. **Define capabilities** in `capabilities.py`:
-
-   ```python
-   DISCORD_CAPABILITIES = MessengerCapabilities(
-       name="discord",
-       supports_inline_buttons=True,
-       # ...
-   )
-   ```
-
-3. **Add a factory** in `registry.py`:
+2. **Add a factory** in `registry.py`:
 
    ```python
    def _create_discord(
@@ -216,10 +177,10 @@ All bots in a `MultiBotAdapter` share:
    _TRANSPORT_FACTORIES["discord"] = _create_discord
    ```
 
-4. **Implement `NotificationService`** for the transport so
+3. **Implement `NotificationService`** for the transport so
    `CompositeNotificationService` can include it.
 
-5. **Add a `MessageBus` transport adapter** (`transport.py`) that maps
+4. **Add a `MessageBus` transport adapter** (`transport.py`) that maps
    `Envelope` objects to the transport's native send API.
 
 6. **Guard the dependency** behind an optional extra in

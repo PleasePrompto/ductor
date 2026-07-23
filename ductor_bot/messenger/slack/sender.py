@@ -66,24 +66,6 @@ async def send_rich(
     return last_ts
 
 
-async def update_message(
-    client: Any,
-    channel_id: str,
-    message_ts: str,
-    text: str,
-    *,
-    thread_ts: str | None = None,
-) -> None:
-    """Update an existing Slack message."""
-    await client.chat_update(
-        channel=channel_id,
-        ts=message_ts,
-        text=_to_slack_mrkdwn(text),
-        mrkdwn=True,
-        thread_ts=thread_ts,
-    )
-
-
 def _response_value(response: object, key: str) -> str | None:
     if isinstance(response, dict):
         value = response.get(key)

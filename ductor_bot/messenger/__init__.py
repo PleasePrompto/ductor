@@ -1,6 +1,5 @@
 """Messenger abstraction layer — transport-agnostic protocols and registry."""
 
-from ductor_bot.messenger.capabilities import MessengerCapabilities
 from ductor_bot.messenger.commands import (
     DIRECT_COMMANDS,
     MULTIAGENT_COMMANDS,
@@ -20,7 +19,6 @@ __all__ = [
     "BaseSendOpts",
     "BotProtocol",
     "CompositeNotificationService",
-    "MessengerCapabilities",
     "MultiBotAdapter",
     "NotificationService",
     "classify_command",

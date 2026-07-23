@@ -207,24 +207,3 @@ def _split_text(plain: str, _html_body: str) -> list[tuple[str, str]]:
         return [("", "")]
 
     return [markdown_to_matrix_html(chunk) for chunk in raw_chunks]
-
-
-# ---------------------------------------------------------------------------
-# Redaction helpers
-# ---------------------------------------------------------------------------
-
-
-async def redact_message(
-    client: AsyncClient,
-    room_id: str,
-    event_id: str,
-) -> bool:
-    """Redact (delete) a single message. Returns *True* on success."""
-    try:
-        resp = await client.room_redact(room_id, event_id)
-        if hasattr(resp, "event_id"):
-            return True
-        logger.debug("Redact failed for %s in %s: %s", event_id, room_id, resp)
-    except Exception:
-        logger.debug("Redact error for %s in %s", event_id, room_id, exc_info=True)
-    return False

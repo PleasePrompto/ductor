@@ -51,24 +51,7 @@ class TestDedupeCache:
         cache.check("b")
         cache.check("c")
         cache.check("d")  # Should evict "a"
-        assert cache.size <= 3
-
-    def test_clear_empties_cache(self) -> None:
-        from ductor_bot.messenger.telegram.dedup import DedupeCache
-
-        cache = DedupeCache()
-        cache.check("a")
-        cache.check("b")
-        cache.clear()
-        assert cache.size == 0
-
-    def test_size_property(self) -> None:
-        from ductor_bot.messenger.telegram.dedup import DedupeCache
-
-        cache = DedupeCache()
-        assert cache.size == 0
-        cache.check("a")
-        assert cache.size == 1
+        assert cache.check("a") is False  # "a" was evicted, so this is a fresh entry
 
     def test_duplicate_refreshes_timestamp(self) -> None:
         from ductor_bot.messenger.telegram.dedup import DedupeCache
@@ -94,7 +77,7 @@ class TestDedupeCache:
         cache = DedupeCache(max_size=0)  # Should clamp to 1
         cache.check("a")
         cache.check("b")
-        assert cache.size == 1
+        assert cache.check("a") is False  # "a" was evicted, only 1 slot available
 
     def test_zero_ttl_always_duplicate(self) -> None:
         from ductor_bot.messenger.telegram.dedup import DedupeCache

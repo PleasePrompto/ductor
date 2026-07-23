@@ -63,15 +63,6 @@ class DedupeCache:
             oldest = next(iter(self._cache))
             del self._cache[oldest]
 
-    def clear(self) -> None:
-        """Drop all entries."""
-        self._cache.clear()
-
-    @property
-    def size(self) -> int:
-        """Number of entries currently in the cache."""
-        return len(self._cache)
-
 
 def build_dedup_key(chat_id: int, message_id: int) -> str:
     """Build a dedup key from Telegram's native identifiers."""
