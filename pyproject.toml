@@ -5,15 +5,15 @@ build-backend = "hatchling.build"
 [project]
 name = "ductor"
 version = "0.20.1"
-description = "Control Claude Code and Codex CLI from Telegram. Live streaming, sessions, cron jobs, webhooks, Docker sandboxing."
+description = "Control Claude Code, Codex, Gemini, Antigravity, and Grok from Telegram, Matrix, or Slack. Live streaming, sessions, cron jobs, webhooks, Docker sandboxing."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "PleasePrompto" }]
 keywords = [
-    "ductor", "ai", "telegram", "bot", "agent",
-    "claude", "codex", "cli", "automation", "streaming",
+    "ductor", "ai", "telegram", "matrix", "slack", "bot", "agent",
+    "claude", "codex", "gemini", "grok", "cli", "automation", "streaming",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
