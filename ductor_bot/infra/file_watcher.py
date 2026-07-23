@@ -27,14 +27,6 @@ class FileWatcher:
         self._task: asyncio.Task[None] | None = None
         self._running = False
 
-    @property
-    def last_mtime(self) -> float:
-        return self._last_mtime
-
-    @last_mtime.setter
-    def last_mtime(self, value: float) -> None:
-        self._last_mtime = value
-
     async def start(self) -> None:
         """Begin polling."""
         self._running = True

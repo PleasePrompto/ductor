@@ -83,10 +83,6 @@ class SharedKnowledgeSync:
         self._supervisor = supervisor
         self._watcher = FileWatcher(self._path, self._on_changed)
 
-    @property
-    def path(self) -> Path:
-        return self._path
-
     async def start(self) -> None:
         """Start watching and perform an initial sync.
 

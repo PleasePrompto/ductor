@@ -1,9 +1,8 @@
-"""Tests for DependencyQueue: lock management, FIFO ordering, diagnostics."""
+"""Tests for DependencyQueue: lock management and FIFO ordering."""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 
 from ductor_bot.cron.dependency_queue import DependencyQueue
 
@@ -21,8 +20,6 @@ async def test_no_dependency_runs_immediately() -> None:
         executed = True
 
     assert executed is True
-    # No locks created for None dependency
-    assert dq.get_all_dependencies() == []
 
 
 async def test_no_dependency_parallel() -> None:
@@ -265,92 +262,3 @@ def _raise_intentional() -> None:
     """Raise a RuntimeError for testing exception handling."""
     msg = "intentional"
     raise RuntimeError(msg)
-
-
-# ---------------------------------------------------------------------------
-# get_queue_info diagnostics
-# ---------------------------------------------------------------------------
-
-
-async def test_get_queue_info_empty() -> None:
-    """Queue info for unknown dependency shows unlocked, no tasks."""
-    dq = DependencyQueue()
-    info = dq.get_queue_info("unknown")
-    assert info["dependency"] == "unknown"
-    assert info["locked"] is False
-    assert info["active_task"] is None
-    assert info["queue_length"] == 0
-    assert info["queued_tasks"] == []
-
-
-async def test_get_queue_info_active_task() -> None:
-    """Queue info shows the currently active task while lock is held."""
-    dq = DependencyQueue()
-    gate = asyncio.Event()
-
-    async def holder() -> None:
-        async with dq.acquire("h1", "Holder", "dep"):
-            gate.set()
-            await asyncio.sleep(0.1)
-
-    t = asyncio.create_task(holder())
-    await gate.wait()
-
-    info = dq.get_queue_info("dep")
-    assert info["locked"] is True
-    assert info["active_task"] == "Holder"
-
-    t.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await t
-
-
-async def test_get_queue_info_with_queued_tasks() -> None:
-    """Queue info shows waiting tasks when lock is held."""
-    dq = DependencyQueue()
-    gate = asyncio.Event()
-
-    async def holder() -> None:
-        async with dq.acquire("h1", "Holder", "dep"):
-            gate.set()
-            await asyncio.sleep(0.5)
-
-    async def waiter(name: str) -> None:
-        await gate.wait()
-        await asyncio.sleep(0.01)
-        async with dq.acquire(name, name, "dep"):
-            pass
-
-    t1 = asyncio.create_task(holder())
-    t2 = asyncio.create_task(waiter("W1"))
-    t3 = asyncio.create_task(waiter("W2"))
-
-    await gate.wait()
-    await asyncio.sleep(0.05)  # Let waiters enqueue
-
-    info = dq.get_queue_info("dep")
-    assert info["locked"] is True
-    assert info["queue_length"] == 2
-    task_labels = [t["task_label"] for t in info["queued_tasks"]]
-    assert "W1" in task_labels
-    assert "W2" in task_labels
-
-    t1.cancel()
-    t2.cancel()
-    t3.cancel()
-    for t in (t1, t2, t3):
-        with contextlib.suppress(asyncio.CancelledError):
-            await t
-
-
-async def test_get_all_dependencies() -> None:
-    """get_all_dependencies returns sorted list of known dependency names."""
-    dq = DependencyQueue()
-
-    async with dq.acquire("t1", "T1", "beta"):
-        pass
-    async with dq.acquire("t2", "T2", "alpha"):
-        pass
-
-    deps = dq.get_all_dependencies()
-    assert deps == ["alpha", "beta"]

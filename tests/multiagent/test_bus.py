@@ -111,22 +111,6 @@ class TestBusSyncSend:
         assert result.success is False
         assert "RuntimeError" in result.error
 
-    async def test_message_log_populated(self) -> None:
-        bus = InterAgentBus()
-        bus.register("target", _make_stack())
-        await bus.send("sender", "target", "Hello")
-        assert len(bus._message_log) == 1
-        assert bus._message_log[0].sender == "sender"
-        assert bus._message_log[0].recipient == "target"
-
-    async def test_message_log_trimmed(self) -> None:
-        """Log is trimmed to _MAX_LOG_SIZE."""
-        bus = InterAgentBus()
-        bus.register("target", _make_stack())
-        for i in range(150):
-            await bus.send("sender", "target", f"msg-{i}")
-        assert len(bus._message_log) <= 100
-
 
 class TestBusAsyncSend:
     """Test fire-and-forget send_async()."""

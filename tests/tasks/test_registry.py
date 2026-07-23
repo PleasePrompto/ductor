@@ -67,18 +67,6 @@ class TestGet:
         assert registry.get("nonexistent") is None
 
 
-class TestFindByName:
-    def test_finds_by_name(self, registry: TaskRegistry) -> None:
-        registry.create(_submit(name="Hotel Paris"), "claude", "opus")
-        found = registry.find_by_name(42, "hotel paris")
-        assert found is not None
-        assert found.name == "Hotel Paris"
-
-    def test_not_found_wrong_chat(self, registry: TaskRegistry) -> None:
-        registry.create(_submit(name="Test"), "claude", "opus")
-        assert registry.find_by_name(999, "Test") is None
-
-
 class TestUpdateStatus:
     def test_updates_status_and_fields(self, registry: TaskRegistry) -> None:
         entry = registry.create(_submit(), "claude", "opus")
@@ -90,17 +78,6 @@ class TestUpdateStatus:
 
     def test_ignores_unknown_task(self, registry: TaskRegistry) -> None:
         registry.update_status("bogus", "done")  # Should not raise
-
-
-class TestListActive:
-    def test_filters_running(self, registry: TaskRegistry) -> None:
-        e1 = registry.create(_submit(name="A"), "claude", "opus")
-        registry.create(_submit(name="B"), "claude", "opus")
-        registry.update_status(e1.task_id, "done")
-
-        active = registry.list_active(chat_id=42)
-        assert len(active) == 1
-        assert active[0].name == "B"
 
 
 class TestCleanupFinished:

@@ -409,17 +409,6 @@ class TaskHub:
         logger.info("Task cancel accepted for %d task(s) chat=%s", len(cancelled), chat_id)
         return len(cancelled)
 
-    def active_tasks(self, chat_id: int | None = None) -> list[TaskEntry]:
-        """Return in-flight task entries."""
-        entries = [
-            t.entry
-            for t in self._in_flight.values()
-            if t.asyncio_task and not t.asyncio_task.done()
-        ]
-        if chat_id is not None:
-            entries = [e for e in entries if e.chat_id == chat_id]
-        return entries
-
     async def shutdown(self) -> None:
         """Cancel all in-flight tasks and clean up."""
         if self._maintenance_task and not self._maintenance_task.done():

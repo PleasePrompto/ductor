@@ -141,21 +141,6 @@ class TaskRegistry:
     def get(self, task_id: str) -> TaskEntry | None:
         return self._entries.get(task_id)
 
-    def find_by_name(self, chat_id: int, name: str) -> TaskEntry | None:
-        """Find a task by name within a chat."""
-        lower = name.lower()
-        for entry in self._entries.values():
-            if entry.chat_id == chat_id and entry.name.lower() == lower:
-                return entry
-        return None
-
-    def list_active(self, chat_id: int | None = None) -> list[TaskEntry]:
-        """Return tasks with status 'running'."""
-        entries = [e for e in self._entries.values() if e.status == "running"]
-        if chat_id is not None:
-            entries = [e for e in entries if e.chat_id == chat_id]
-        return sorted(entries, key=lambda e: e.created_at)
-
     def list_all(
         self,
         chat_id: int | None = None,

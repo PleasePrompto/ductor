@@ -28,6 +28,33 @@ BgResultCallback = Callable[[BackgroundResult], Awaitable[None]]
 MAX_TASKS_PER_CHAT = 5
 
 
+def _make_result(  # noqa: PLR0913  -- result fields have natural multi-arity
+    bg_task: BackgroundTask,
+    t0: float,
+    *,
+    result_text: str,
+    status: str,
+    session_name: str = "",
+    session_id: str = "",
+) -> BackgroundResult:
+    """Build a :class:`BackgroundResult` carrying the task's routing fields."""
+    return BackgroundResult(
+        task_id=bg_task.task_id,
+        chat_id=bg_task.chat_id,
+        message_id=bg_task.message_id,
+        thread_id=bg_task.thread_id,
+        transport=bg_task.transport,
+        prompt_preview=bg_task.prompt[:60],
+        result_text=result_text,
+        status=status,
+        elapsed_seconds=time.monotonic() - t0,
+        provider=bg_task.provider,
+        model=bg_task.model,
+        session_name=session_name,
+        session_id=session_id,
+    )
+
+
 class BackgroundObserver:
     """Manages fire-and-forget background CLI tasks."""
 
@@ -146,58 +173,27 @@ class BackgroundObserver:
                 ),
             )
 
-            elapsed = time.monotonic() - t0
             await self._deliver(
-                BackgroundResult(
-                    task_id=bg_task.task_id,
-                    chat_id=bg_task.chat_id,
-                    message_id=bg_task.message_id,
-                    thread_id=bg_task.thread_id,
-                    transport=bg_task.transport,
-                    prompt_preview=bg_task.prompt[:60],
+                _make_result(
+                    bg_task,
+                    t0,
                     result_text=result.result_text,
                     status="error:cli_not_found" if result.execution is None else result.status,
-                    elapsed_seconds=elapsed,
-                    provider=bg_task.provider,
-                    model=bg_task.model,
                 )
             )
         except asyncio.CancelledError:
-            elapsed = time.monotonic() - t0
             with contextlib.suppress(Exception):
-                await self._deliver(
-                    BackgroundResult(
-                        task_id=bg_task.task_id,
-                        chat_id=bg_task.chat_id,
-                        message_id=bg_task.message_id,
-                        thread_id=bg_task.thread_id,
-                        transport=bg_task.transport,
-                        prompt_preview=bg_task.prompt[:60],
-                        result_text="",
-                        status="aborted",
-                        elapsed_seconds=elapsed,
-                        provider=bg_task.provider,
-                        model=bg_task.model,
-                    )
-                )
+                await self._deliver(_make_result(bg_task, t0, result_text="", status="aborted"))
             raise
         except Exception:
             logger.exception("Background task failed id=%s", bg_task.task_id)
-            elapsed = time.monotonic() - t0
             with contextlib.suppress(Exception):
                 await self._deliver(
-                    BackgroundResult(
-                        task_id=bg_task.task_id,
-                        chat_id=bg_task.chat_id,
-                        message_id=bg_task.message_id,
-                        thread_id=bg_task.thread_id,
-                        transport=bg_task.transport,
-                        prompt_preview=bg_task.prompt[:60],
+                    _make_result(
+                        bg_task,
+                        t0,
                         result_text=t("tasks.internal_error"),
                         status="error:internal",
-                        elapsed_seconds=elapsed,
-                        provider=bg_task.provider,
-                        model=bg_task.model,
                     )
                 )
 
@@ -226,7 +222,6 @@ class BackgroundObserver:
             )
             response = await self._cli_service.execute(request)
 
-            elapsed = time.monotonic() - t0
             status = "ok"
             if response.is_error:
                 status = "error:cli"
@@ -234,38 +229,23 @@ class BackgroundObserver:
                     status = "error:timeout"
 
             await self._deliver(
-                BackgroundResult(
-                    task_id=bg_task.task_id,
-                    chat_id=bg_task.chat_id,
-                    message_id=bg_task.message_id,
-                    thread_id=bg_task.thread_id,
-                    transport=bg_task.transport,
-                    prompt_preview=bg_task.prompt[:60],
+                _make_result(
+                    bg_task,
+                    t0,
                     result_text=response.result or "",
                     status=status,
-                    elapsed_seconds=elapsed,
-                    provider=bg_task.provider,
-                    model=bg_task.model,
                     session_name=bg_task.session_name,
                     session_id=response.session_id or "",
                 )
             )
         except asyncio.CancelledError:
-            elapsed = time.monotonic() - t0
             with contextlib.suppress(Exception):
                 await self._deliver(
-                    BackgroundResult(
-                        task_id=bg_task.task_id,
-                        chat_id=bg_task.chat_id,
-                        message_id=bg_task.message_id,
-                        thread_id=bg_task.thread_id,
-                        transport=bg_task.transport,
-                        prompt_preview=bg_task.prompt[:60],
+                    _make_result(
+                        bg_task,
+                        t0,
                         result_text="",
                         status="aborted",
-                        elapsed_seconds=elapsed,
-                        provider=bg_task.provider,
-                        model=bg_task.model,
                         session_name=bg_task.session_name,
                     )
                 )
@@ -274,21 +254,13 @@ class BackgroundObserver:
             logger.exception(
                 "Named session task failed id=%s name=%s", bg_task.task_id, bg_task.session_name
             )
-            elapsed = time.monotonic() - t0
             with contextlib.suppress(Exception):
                 await self._deliver(
-                    BackgroundResult(
-                        task_id=bg_task.task_id,
-                        chat_id=bg_task.chat_id,
-                        message_id=bg_task.message_id,
-                        thread_id=bg_task.thread_id,
-                        transport=bg_task.transport,
-                        prompt_preview=bg_task.prompt[:60],
+                    _make_result(
+                        bg_task,
+                        t0,
                         result_text=t("tasks.internal_error"),
                         status="error:internal",
-                        elapsed_seconds=elapsed,
-                        provider=bg_task.provider,
-                        model=bg_task.model,
                         session_name=bg_task.session_name,
                     )
                 )

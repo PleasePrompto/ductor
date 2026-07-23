@@ -12,7 +12,6 @@ from ductor_bot.cron.execution import (
     build_cmd,
     enrich_instruction,
     execute_one_shot,
-    indent,
     parse_claude_result,
     parse_codex_result,
     parse_gemini_result,
@@ -290,12 +289,3 @@ class TestParseResult:
 
     def test_unknown_provider_falls_back_to_claude(self) -> None:
         assert parse_result("unknown", b'{"result":"fallback"}') == "fallback"
-
-
-class TestIndent:
-    def test_indents_lines(self) -> None:
-        result = indent("a\nb\nc", "  ")
-        assert result == "  a\n  b\n  c"
-
-    def test_single_line(self) -> None:
-        assert indent("hello", ">> ") == ">> hello"

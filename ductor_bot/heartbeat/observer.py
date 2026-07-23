@@ -47,7 +47,6 @@ class HeartbeatObserver(BaseObserver):
         self._stale_cleanup: Callable[[], Awaitable[int]] | None = None
         self._chat_validator: ChatValidator | None = None
         self._valid_targets: dict[int, float] = {}
-        self._target_last_run: dict[tuple[int, int | None], float] = {}
         self._target_tasks: dict[tuple[str, int | None, int | None], asyncio.Task[None]] = {}
 
     @property
@@ -183,20 +182,6 @@ class HeartbeatObserver(BaseObserver):
             return True
 
         logger.warning("Heartbeat target %d is not accessible, skipping", chat_id)
-        return False
-
-    def _should_skip_target_interval(self, target: HeartbeatTarget, now: float) -> bool:
-        """Return True if the target has a custom interval that has not yet elapsed."""
-        if target.interval_minutes is None:
-            return False
-        key = (target.chat_id or 0, target.topic_id)
-        last_run = self._target_last_run.get(key, 0.0)
-        if (now - last_run) < target.interval_minutes * 60:
-            logger.debug(
-                "Heartbeat target %s skipped: custom interval not elapsed",
-                target.chat_id,
-            )
-            return True
         return False
 
     async def _run(self) -> None:

@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,6 @@ class _QueuedTask:
     task_id: str
     task_label: str
     dependency: str
-    queued_at: float = field(default_factory=lambda: asyncio.get_running_loop().time())
 
 
 class DependencyQueue:
@@ -128,27 +127,6 @@ class DependencyQueue:
                 dependency,
                 remaining,
             )
-
-    def get_queue_info(self, dependency: str) -> dict[str, object]:
-        """Get current queue status for a dependency (diagnostics)."""
-        return {
-            "dependency": dependency,
-            "locked": self._locks.get(dependency, asyncio.Lock()).locked(),
-            "active_task": self._active.get(dependency),
-            "queue_length": len(self._queues.get(dependency, [])),
-            "queued_tasks": [
-                {
-                    "task_id": t.task_id,
-                    "task_label": t.task_label,
-                    "queued_seconds": asyncio.get_running_loop().time() - t.queued_at,
-                }
-                for t in self._queues.get(dependency, [])
-            ],
-        }
-
-    def get_all_dependencies(self) -> list[str]:
-        """Return all known dependency names."""
-        return sorted(set(self._locks.keys()) | set(self._queues.keys()))
 
 
 _dependency_queue: list[DependencyQueue | None] = [None]

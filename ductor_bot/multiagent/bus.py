@@ -20,17 +20,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 300.0  # 5 minutes — for synchronous sends
 _ASYNC_TIMEOUT = 3600.0  # 1 hour — async tasks may run complex multi-step work
-_MAX_LOG_SIZE = 100  # Keep last N messages in log
-
-
-@dataclass(slots=True)
-class InterAgentMessage:
-    """A message sent between agents."""
-
-    sender: str
-    recipient: str
-    message: str
-    timestamp: float = field(default_factory=time.time)
 
 
 @dataclass(slots=True)
@@ -116,6 +105,36 @@ class AsyncInterAgentResult:
 AsyncResultCallback = Callable[["AsyncInterAgentResult"], Awaitable[None]]
 
 
+def _make_result(  # noqa: PLR0913  -- result fields have natural multi-arity
+    task: AsyncInterAgentTask,
+    t0: float,
+    *,
+    result_text: str = "",
+    success: bool = True,
+    error: str | None = None,
+    session_name: str = "",
+    provider_switch_notice: str = "",
+) -> AsyncInterAgentResult:
+    """Build an :class:`AsyncInterAgentResult` carrying the task's routing fields."""
+    return AsyncInterAgentResult(
+        task_id=task.task_id,
+        sender=task.sender,
+        recipient=task.recipient,
+        message_preview=task.message[:60],
+        result_text=result_text,
+        success=success,
+        error=error,
+        elapsed_seconds=time.time() - t0,
+        session_name=session_name,
+        provider_switch_notice=provider_switch_notice,
+        original_message=task.message,
+        chat_id=task.chat_id,
+        topic_id=task.topic_id,
+        transport=task.transport,
+        reply_to=task.reply_to,
+    )
+
+
 class InterAgentBus:
     """In-memory async bus for agent-to-agent communication.
 
@@ -125,7 +144,6 @@ class InterAgentBus:
 
     def __init__(self) -> None:
         self._agents: dict[str, AgentStack] = {}
-        self._message_log: list[InterAgentMessage] = []
         self._async_tasks: dict[str, AsyncInterAgentTask] = {}
         self._async_result_handlers: dict[str, AsyncResultCallback] = {}
 
@@ -169,13 +187,6 @@ class InterAgentBus:
             )
 
         target = self._agents[recipient]
-        msg = InterAgentMessage(sender=sender, recipient=recipient, message=message)
-        self._message_log.append(msg)
-
-        # Trim log to prevent unbounded growth
-        if len(self._message_log) > _MAX_LOG_SIZE:
-            self._message_log = self._message_log[-_MAX_LOG_SIZE:]
-
         logger.info("Bus: %s -> %s (%d chars)", sender, recipient, len(message))
 
         try:
@@ -284,11 +295,6 @@ class InterAgentBus:
         atask.add_done_callback(lambda _: self._async_tasks.pop(task_id, None))
         self._async_tasks[task_id] = task
 
-        msg = InterAgentMessage(sender=sender, recipient=recipient, message=message)
-        self._message_log.append(msg)
-        if len(self._message_log) > _MAX_LOG_SIZE:
-            self._message_log = self._message_log[-_MAX_LOG_SIZE:]
-
         logger.info(
             "Bus async: %s -> %s task=%s (%d chars)",
             sender,
@@ -306,20 +312,11 @@ class InterAgentBus:
             orch = target.bot.orchestrator
             if orch is None:
                 await self._deliver_async_result(
-                    AsyncInterAgentResult(
-                        task_id=task.task_id,
-                        sender=task.sender,
-                        recipient=task.recipient,
-                        message_preview=task.message[:60],
-                        result_text="",
+                    _make_result(
+                        task,
+                        t0,
                         success=False,
                         error=f"Agent '{task.recipient}' orchestrator not initialized",
-                        elapsed_seconds=time.time() - t0,
-                        original_message=task.message,
-                        chat_id=task.chat_id,
-                        topic_id=task.topic_id,
-                        transport=task.transport,
-                        reply_to=task.reply_to,
                     )
                 )
                 return
@@ -355,21 +352,12 @@ class InterAgentBus:
                 time.time() - t0,
             )
             await self._deliver_async_result(
-                AsyncInterAgentResult(
-                    task_id=task.task_id,
-                    sender=task.sender,
-                    recipient=task.recipient,
-                    message_preview=task.message[:60],
+                _make_result(
+                    task,
+                    t0,
                     result_text=result_text,
-                    success=True,
-                    elapsed_seconds=time.time() - t0,
                     session_name=session_name,
                     provider_switch_notice=provider_notice,
-                    original_message=task.message,
-                    chat_id=task.chat_id,
-                    topic_id=task.topic_id,
-                    transport=task.transport,
-                    reply_to=task.reply_to,
                 )
             )
 
@@ -381,40 +369,22 @@ class InterAgentBus:
                 task.task_id,
             )
             await self._deliver_async_result(
-                AsyncInterAgentResult(
-                    task_id=task.task_id,
-                    sender=task.sender,
-                    recipient=task.recipient,
-                    message_preview=task.message[:60],
-                    result_text="",
+                _make_result(
+                    task,
+                    t0,
                     success=False,
                     error=f"Timeout after {_ASYNC_TIMEOUT:.0f}s",
-                    elapsed_seconds=time.time() - t0,
-                    original_message=task.message,
-                    chat_id=task.chat_id,
-                    topic_id=task.topic_id,
-                    transport=task.transport,
-                    reply_to=task.reply_to,
                 )
             )
 
         except Exception as exc:
             logger.exception("Bus async: %s -> %s failed", task.sender, task.recipient)
             await self._deliver_async_result(
-                AsyncInterAgentResult(
-                    task_id=task.task_id,
-                    sender=task.sender,
-                    recipient=task.recipient,
-                    message_preview=task.message[:60],
-                    result_text="",
+                _make_result(
+                    task,
+                    t0,
                     success=False,
                     error=f"{type(exc).__name__}: {exc}",
-                    elapsed_seconds=time.time() - t0,
-                    original_message=task.message,
-                    chat_id=task.chat_id,
-                    topic_id=task.topic_id,
-                    transport=task.transport,
-                    reply_to=task.reply_to,
                 )
             )
 

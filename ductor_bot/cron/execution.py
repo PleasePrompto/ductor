@@ -114,11 +114,6 @@ def parse_result(provider: str, stdout: bytes) -> str:
     return parser(stdout)
 
 
-def indent(text: str, prefix: str) -> str:
-    """Indent every line of *text* with *prefix*."""
-    return "\n".join(prefix + line for line in text.splitlines())
-
-
 # -- Private builders --
 
 
