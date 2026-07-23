@@ -389,7 +389,7 @@ def docker_extras_list() -> None:
 
 def docker_extras_add(args: list[str]) -> None:
     """Add an extra to the Docker config."""
-    from ductor_bot.infra.docker_extras import DOCKER_EXTRAS_BY_ID
+    from ductor_bot.infra.docker_extras import DOCKER_EXTRAS_BY_ID, resolve_extras
 
     positionals = [a for a in args if not a.startswith("-")]
     extra_id = positionals[2] if len(positionals) >= 3 else None
@@ -415,20 +415,9 @@ def docker_extras_add(args: list[str]) -> None:
         _console.print(t_rich("docker.extras.already_installed", id=extra_id))
         return
 
-    # Collect the extra plus its transitive dependencies.
-    new_ids: list[str] = []
-
-    def _collect(eid: str) -> None:
-        if eid in current_set or eid in {str(n) for n in new_ids}:
-            return
-        dep = DOCKER_EXTRAS_BY_ID.get(eid)
-        if dep is None:
-            return
-        for d in dep.depends_on:
-            _collect(d)
-        new_ids.append(eid)
-
-    _collect(extra_id)
+    # Collect the extra plus its transitive dependencies (topologically sorted,
+    # dependencies before dependents), skipping ones already installed.
+    new_ids = [e.id for e in resolve_extras([extra_id]) if e.id not in current_set]
 
     from ductor_bot.infra.json_store import atomic_json_save
 

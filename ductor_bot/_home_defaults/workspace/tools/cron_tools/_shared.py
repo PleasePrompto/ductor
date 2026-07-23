@@ -16,9 +16,6 @@ from ductor_bot._home_defaults.workspace.tools._tool_shared import (
     save_collection,
 )
 
-# Re-export so existing tool scripts keep working with ``from _shared import sanitize_name``
-sanitize_name = sanitize_name
-
 DUCTOR_HOME = Path(os.environ.get("DUCTOR_HOME", "~/.ductor")).expanduser()
 CONFIG_PATH = DUCTOR_HOME / "config" / "config.json"
 JOBS_PATH = DUCTOR_HOME / "cron_jobs.json"

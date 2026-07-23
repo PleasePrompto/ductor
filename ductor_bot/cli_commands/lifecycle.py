@@ -14,6 +14,7 @@ from typing import NoReturn
 from rich.console import Console
 from rich.panel import Panel
 
+from ductor_bot.cli_commands.docker import _stop_docker_container
 from ductor_bot.i18n import t_rich
 from ductor_bot.infra.fs import robust_rmtree
 from ductor_bot.infra.platform import is_windows
@@ -42,24 +43,6 @@ def _stop_service_if_running() -> None:
 
         if is_service_installed() and is_service_running():
             stop_service(_console)
-
-
-def _stop_docker_container(container_name: str) -> None:
-    """Stop and remove a Docker container."""
-    if not shutil.which("docker"):
-        return
-    _console.print(t_rich("lifecycle.stopping_docker", name=container_name))
-    subprocess.run(
-        ["docker", "stop", "-t", "5", container_name],
-        capture_output=True,
-        check=False,
-    )
-    subprocess.run(
-        ["docker", "rm", "-f", container_name],
-        capture_output=True,
-        check=False,
-    )
-    _console.print(t_rich("lifecycle.docker_stopped"))
 
 
 def stop_bot() -> None:

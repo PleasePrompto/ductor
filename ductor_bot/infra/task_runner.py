@@ -80,11 +80,6 @@ async def run_oneshot_task(
     )
 
 
-async def check_folder(folder: Path) -> bool:
-    """Return True if *folder* exists as a directory (runs in a thread)."""
-    return await asyncio.to_thread(folder.is_dir)
-
-
 async def execute_in_task_folder(  # noqa: PLR0913
     observer: BaseTaskObserver,
     *,
@@ -113,7 +108,7 @@ async def execute_in_task_folder(  # noqa: PLR0913
 
     async with dep_queue.acquire(task_id, task_label, dependency):
         folder = cron_tasks_dir / task_folder
-        if not await check_folder(folder):
+        if not await asyncio.to_thread(folder.is_dir):
             return TaskResult(
                 status="error:folder_missing",
                 result_text="",
