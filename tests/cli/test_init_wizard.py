@@ -235,6 +235,10 @@ def test_check_clis_survives_codex_exception() -> None:
             "ductor_bot.cli.init_wizard.check_antigravity_auth",
             return_value=AuthResult("antigravity", AuthStatus.NOT_FOUND),
         ),
+        patch(
+            "ductor_bot.cli.init_wizard.check_grok_auth",
+            return_value=AuthResult("grok", AuthStatus.NOT_FOUND),
+        ),
     ):
         # Must NOT raise SystemExit.
         _check_clis(console)
@@ -265,6 +269,10 @@ def test_check_clis_aborts_when_all_fail_or_unauthenticated() -> None:
             "ductor_bot.cli.init_wizard.check_antigravity_auth",
             return_value=AuthResult("antigravity", AuthStatus.NOT_FOUND),
         ),
+        patch(
+            "ductor_bot.cli.init_wizard.check_grok_auth",
+            return_value=AuthResult("grok", AuthStatus.NOT_FOUND),
+        ),
         pytest.raises(SystemExit),
     ):
         _check_clis(console)
@@ -289,6 +297,10 @@ def test_check_clis_continues_when_only_claude_authed() -> None:
         patch(
             "ductor_bot.cli.init_wizard.check_antigravity_auth",
             return_value=AuthResult("antigravity", AuthStatus.NOT_FOUND),
+        ),
+        patch(
+            "ductor_bot.cli.init_wizard.check_grok_auth",
+            return_value=AuthResult("grok", AuthStatus.NOT_FOUND),
         ),
     ):
         # Returns None; does not raise SystemExit.
