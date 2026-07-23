@@ -19,7 +19,6 @@ from ductor_bot.session.named import NamedSession, interagent_session_name
 from ductor_bot.workspace.loader import build_appended_files_block
 
 if TYPE_CHECKING:
-    from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.orchestrator.core import Orchestrator
 
 logger = logging.getLogger(__name__)
@@ -49,7 +48,7 @@ async def _inject_prompt(  # noqa: PLR0913
 ) -> str:
     """Execute *prompt* in the current active session and update session state.
 
-    Shared by ``handle_async_interagent_result`` and ``inject_prompt``.
+    Backs ``Orchestrator.inject_prompt`` (the ``SessionInjector`` protocol).
     """
     key = SessionKey(transport=transport, chat_id=chat_id, topic_id=topic_id)
     active = await orch._sessions.get_active(key)
@@ -296,67 +295,3 @@ async def handle_interagent_message(  # noqa: PLR0913
     else:
         ns.status = "idle"
     return (response.result if response else ""), ns.name, provider_switch_notice
-
-
-async def handle_async_interagent_result(
-    orch: Orchestrator,
-    result: AsyncInterAgentResult,
-    *,
-    chat_id: int = 0,
-) -> str:
-    """Inject an async inter-agent result into the current active session.
-
-    Called when another agent completes an async request we sent.
-    Resumes the *current* active session (not the one that was active when
-    the task was dispatched) so the agent has full conversation context.
-
-    The prompt is self-contained: it includes both the original task
-    description and the sub-agent's response, so the agent can process
-    the result even if the session changed (``/new``, provider switch).
-
-    Caller must hold the per-chat lock to prevent concurrent session access.
-    """
-    own_name = orch._cli_service._config.agent_name
-    recipient = result.recipient
-    task_id = result.task_id
-
-    session_hint = (
-        f"\nThe recipient processed this in session `{result.session_name}`. "
-        f"The user can continue this session in the recipient's Telegram chat "
-        f"via `@{result.session_name} <message>`."
-        if result.session_name
-        else ""
-    )
-
-    task_context = (
-        f"\n\nOriginal task you sent to '{recipient}':\n{result.original_message}"
-        if result.original_message
-        else ""
-    )
-
-    prompt = (
-        f"[ASYNC INTER-AGENT RESPONSE from '{recipient}' (task {task_id})]\n"
-        f"{result.result_text}\n"
-        f"[END ASYNC INTER-AGENT RESPONSE]{session_hint}{task_context}\n\n"
-        f"You are agent '{own_name}'. Process this response from agent "
-        f"'{recipient}' and communicate the relevant results to the user "
-        f"in your Telegram chat."
-    )
-
-    logger.debug(
-        "Injecting async result into main session: task=%s from=%s "
-        "resume_session=%s original_msg_len=%d",
-        task_id,
-        recipient,
-        "<pending>",
-        len(result.original_message),
-    )
-
-    try:
-        return await _inject_prompt(orch, prompt, chat_id, f"interagent-async:{recipient}")
-    except Exception:
-        logger.exception(
-            "Async inter-agent result handling failed (from=%s)",
-            recipient,
-        )
-        return f"Error processing async result from '{recipient}'"

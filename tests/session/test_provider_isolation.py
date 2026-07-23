@@ -91,25 +91,6 @@ async def test_provider_switch_preserves_other_metrics(tmp_path: Path) -> None:
     assert switched_back.total_tokens == 50
 
 
-async def test_reset_session_clears_all_providers(tmp_path: Path) -> None:
-    mgr = _make_manager(tmp_path)
-
-    claude, _ = await mgr.resolve_session(
-        key=SessionKey(chat_id=1), provider="claude", model="opus"
-    )
-    await _simulate_cli_response(mgr, claude, "claude-sid")
-    codex, _ = await mgr.resolve_session(
-        key=SessionKey(chat_id=1), provider="codex", model="gpt-5.2-codex"
-    )
-    await _simulate_cli_response(mgr, codex, "codex-sid")
-
-    reset = await mgr.reset_session(key=SessionKey(chat_id=1), provider="claude", model="opus")
-
-    assert reset.provider_sessions == {}
-    assert reset.session_id == ""
-    assert reset.message_count == 0
-
-
 async def test_reset_provider_session_clears_only_one(tmp_path: Path) -> None:
     mgr = _make_manager(tmp_path)
 

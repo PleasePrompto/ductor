@@ -475,7 +475,63 @@ async def _gemini_missing_config_key_warning(
     return OrchestratorResult(text=t("gemini.missing_key"))
 
 
-async def normal(  # noqa: PLR0911
+async def _finalize_turn(  # noqa: PLR0913
+    orch: Orchestrator,
+    key: SessionKey,
+    request: AgentRequest,
+    session: SessionData,
+    response: AgentResponse,
+    *,
+    flow_label: str,
+    schedule_memory_flush: bool = False,
+    session_recovered: bool = False,
+) -> OrchestratorResult:
+    """Shared post-execute tail of normal() and normal_streaming().
+
+    Handles abort/interrupt, timeout, and error short-circuits, then updates
+    the session and builds the final result. *schedule_memory_flush* is set by
+    the streaming flow only; *session_recovered* prepends the recovery notice
+    for the non-streaming flow (streaming already emitted it as a text delta).
+    """
+    _reg = orch._process_registry
+    if (
+        _reg.was_aborted(key.chat_id)
+        or _reg.was_aborted_topic(key.chat_id, key.topic_id)
+        or _reg.was_interrupted(key.chat_id)
+    ):
+        _reg.clear_interrupt(key.chat_id)
+        await _preserve_session_from_response(orch, session, response, reason="abort")
+        logger.info("%s flow aborted/interrupted by user", flow_label)
+        return OrchestratorResult(text="")
+    if response.timed_out:
+        return await _handle_timeout(orch, key, session, response, request)
+    if response.is_error:
+        if _is_sigkill(response):
+            logger.warning("recovery.sigkill chat=%s action=user-retry", key.chat_id)
+            return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True)
+        model_name, provider_name = _request_target(orch, request)
+        await _preserve_session_from_response(orch, session, response, reason="error")
+        return await _reset_on_error(
+            orch,
+            key,
+            model_name=model_name,
+            provider_name=provider_name,
+            cli_detail=response.result,
+        )
+    await _update_session(orch, session, response)
+    if schedule_memory_flush:
+        _schedule_memory_flush(orch, key, session)
+    logger.info("%s flow completed", flow_label)
+    req_model, _prov = _request_target(orch, request)
+    result = _finish_normal(
+        response, session, orch._config.session_age_warning_hours, model_name=req_model
+    )
+    if session_recovered:
+        result.text = f"{_session_recovered_msg()}\n\n{result.text}"
+    return result
+
+
+async def normal(
     orch: Orchestrator,
     key: SessionKey,
     text: str,
@@ -499,47 +555,20 @@ async def normal(  # noqa: PLR0911
         )
         if outcome.failed_result is not None:
             return outcome.failed_result
-        request, session, response = outcome.request, outcome.session, outcome.response
-        session_recovered = outcome.session_recovered
-        _reg = orch._process_registry
-        if (
-            _reg.was_aborted(key.chat_id)
-            or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-            or _reg.was_interrupted(key.chat_id)
-        ):
-            _reg.clear_interrupt(key.chat_id)
-            await _preserve_session_from_response(orch, session, response, reason="abort")
-            logger.info("Normal flow aborted/interrupted by user")
-            return OrchestratorResult(text="")
-        if response.timed_out:
-            return await _handle_timeout(orch, key, session, response, request)
-        if response.is_error:
-            if _is_sigkill(response):
-                logger.warning("recovery.sigkill chat=%s action=user-retry", key.chat_id)
-                return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True)
-            model_name, provider_name = _request_target(orch, request)
-            await _preserve_session_from_response(orch, session, response, reason="error")
-            return await _reset_on_error(
-                orch,
-                key,
-                model_name=model_name,
-                provider_name=provider_name,
-                cli_detail=response.result,
-            )
-        await _update_session(orch, session, response)
-        logger.info("Normal flow completed")
-        req_model, _prov = _request_target(orch, request)
-        result = _finish_normal(
-            response, session, orch._config.session_age_warning_hours, model_name=req_model
+        return await _finalize_turn(
+            orch,
+            key,
+            outcome.request,
+            outcome.session,
+            outcome.response,
+            flow_label="Normal",
+            session_recovered=outcome.session_recovered,
         )
-        if session_recovered:
-            result.text = f"{_session_recovered_msg()}\n\n{result.text}"
-        return result
     finally:
         orch._inflight_tracker.complete(key.chat_id)
 
 
-async def normal_streaming(  # noqa: PLR0911
+async def normal_streaming(
     orch: Orchestrator,
     key: SessionKey,
     text: str,
@@ -585,38 +614,14 @@ async def normal_streaming(  # noqa: PLR0911
         )
         if outcome.failed_result is not None:
             return outcome.failed_result
-        request, session, response = outcome.request, outcome.session, outcome.response
-        _reg = orch._process_registry
-        if (
-            _reg.was_aborted(key.chat_id)
-            or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-            or _reg.was_interrupted(key.chat_id)
-        ):
-            _reg.clear_interrupt(key.chat_id)
-            await _preserve_session_from_response(orch, session, response, reason="abort")
-            logger.info("Streaming flow aborted/interrupted by user")
-            return OrchestratorResult(text="")
-        if response.timed_out:
-            return await _handle_timeout(orch, key, session, response, request)
-        if response.is_error:
-            if _is_sigkill(response):
-                logger.warning("recovery.sigkill chat=%s action=user-retry", key.chat_id)
-                return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True)
-            model_name, provider_name = _request_target(orch, request)
-            await _preserve_session_from_response(orch, session, response, reason="error")
-            return await _reset_on_error(
-                orch,
-                key,
-                model_name=model_name,
-                provider_name=provider_name,
-                cli_detail=response.result,
-            )
-        await _update_session(orch, session, response)
-        _schedule_memory_flush(orch, key, session)
-        logger.info("Streaming flow completed")
-        req_model, _prov = _request_target(orch, request)
-        return _finish_normal(
-            response, session, orch._config.session_age_warning_hours, model_name=req_model
+        return await _finalize_turn(
+            orch,
+            key,
+            outcome.request,
+            outcome.session,
+            outcome.response,
+            flow_label="Streaming",
+            schedule_memory_flush=True,
         )
     finally:
         orch._inflight_tracker.complete(key.chat_id)

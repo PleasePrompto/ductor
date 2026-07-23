@@ -235,24 +235,6 @@ async def test_injection_failure_sets_error() -> None:
     t.deliver.assert_awaited_once()
 
 
-# -- Pre-deliver hook --
-
-
-async def test_pre_deliver_hook_called() -> None:
-    bus = MessageBus()
-    t = _mock_transport()
-    bus.register_transport(t)
-
-    hook = AsyncMock()
-    bus.set_pre_deliver_hook(hook)
-
-    env = _env()
-    await bus.submit(env)
-
-    hook.assert_awaited_once_with(env)
-    t.deliver.assert_awaited_once()
-
-
 # -- Transport error resilience --
 
 
@@ -295,62 +277,3 @@ async def test_no_transports_logs_warning(caplog: pytest.LogCaptureFixture) -> N
         await bus.submit(env)
     assert "No transports registered" in caplog.text
     assert "envelope lost" in caplog.text
-
-
-# -- Audit hook --
-
-
-async def test_audit_hook_called_on_submit() -> None:
-    bus = MessageBus()
-    t = _mock_transport()
-    bus.register_transport(t)
-
-    hook = AsyncMock()
-    bus.set_audit_hook(hook)
-
-    env = _env()
-    await bus.submit(env)
-
-    hook.assert_awaited_once_with(env)
-    t.deliver.assert_awaited_once()
-
-
-async def test_audit_hook_receives_envelope_with_id() -> None:
-    bus = MessageBus()
-    t = _mock_transport()
-    bus.register_transport(t)
-
-    received_id: str = ""
-
-    async def capture_id(envelope: Envelope) -> None:
-        nonlocal received_id
-        received_id = envelope.envelope_id
-
-    bus.set_audit_hook(capture_id)
-
-    env = _env()
-    await bus.submit(env)
-
-    assert received_id != ""
-    assert received_id == env.envelope_id
-
-
-async def test_audit_hook_failure_does_not_prevent_delivery(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    bus = MessageBus()
-    t = _mock_transport()
-    bus.register_transport(t)
-
-    async def failing_hook(_: Envelope) -> None:
-        msg = "audit crash"
-        raise RuntimeError(msg)
-
-    bus.set_audit_hook(failing_hook)
-
-    env = _env()
-    with caplog.at_level("ERROR", logger="ductor_bot.bus.bus"):
-        await bus.submit(env)
-
-    assert "Audit hook failed" in caplog.text
-    t.deliver.assert_awaited_once()

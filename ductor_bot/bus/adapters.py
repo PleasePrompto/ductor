@@ -336,25 +336,3 @@ def from_task_question(
         needs_injection=True,
         metadata={"task_id": task_id},
     )
-
-
-# -- User / API messages (audit only) -----------------------------------------
-
-
-def from_user_message(
-    chat_id: int,
-    text: str,
-    *,
-    topic_id: int | None = None,
-    source: Origin = Origin.USER,
-) -> Envelope:
-    """Create an envelope for a user/API message (audit tracking only)."""
-    return Envelope(
-        origin=source,
-        chat_id=chat_id,
-        topic_id=topic_id,
-        prompt=text,
-        prompt_preview=text[:80] if text else "",
-        delivery=DeliveryMode.UNICAST,
-        lock_mode=LockMode.NONE,
-    )

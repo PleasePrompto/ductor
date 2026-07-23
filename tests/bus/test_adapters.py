@@ -11,7 +11,6 @@ from ductor_bot.bus.adapters import (
     from_interagent_result,
     from_task_question,
     from_task_result,
-    from_user_message,
     from_webhook_cron_result,
     from_webhook_wake,
 )
@@ -314,43 +313,3 @@ def test_from_task_question_with_topic() -> None:
     env = from_task_question("t1", "what color?", "what co...", 100, topic_id=42)
     assert env.chat_id == 100
     assert env.topic_id == 42
-
-
-# -- User / API messages -------------------------------------------------------
-
-
-def test_from_user_message_default_origin() -> None:
-    env = from_user_message(100, "hello world")
-    assert env.origin == Origin.USER
-    assert env.chat_id == 100
-    assert env.prompt == "hello world"
-    assert env.prompt_preview == "hello world"
-    assert env.delivery == DeliveryMode.UNICAST
-    assert env.lock_mode == LockMode.NONE
-    assert env.topic_id is None
-
-
-def test_from_user_message_api_source() -> None:
-    env = from_user_message(200, "api request", source=Origin.API)
-    assert env.origin == Origin.API
-    assert env.chat_id == 200
-    assert env.prompt == "api request"
-
-
-def test_from_user_message_with_topic() -> None:
-    env = from_user_message(300, "topic msg", topic_id=42)
-    assert env.chat_id == 300
-    assert env.topic_id == 42
-
-
-def test_from_user_message_truncates_preview() -> None:
-    long_text = "x" * 200
-    env = from_user_message(100, long_text)
-    assert len(env.prompt_preview) == 80
-    assert env.prompt == long_text
-
-
-def test_from_user_message_empty_text() -> None:
-    env = from_user_message(100, "")
-    assert env.prompt == ""
-    assert env.prompt_preview == ""

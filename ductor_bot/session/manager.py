@@ -202,10 +202,6 @@ class SessionData:
             self.provider_sessions[self.provider] = current
         return current
 
-    def clear_all_sessions(self) -> None:
-        """Drop all provider-local sessions and metrics."""
-        self.provider_sessions.clear()
-
     def clear_provider_session(self, provider: str) -> None:
         """Drop one provider-local session and metrics."""
         self.provider_sessions.pop(provider, None)
@@ -486,30 +482,6 @@ class SessionManager:
         """Return all persisted sessions (fresh or stale)."""
         sessions = await self._load()
         return list(sessions.values())
-
-    async def reset_session(
-        self,
-        key: SessionKey,
-        *,
-        provider: str | None = None,
-        model: str | None = None,
-    ) -> SessionData:
-        """Force-create a new session (empty ID, filled by CLI on first call)."""
-        sessions = await self._load()
-        prov = provider or self._config.provider
-        model_name = model or self._config.model
-        new = SessionData(
-            chat_id=key.chat_id,
-            transport=key.transport,
-            topic_id=key.topic_id,
-            provider=prov,
-            model=model_name,
-            provider_sessions={},
-        )
-        sessions[key.storage_key] = new
-        await self._save(sessions)
-        logger.info("Session reset")
-        return new
 
     async def reset_provider_session(
         self,

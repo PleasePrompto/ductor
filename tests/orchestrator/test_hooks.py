@@ -177,7 +177,7 @@ async def test_hook_resets_on_new_session(orch: Orchestrator) -> None:
         await normal(orch, SessionKey(chat_id=1), "msg")
 
     # Reset session (simulates /new)
-    await orch._sessions.reset_session(SessionKey(chat_id=1))
+    await orch.reset_active_provider_session(SessionKey(chat_id=1))
 
     # Messages after reset should NOT carry the mainmemory reminder (counter back to 0)
     # (DELEGATION_BRIEF fires on new session, but that's expected and correct)

@@ -73,7 +73,6 @@ def _make_orchestrator(
         return_value=MagicMock(text=handle_streaming_text, stream_fallback=stream_fallback),
     )
     orch.abort = AsyncMock(return_value=1)
-    orch.reset_session = AsyncMock()
     orch.shutdown = AsyncMock()
 
     paths = MagicMock()

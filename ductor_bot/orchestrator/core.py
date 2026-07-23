@@ -74,7 +74,6 @@ if TYPE_CHECKING:
     from ductor_bot.bus.bus import MessageBus
     from ductor_bot.bus.lock_pool import LockPool
     from ductor_bot.config import ModelRegistry
-    from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.multiagent.supervisor import AgentSupervisor
     from ductor_bot.session.named import NamedSession
     from ductor_bot.tasks.hub import TaskHub
@@ -478,11 +477,6 @@ class Orchestrator:
         reg.register_async("/agent_restart ", cmd_agent_restart)
         logger.info("Multi-agent commands registered")
 
-    async def reset_session(self, key: SessionKey) -> None:
-        """Reset the session for a given key."""
-        await self._sessions.reset_session(key)
-        logger.info("Session reset")
-
     async def reset_current_provider_session(self, key: SessionKey) -> str:
         """Reset the bucket the user is currently on, keeping that provider active.
 
@@ -843,19 +837,6 @@ class Orchestrator:
             source_chat_id=source_chat_id,
             source_topic_id=source_topic_id,
         )
-
-    async def handle_async_interagent_result(
-        self,
-        result: AsyncInterAgentResult,
-        *,
-        chat_id: int = 0,
-    ) -> str:
-        """Inject an async inter-agent result into the current active session."""
-        from ductor_bot.orchestrator.injection import (
-            handle_async_interagent_result as _handle_async_ia,
-        )
-
-        return await _handle_async_ia(self, result, chat_id=chat_id)
 
     async def inject_prompt(
         self,

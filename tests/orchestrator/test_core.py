@@ -689,15 +689,8 @@ async def test_is_chat_busy_true_when_shared_lock_held(orch: Orchestrator) -> No
 
 
 # ---------------------------------------------------------------------------
-# reset_session()
+# reset_active_provider_session()
 # ---------------------------------------------------------------------------
-
-
-async def test_reset_session_delegates(orch: Orchestrator) -> None:
-    mock_reset = AsyncMock()
-    object.__setattr__(orch._sessions, "reset_session", mock_reset)
-    await orch.reset_session(SessionKey(chat_id=42))
-    mock_reset.assert_awaited_once_with(SessionKey(chat_id=42))
 
 
 async def test_reset_active_provider_session_delegates(orch: Orchestrator) -> None:

@@ -410,16 +410,6 @@ async def test_provider_switch_resets_session(tmp_path: Path) -> None:
     assert s2.model == "gpt-5.2-codex"
 
 
-async def test_reset_session(tmp_path: Path) -> None:
-    mgr = _make_manager(tmp_path)
-    s1, _ = await mgr.resolve_session(key=SessionKey(chat_id=1))
-    await _simulate_cli_response(mgr, s1, "cli-id-1")
-
-    s2 = await mgr.reset_session(key=SessionKey(chat_id=1))
-    assert s2.session_id == ""
-    assert s2.message_count == 0
-
-
 async def test_update_session_increments(tmp_path: Path) -> None:
     mgr = _make_manager(tmp_path)
     s, _ = await mgr.resolve_session(key=SessionKey(chat_id=1))

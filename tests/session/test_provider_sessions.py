@@ -84,22 +84,6 @@ def test_tokens_property_per_provider() -> None:
     assert session.total_tokens == 456
 
 
-def test_clear_all_sessions() -> None:
-    session = SessionData(
-        chat_id=1,
-        provider="claude",
-        provider_sessions={
-            "claude": ProviderSessionData(session_id="claude-sid"),
-            "codex": ProviderSessionData(session_id="codex-sid"),
-        },
-    )
-
-    session.clear_all_sessions()
-
-    assert session.provider_sessions == {}
-    assert session.session_id == ""
-
-
 def test_clear_provider_session() -> None:
     session = SessionData(
         chat_id=1,

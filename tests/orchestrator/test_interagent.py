@@ -12,7 +12,6 @@ import pytest
 
 from ductor_bot.cli.types import CLIResponse
 from ductor_bot.config import AgentConfig
-from ductor_bot.multiagent.bus import AsyncInterAgentResult
 from ductor_bot.orchestrator.core import Orchestrator
 from ductor_bot.orchestrator.injection import (
     _get_or_create_interagent_session,
@@ -347,91 +346,6 @@ class TestHandleInteragentMessage:
         second_call_req = orch_ia._cli_service.execute.call_args_list[1][0][0]
         assert first_call_req.resume_session == "stale-id"
         assert second_call_req.resume_session is None
-
-
-class TestHandleAsyncInteragentResult:
-    """Test handle_async_interagent_result."""
-
-    def _make_result(
-        self,
-        result_text: str = "Result",
-        *,
-        recipient: str = "helper",
-        task_id: str = "task-001",
-        session_name: str = "",
-        original_message: str = "",
-    ) -> AsyncInterAgentResult:
-        return AsyncInterAgentResult(
-            task_id=task_id,
-            sender="codex",
-            recipient=recipient,
-            message_preview=result_text[:60],
-            result_text=result_text,
-            session_name=session_name,
-            original_message=original_message,
-        )
-
-    async def test_basic_result_processing(self, orch_ia: Orchestrator) -> None:
-        result = await orch_ia.handle_async_interagent_result(
-            self._make_result("Task completed successfully"),
-            chat_id=12345,
-        )
-        assert result == "done"
-
-    async def test_prompt_contains_session_hint(self, orch_ia: Orchestrator) -> None:
-        await orch_ia.handle_async_interagent_result(
-            self._make_result(session_name="ia-codex"),
-            chat_id=12345,
-        )
-        call_args = orch_ia._cli_service.execute.call_args
-        request = call_args[0][0]
-        assert "ia-codex" in request.prompt
-        assert "@ia-codex" in request.prompt
-
-    async def test_prompt_without_session_name(self, orch_ia: Orchestrator) -> None:
-        await orch_ia.handle_async_interagent_result(
-            self._make_result(session_name=""),
-            chat_id=12345,
-        )
-        call_args = orch_ia._cli_service.execute.call_args
-        request = call_args[0][0]
-        assert "@" not in request.prompt or "ia-" not in request.prompt
-
-    async def test_error_handling(self, orch_ia: Orchestrator) -> None:
-        orch_ia._cli_service.execute = AsyncMock(side_effect=RuntimeError("oops"))
-        result = await orch_ia.handle_async_interagent_result(
-            self._make_result(),
-        )
-        assert "Error" in result
-
-    async def test_prompt_contains_original_message(self, orch_ia: Orchestrator) -> None:
-        await orch_ia.handle_async_interagent_result(
-            self._make_result(original_message="Check the system specs"),
-            chat_id=12345,
-        )
-        call_args = orch_ia._cli_service.execute.call_args
-        request = call_args[0][0]
-        assert "Check the system specs" in request.prompt
-        assert "Original task you sent" in request.prompt
-
-    async def test_resumes_current_active_session(self, orch_ia: Orchestrator) -> None:
-        from ductor_bot.cli.types import AgentResponse
-        from ductor_bot.session import SessionData
-
-        sd = SessionData(12345, session_id="active-session-999")
-        orch_ia._sessions.get_active = AsyncMock(return_value=sd)
-        orch_ia._sessions.update_session = AsyncMock()
-        orch_ia._cli_service.execute = AsyncMock(
-            return_value=AgentResponse(result="done", session_id="active-session-999"),
-        )
-
-        await orch_ia.handle_async_interagent_result(
-            self._make_result(),
-            chat_id=12345,
-        )
-        call_args = orch_ia._cli_service.execute.call_args
-        request = call_args[0][0]
-        assert request.resume_session == "active-session-999"
 
 
 def test_ask_agent_forwards_source_chat_topic(monkeypatch: pytest.MonkeyPatch) -> None:
