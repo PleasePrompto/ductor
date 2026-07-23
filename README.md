@@ -483,7 +483,7 @@ Full config reference: [`docs/config.md`](docs/config.md) — full example with 
 Other projects manipulate SDKs or patch CLIs and risk violating provider terms of service. ductor simply runs the official CLI binaries as subprocesses — nothing more.
 
 - Official CLIs only (`claude`, `codex`, `gemini`, `agy`, `grok`)
-- Rule files are plain Markdown (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`)
+- Rule files are plain Markdown (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — `AGENTS.md` is shared by Codex and Grok)
 - Memory is one Markdown file per agent
 - All state is JSON — no database, no external services
 
