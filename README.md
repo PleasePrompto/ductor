@@ -213,7 +213,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Config hot-reload** — most settings update without restart (including language, scene, image)
 - **Docker sandbox** — optional sidecar container with configurable host mounts
 - **Service manager** — Linux (systemd), macOS (launchd), Windows (Task Scheduler)
-- **Cross-tool skill sync** — shared skills across `~/.claude/`, `~/.codex/`, `~/.gemini/` (globally or per-provider toggleable)
+- **Cross-tool skill sync** — shared skills across `~/.claude/`, `~/.codex/`, `~/.gemini/`, `~/.grok/` (globally or per-provider toggleable)
 
 ## Messenger support
 
