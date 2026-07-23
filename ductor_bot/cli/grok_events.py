@@ -23,7 +23,6 @@ Streaming JSON (``--output-format streaming-json``) is NDJSON::
 Optional tool events (when present) use::
 
     {"type": "tool_use" | "tool", "name": "...", "id": "...", "input": {...}}
-    {"type": "tool_result", "id": "...", "status": "...", "output": "..."}
 """
 
 from __future__ import annotations
@@ -40,7 +39,6 @@ from ductor_bot.cli.stream_events import (
     StreamEvent,
     SystemStatusEvent,
     ThinkingEvent,
-    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -130,17 +128,6 @@ def _parse_tool_use(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]
     return [ToolUseEvent(type="assistant", tool_name=name, tool_id=tool_id, parameters=params)]
 
 
-def _parse_tool_result(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
-    return [
-        ToolResultEvent(
-            type="tool_result",
-            tool_id=_as_str(data.get("id") or data.get("tool_id") or ""),
-            status=_as_str(data.get("status") or ""),
-            output=_as_str(data.get("output") or data.get("data") or data.get("content") or ""),
-        )
-    ]
-
-
 def _parse_error(_event_type: str, data: dict[str, Any]) -> list[StreamEvent]:
     """Failure path: emit a terminal ResultEvent so the stream ends cleanly."""
     usage_err, model_usage_err, cost_err = _extract_spend(data)
@@ -207,7 +194,6 @@ _STREAM_HANDLERS: dict[str, _StreamHandler] = {
     **dict.fromkeys(("thought", "thinking", "reasoning"), _parse_thinking),
     **dict.fromkeys(("text", "assistant", "message", "agent_message"), _parse_text),
     **dict.fromkeys(("tool_use", "tool", "tool_call"), _parse_tool_use),
-    **dict.fromkeys(("tool_result", "tool_output"), _parse_tool_result),
     "error": _parse_error,
     **dict.fromkeys(("compact", "compact_boundary", "compaction"), _parse_compact),
     "max_turns_reached": _parse_max_turns,

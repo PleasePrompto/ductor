@@ -13,11 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ductor_bot.cli.base import CLIConfig
+from ductor_bot.cli.base import CLIConfig, add_cli_opt
 from ductor_bot.cli.claude_provider import (
     _MAX_INLINE_APPEND_BYTES,
     ClaudeCodeCLI,
-    _add_opt,
     _log_cmd,
     _parse_response,
 )
@@ -676,24 +675,24 @@ class TestSendStreaming:
 
 
 # ---------------------------------------------------------------------------
-# _add_opt helper
+# add_cli_opt helper
 # ---------------------------------------------------------------------------
 
 
 class TestAddOpt:
     def test_adds_flag_when_value_present(self) -> None:
         cmd: list[str] = []
-        _add_opt(cmd, "--model", "opus")
+        add_cli_opt(cmd, "--model", "opus")
         assert cmd == ["--model", "opus"]
 
     def test_skips_when_value_none(self) -> None:
         cmd: list[str] = []
-        _add_opt(cmd, "--model", None)
+        add_cli_opt(cmd, "--model", None)
         assert cmd == []
 
     def test_skips_when_value_empty_string(self) -> None:
         cmd: list[str] = []
-        _add_opt(cmd, "--model", "")
+        add_cli_opt(cmd, "--model", "")
         assert cmd == []
 
 

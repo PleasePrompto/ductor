@@ -57,14 +57,6 @@ class ToolUseEvent(StreamEvent):
     parameters: dict[str, Any] | None = None
 
 
-class ToolResultEvent(StreamEvent):
-    """Tool execution result (emitted by Gemini CLI)."""
-
-    tool_id: str = ""
-    status: str = ""
-    output: str = ""
-
-
 class ThinkingEvent(StreamEvent):
     """Extended thinking/reasoning block."""
 

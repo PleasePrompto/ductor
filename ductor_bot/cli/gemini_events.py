@@ -17,7 +17,6 @@ from ductor_bot.cli.stream_events import (
     StreamEvent,
     SystemInitEvent,
     ThinkingEvent,
-    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -146,17 +145,6 @@ def _parse_gemini_tool_use(data: dict[str, Any]) -> list[StreamEvent]:
     ]
 
 
-def _parse_gemini_tool_result(data: dict[str, Any]) -> list[StreamEvent]:
-    return [
-        ToolResultEvent(
-            type="tool_result",
-            tool_id=str(data.get("tool_id", "")),
-            status=str(data.get("status", "")),
-            output=str(data.get("output", "")),
-        ),
-    ]
-
-
 def _parse_gemini_result_event(data: dict[str, Any]) -> list[StreamEvent]:
     return [_parse_gemini_result(data)]
 
@@ -238,7 +226,6 @@ _STREAM_PARSERS: dict[str, _StreamParser] = {
     "init": _parse_gemini_init,
     "message": _parse_gemini_message,
     "tool_use": _parse_gemini_tool_use,
-    "tool_result": _parse_gemini_tool_result,
     "result": _parse_gemini_result_event,
     "error": _parse_gemini_error,
 }

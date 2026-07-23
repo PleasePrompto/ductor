@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.cli.stream_events import StreamEvent
 from ductor_bot.cli.types import CLIResponse, task_id_from_label
 
@@ -61,6 +62,31 @@ async def _feed_stdin_and_close(
         closed_result = wait_closed()
         if inspect.isawaitable(closed_result):
             await closed_result
+
+
+def add_cli_opt(cmd: list[str], flag: str, value: str | None) -> None:
+    """Append a ``flag value`` pair to *cmd* when *value* is truthy."""
+    if value:
+        cmd += [flag, value]
+
+
+def format_cli_cmd(cmd: list[str], *, redact: bool = True, opt_prefix: str | None = "--") -> str:
+    """Render *cmd* as a log-safe string: long values truncated, optionally redacted.
+
+    Args:
+        cmd: The command argv.
+        redact: Redact env-assignment values via :func:`redact_cmd_for_log`.
+        opt_prefix: Only truncate a long value when the preceding arg starts
+            with this prefix; ``None`` truncates every long value.
+    """
+    display = redact_cmd_for_log(cmd) if redact else cmd
+    safe = [
+        (c[:80] + "...")
+        if len(c) > 80 and (opt_prefix is None or (i > 0 and display[i - 1].startswith(opt_prefix)))
+        else c
+        for i, c in enumerate(display)
+    ]
+    return " ".join(safe)
 
 
 @dataclass(slots=True)

@@ -164,15 +164,7 @@ def _gemini_models_js_candidates() -> tuple[Path, ...]:
     if cli_path is not None:
         candidates.extend(_gemini_models_js_candidates_from_cli_path(cli_path))
 
-    # Keep deterministic order while deduplicating.
-    deduped: list[Path] = []
-    seen: set[Path] = set()
-    for candidate in candidates:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        deduped.append(candidate)
-    return tuple(deduped)
+    return tuple(dict.fromkeys(candidates))
 
 
 def _npm_global_root() -> Path | None:
@@ -260,14 +252,7 @@ def _gemini_models_js_candidates_from_cli_path(cli_path: Path) -> tuple[Path, ..
         / "models.js"
     )
 
-    # Deduplicate while preserving order.
-    seen: set[Path] = set()
-    deduped: list[Path] = []
-    for c in candidates:
-        if c not in seen:
-            seen.add(c)
-            deduped.append(c)
-    return tuple(deduped)
+    return tuple(dict.fromkeys(candidates))
 
 
 def _find_gemini_cli_package_root(path: Path) -> Path | None:
@@ -419,14 +404,7 @@ def _gemini_bundle_candidates() -> tuple[Path, ...]:
         except OSError:
             continue
 
-    seen: set[Path] = set()
-    deduped: list[Path] = []
-    for path in candidates:
-        if path in seen:
-            continue
-        seen.add(path)
-        deduped.append(path)
-    return tuple(deduped)
+    return tuple(dict.fromkeys(candidates))
 
 
 def _gemini_bundle_roots() -> list[Path]:
@@ -452,14 +430,7 @@ def _gemini_bundle_roots() -> list[Path]:
         )
         roots.append(cli_path.parent / "node_modules" / "@google" / "gemini-cli" / "bundle")
 
-    seen: set[Path] = set()
-    deduped: list[Path] = []
-    for root in roots:
-        if root in seen:
-            continue
-        seen.add(root)
-        deduped.append(root)
-    return deduped
+    return list(dict.fromkeys(roots))
 
 
 def _discover_models_from_bundle(bundle_js: Path) -> frozenset[str]:
@@ -562,10 +533,4 @@ def _gemini_index_candidates_from_cli_path(cli_path: Path) -> tuple[Path, ...]:
         cli_path.parent / "node_modules" / "@google" / "gemini-cli" / "dist" / "index.js"
     )
 
-    seen: set[Path] = set()
-    deduped: list[Path] = []
-    for c in candidates:
-        if c not in seen:
-            seen.add(c)
-            deduped.append(c)
-    return tuple(deduped)
+    return tuple(dict.fromkeys(candidates))

@@ -6,10 +6,10 @@ import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Generic, Self, TypeVar
 
 from ductor_bot.infra.atomic_io import atomic_text_save
 from ductor_bot.infra.base_observer import BaseObserver
@@ -181,34 +181,54 @@ class BaseModelCache(ABC):
             return None
 
 
-class BaseModelCacheObserver(BaseObserver, ABC):
+CacheT = TypeVar("CacheT", bound=BaseModelCache)
+
+
+class BaseModelCacheObserver(BaseObserver, ABC, Generic[CacheT]):
     """Abstract base for periodic model-cache refresh observers.
 
-    Subclasses must implement ``_provider_name``, ``_load_cache``,
-    ``_model_count``, and ``_last_updated``.
+    Subclasses implement ``_provider_name`` and ``_load_cache`` and specialise
+    the generic over their concrete :class:`BaseModelCache` type. Model count,
+    last-updated timestamp, cache access, and the optional ``on_refresh``
+    callback are handled here.
     """
 
-    def __init__(self, cache_path: Path) -> None:
+    def __init__(
+        self,
+        cache_path: Path,
+        *,
+        on_refresh: Callable[[tuple[str, ...]], None] | None = None,
+    ) -> None:
+        """Initialize observer with cache file path.
+
+        Args:
+            cache_path: Path to JSON cache file.
+            on_refresh: Optional callback invoked with the model list after
+                each successful cache load/refresh.
+        """
         super().__init__()
         self._cache_path = cache_path
-        self._cache: Any = None
+        self._cache: CacheT | None = None
+        self._on_refresh = on_refresh
 
     @abstractmethod
     def _provider_name(self) -> str:
         """Short label for log messages (e.g. ``"Codex"``)."""
 
     @abstractmethod
-    async def _load_cache(self, *, initial: bool) -> Any:
+    async def _load_cache(self, *, initial: bool) -> CacheT:
         """Load or refresh the cache. *initial* is True on first call."""
 
-    @abstractmethod
-    def _model_count(self) -> int: ...
+    def _model_count(self) -> int:
+        return len(self._cache.models) if self._cache else 0
 
-    @abstractmethod
-    def _last_updated(self) -> str: ...
+    def _last_updated(self) -> str:
+        return self._cache.last_updated if self._cache else ""
 
     def _on_cache_loaded(self) -> None:
-        """Called after every successful cache load. Override for notifications."""
+        """Invoke the ``on_refresh`` callback when the cache holds models."""
+        if self._on_refresh and self._cache and self._cache.models:
+            self._on_refresh(self._cache.models)
 
     async def start(self) -> None:
         """Load initial cache and start refresh loop."""
@@ -230,7 +250,7 @@ class BaseModelCacheObserver(BaseObserver, ABC):
         logger.info("%sCacheObserver stopping", self._provider_name())
         await super().stop()
 
-    def get_cache(self) -> Any:
+    def get_cache(self) -> CacheT | None:
         """Return current cache (may be None if never loaded)."""
         return self._cache
 

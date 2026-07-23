@@ -25,7 +25,9 @@ from ductor_bot.cli.base import (
     _IS_WINDOWS,
     BaseCLI,
     CLIConfig,
+    add_cli_opt,
     docker_wrap,
+    format_cli_cmd,
 )
 from ductor_bot.cli.executor import SubprocessSpec, run_oneshot_subprocess, run_streaming_subprocess
 from ductor_bot.cli.grok_events import parse_grok_json, parse_grok_stream_line
@@ -78,17 +80,17 @@ class GrokCLI(BaseCLI):
         cmd = [self._cli, "--output-format", output_format]
 
         # Prefer explicit permission mode; auto-approve tools when bypassing.
-        _add_opt(cmd, "--permission-mode", cfg.permission_mode)
+        add_cli_opt(cmd, "--permission-mode", cfg.permission_mode)
         if cfg.permission_mode == "bypassPermissions":
             cmd.append("--always-approve")
 
-        _add_opt(cmd, "--model", cfg.model)
+        add_cli_opt(cmd, "--model", cfg.model)
         if cfg.reasoning_effort and cfg.reasoning_effort != "default":
             # Grok accepts both --reasoning-effort and --effort.
             cmd += ["--reasoning-effort", cfg.reasoning_effort]
-        _add_opt(cmd, "--system-prompt-override", cfg.system_prompt)
-        _add_opt(cmd, "--rules", cfg.append_system_prompt)
-        _add_opt(cmd, "--max-turns", str(cfg.max_turns) if cfg.max_turns is not None else None)
+        add_cli_opt(cmd, "--system-prompt-override", cfg.system_prompt)
+        add_cli_opt(cmd, "--rules", cfg.append_system_prompt)
+        add_cli_opt(cmd, "--max-turns", str(cfg.max_turns) if cfg.max_turns is not None else None)
 
         # Built-in tool filter (headless): comma-separated tool IDs.
         # Distinct from permission rules (--allow/--deny with Bash(...) globs).
@@ -225,20 +227,10 @@ async def _grok_line_handler(line: str) -> AsyncGenerator[StreamEvent, None]:
         yield event
 
 
-def _add_opt(cmd: list[str], flag: str, value: str | None) -> None:
-    """Append a CLI flag+value pair if value is truthy."""
-    if value:
-        cmd += [flag, value]
-
-
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:
-    """Log the CLI command with truncated long values."""
-    safe_cmd = [
-        (c[:80] + "...") if len(c) > 80 and i > 0 and cmd[i - 1].startswith("-") else c
-        for i, c in enumerate(cmd)
-    ]
-    prefix = "Grok stream cmd" if streaming else "Grok cmd"
-    logger.info("%s: %s", prefix, " ".join(safe_cmd))
+    """Log the Grok CLI command with truncated long values (no redaction)."""
+    kind = "stream cmd" if streaming else "cmd"
+    logger.info("Grok %s: %s", kind, format_cli_cmd(cmd, redact=False, opt_prefix="-"))
 
 
 def _parse_response(stdout: bytes, stderr: bytes, returncode: int | None) -> CLIResponse:

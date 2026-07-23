@@ -9,14 +9,15 @@ from pathlib import Path
 from shutil import which
 from typing import TYPE_CHECKING
 
-from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.cli.base import (
     _IS_WINDOWS,
     BaseCLI,
     CLIConfig,
     _cleanup_file,
+    add_cli_opt,
     docker_prompt_tmp_dir,
     docker_wrap,
+    format_cli_cmd,
     host_path_to_container,
 )
 from ductor_bot.cli.executor import SubprocessSpec, run_oneshot_subprocess, run_streaming_subprocess
@@ -71,17 +72,17 @@ class ClaudeCodeCLI(BaseCLI):
         cfg = self._config
         cmd = [self._cli, "-p", "--output-format", "json"]
 
-        _add_opt(cmd, "--permission-mode", cfg.permission_mode)
-        _add_opt(cmd, "--model", cfg.model)
+        add_cli_opt(cmd, "--permission-mode", cfg.permission_mode)
+        add_cli_opt(cmd, "--model", cfg.model)
         if cfg.reasoning_effort and cfg.reasoning_effort != "default":
             cmd += ["--effort", cfg.reasoning_effort]
-        _add_opt(cmd, "--system-prompt", cfg.system_prompt)
+        add_cli_opt(cmd, "--system-prompt", cfg.system_prompt)
         if append_prompt_file:
             cmd += ["--append-system-prompt-file", append_prompt_file]
         else:
-            _add_opt(cmd, "--append-system-prompt", cfg.append_system_prompt)
-        _add_opt(cmd, "--max-turns", str(cfg.max_turns) if cfg.max_turns is not None else None)
-        _add_opt(
+            add_cli_opt(cmd, "--append-system-prompt", cfg.append_system_prompt)
+        add_cli_opt(cmd, "--max-turns", str(cfg.max_turns) if cfg.max_turns is not None else None)
+        add_cli_opt(
             cmd,
             "--max-budget-usd",
             str(cfg.max_budget_usd) if cfg.max_budget_usd is not None else None,
@@ -223,21 +224,10 @@ async def _claude_line_handler(line: str) -> AsyncGenerator[StreamEvent, None]:
         yield event
 
 
-def _add_opt(cmd: list[str], flag: str, value: str | None) -> None:
-    """Append a CLI flag+value pair if value is truthy."""
-    if value:
-        cmd += [flag, value]
-
-
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:
-    """Log the CLI command with redacted and truncated long values."""
-    redacted_cmd = redact_cmd_for_log(cmd)
-    safe_cmd = [
-        (c[:80] + "...") if len(c) > 80 and i > 0 and redacted_cmd[i - 1].startswith("--") else c
-        for i, c in enumerate(redacted_cmd)
-    ]
-    prefix = "CLI stream cmd" if streaming else "CLI cmd"
-    logger.info("%s: %s", prefix, " ".join(safe_cmd))
+    """Log the Claude CLI command with redacted, truncated long values."""
+    kind = "stream cmd" if streaming else "cmd"
+    logger.info("CLI %s: %s", kind, format_cli_cmd(cmd))
 
 
 def _parse_response(stdout: bytes, stderr: bytes, returncode: int | None) -> CLIResponse:

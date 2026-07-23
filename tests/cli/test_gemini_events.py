@@ -10,7 +10,6 @@ from ductor_bot.cli.stream_events import (
     ResultEvent,
     SystemInitEvent,
     ThinkingEvent,
-    ToolResultEvent,
     ToolUseEvent,
 )
 
@@ -44,21 +43,6 @@ def test_parse_flat_gemini_tool_use() -> None:
     assert events[0].tool_name == "bash"
     assert events[0].tool_id == "bash_1"
     assert events[0].parameters == {"cmd": "ls"}
-
-
-def test_parse_gemini_tool_result() -> None:
-    data = {
-        "type": "tool_result",
-        "tool_id": "bash_1",
-        "status": "success",
-        "output": "file.txt",
-    }
-    events = parse_gemini_stream_line(json.dumps(data))
-    assert len(events) == 1
-    assert isinstance(events[0], ToolResultEvent)
-    assert events[0].tool_id == "bash_1"
-    assert events[0].status == "success"
-    assert events[0].output == "file.txt"
 
 
 def test_parse_gemini_result_with_stats() -> None:

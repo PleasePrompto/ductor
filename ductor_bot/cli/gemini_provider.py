@@ -13,7 +13,6 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ductor_bot.cli._log_redact import redact_cmd_for_log
 from ductor_bot.cli.auth import gemini_api_key_mode_selected
 from ductor_bot.cli.base import (
     BaseCLI,
@@ -22,6 +21,7 @@ from ductor_bot.cli.base import (
     _feed_stdin_and_close,
     docker_prompt_tmp_dir,
     docker_wrap,
+    format_cli_cmd,
     host_path_to_container,
 )
 from ductor_bot.cli.gemini_events import extract_result_text, extract_text, parse_gemini_stream_line
@@ -558,14 +558,9 @@ def _build_stream_exit_event(
 
 
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:
-    """Log the CLI command with redacted and truncated long values."""
-    redacted_cmd = redact_cmd_for_log(cmd)
-    safe = [
-        (c[:80] + "...") if len(c) > 80 and i > 0 and redacted_cmd[i - 1].startswith("--") else c
-        for i, c in enumerate(redacted_cmd)
-    ]
-    prefix = "Gemini stream cmd" if streaming else "Gemini cmd"
-    logger.info("%s: %s", prefix, " ".join(safe))
+    """Log the Gemini CLI command with redacted, truncated long values."""
+    kind = "stream cmd" if streaming else "cmd"
+    logger.info("Gemini %s: %s", kind, format_cli_cmd(cmd))
 
 
 def _gemini_settings_path(env: dict[str, str]) -> Path:
