@@ -20,8 +20,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: Scan added code for high-signal patterns
+        # base_ref is empty on workflow_dispatch/push; fall back to main so a
+        # manual run diffs HEAD against main instead of an invalid ref.
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: .github/scripts/malice-scan.sh "origin/$BASE_REF"
 
   dependency-audit:
