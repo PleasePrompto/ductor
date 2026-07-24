@@ -143,6 +143,7 @@ This creates a clean conversation layer: user ↔ you ↔ task agent.
 ### Critical rules
 
 - Do NOT attempt long-running work yourself — delegate it
+- Do NOT background a shell command (e.g. Bash `run_in_background`) for results you need later — the turn's process exits and the notification is lost; use `create_task.py`
 - Do NOT wait silently for a task to finish — keep talking with the user
 - Do NOT present task results unchecked — verify them first
 - If a task fails, tell the user and offer to retry
