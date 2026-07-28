@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -256,3 +257,165 @@ def _as_str(value: object) -> str:
     if isinstance(value, str):
         return value
     return str(value)
+
+
+# ---------------------------------------------------------------------------
+# Stream assembly for Grok token deltas (Telegram UX)
+# ---------------------------------------------------------------------------
+
+# Sentence/clause ends that often glue to the next capital without a space.
+_SOFT_SPACE_END = frozenset(".!?;:…)]}”\"'")
+_SOFT_SPACE_START_SKIP = frozenset(" \t\n\r.,!?;:)]}…\"'`*_~-")
+_SENTENCE_END_RE = re.compile(r"[.!?][\s\n]")
+
+# Defaults tuned for token streams: less twitchy than raw 1-token edits.
+DEFAULT_TEXT_MIN_CHARS = 160
+DEFAULT_TEXT_MAX_CHARS = 700
+DEFAULT_WORKING_IDLE_MS = 2500
+
+
+def soft_space_join(prev: str, nxt: str) -> str:
+    """Insert a single space when Grok glues ``end.Start`` across deltas.
+
+    Conservative: only when *prev* ends with sentence/clause punctuation (or
+    closes a quote/bracket) and *nxt* starts with an alphanumeric / Cyrillic
+    letter. Never touches markdown openers (``*`, ``_``, ````` ``) or paths.
+    """
+    if not prev or not nxt:
+        return nxt
+    left = prev[-1]
+    right = nxt[0]
+    if left not in _SOFT_SPACE_END:
+        return nxt
+    if right in _SOFT_SPACE_START_SKIP:
+        return nxt
+    if right.isalnum() or ("\u0400" <= right <= "\u04ff"):
+        return " " + nxt
+    return nxt
+
+
+class GrokStreamAssembler:
+    """Normalize Grok token streams before they hit the Telegram coalescer.
+
+    * Soft-space between text deltas (``.Listing`` → ``. Listing``).
+    * Buffer text until a readable boundary (sentence / min / max chars).
+    * On prolonged silence (tool turns with no stream events), emit
+      ``SystemStatusEvent(status="working")`` once until the next real event.
+    """
+
+    def __init__(
+        self,
+        *,
+        min_chars: int = DEFAULT_TEXT_MIN_CHARS,
+        max_chars: int = DEFAULT_TEXT_MAX_CHARS,
+        working_idle_ms: int = DEFAULT_WORKING_IDLE_MS,
+    ) -> None:
+        self._min_chars = min_chars
+        self._max_chars = max_chars
+        self._working_idle_ms = working_idle_ms
+        self._text_buf = ""
+        self._emitted_tail = ""
+        self._working_sent = False
+        self._saw_activity = False
+
+    @property
+    def working_idle_ms(self) -> int:
+        return self._working_idle_ms
+
+    def process(self, event: StreamEvent) -> list[StreamEvent]:
+        """Ingest one parsed stream event; return zero or more to emit."""
+        self._saw_activity = True
+        if isinstance(event, AssistantTextDelta):
+            return self._feed_text(event.text)
+        if isinstance(event, ThinkingEvent):
+            self._working_sent = False
+            out = self._flush_text(force=True)
+            out.append(event)
+            return out
+        if isinstance(event, (ToolUseEvent, ResultEvent)):
+            self._working_sent = False
+            out = self._flush_text(force=True)
+            out.append(event)
+            return out
+        # Other system events (compact, max_turns, …)
+        self._working_sent = False
+        out = self._flush_text(force=True)
+        out.append(event)
+        return out
+
+    def on_idle(self) -> list[StreamEvent]:
+        """Called when the CLI is silent longer than ``working_idle_ms``.
+
+        Flushes any buffered text, then emits a single WORKING status until the
+        next real event (covers silent multi-turn tool use).
+        """
+        if not self._saw_activity:
+            return []
+        out = self._flush_text(force=True)
+        if not self._working_sent:
+            self._working_sent = True
+            out.append(SystemStatusEvent(type="system", subtype="status", status="working"))
+        return out
+
+    def flush(self) -> list[StreamEvent]:
+        """Force-flush remaining text at stream end (no WORKING)."""
+        return self._flush_text(force=True)
+
+    def _feed_text(self, piece: str) -> list[StreamEvent]:
+        if not piece:
+            return []
+        self._working_sent = False
+        self._text_buf = self._append_with_soft_space(self._text_buf, piece)
+
+        out: list[StreamEvent] = []
+        while len(self._text_buf) >= self._max_chars:
+            out.extend(self._emit_prefix(self._max_chars))
+        if len(self._text_buf) >= self._min_chars:
+            sentence_at = self._last_sentence_break(self._text_buf)
+            if sentence_at is not None and sentence_at >= self._min_chars // 2:
+                out.extend(self._emit_prefix(sentence_at))
+            elif "\n\n" in self._text_buf:
+                pos = self._text_buf.rfind("\n\n")
+                if pos + 2 >= self._min_chars // 2:
+                    out.extend(self._emit_prefix(pos + 2))
+        return out
+
+    def _append_with_soft_space(self, buf: str, piece: str) -> str:
+        if not piece:
+            return buf
+        if not buf:
+            # First piece in this buffer: may need space after last *emitted* tail.
+            return soft_space_join(self._emitted_tail, piece) if self._emitted_tail else piece
+        spaced = soft_space_join(buf, piece)
+        if spaced.startswith(" ") and not piece.startswith(" "):
+            return buf + spaced
+        return buf + piece
+
+    def _flush_text(self, *, force: bool) -> list[StreamEvent]:
+        if not self._text_buf:
+            return []
+        if not force and len(self._text_buf) < self._min_chars:
+            return []
+        text = self._text_buf
+        self._text_buf = ""
+        self._emitted_tail = text[-8:] if text else self._emitted_tail
+        return [AssistantTextDelta(type="assistant", text=text)]
+
+    def _emit_prefix(self, end: int) -> list[StreamEvent]:
+        if end <= 0 or end > len(self._text_buf):
+            return []
+        text = self._text_buf[:end]
+        self._text_buf = self._text_buf[end:]
+        if not text:
+            return []
+        self._emitted_tail = text[-8:]
+        return [AssistantTextDelta(type="assistant", text=text)]
+
+    @staticmethod
+    def _last_sentence_break(buf: str) -> int | None:
+        last: re.Match[str] | None = None
+        for match in _SENTENCE_END_RE.finditer(buf):
+            last = match
+        if last is None:
+            return None
+        return last.end()

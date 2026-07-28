@@ -13,10 +13,12 @@ Grok Build CLI surface (headless) closely mirrors Claude Code:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 import tempfile
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
 from shutil import which
 from typing import TYPE_CHECKING, Any
@@ -30,7 +32,7 @@ from ductor_bot.cli.base import (
     format_cli_cmd,
 )
 from ductor_bot.cli.executor import SubprocessSpec, run_oneshot_subprocess, run_streaming_subprocess
-from ductor_bot.cli.grok_events import parse_grok_json, parse_grok_stream_line
+from ductor_bot.cli.grok_events import GrokStreamAssembler, parse_grok_json, parse_grok_stream_line
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
     ResultEvent,
@@ -179,7 +181,12 @@ class GrokCLI(BaseCLI):
         timeout_seconds: float | None = None,
         timeout_controller: TimeoutController | None = None,
     ) -> AsyncGenerator[StreamEvent, None]:
-        """Send a prompt and yield stream events as they arrive."""
+        """Send a prompt and yield stream events as they arrive.
+
+        Grok emits token-level text deltas and (currently) no tool events during
+        multi-turn tool use. ``GrokStreamAssembler`` coalesces text, soft-fixes
+        glued punctuation, and emits WORKING on prolonged silence.
+        """
         try:
             cmd = self._build_command(
                 prompt,
@@ -190,10 +197,7 @@ class GrokCLI(BaseCLI):
             exec_cmd, use_cwd = docker_wrap(cmd, self._config, interactive=False)
             _log_cmd(exec_cmd, streaming=True)
 
-            accumulated: list[str] = []
-            saw_result = False
-
-            async for event in run_streaming_subprocess(
+            raw_stream = run_streaming_subprocess(
                 config=self._config,
                 spec=SubprocessSpec(
                     exec_cmd,
@@ -204,19 +208,9 @@ class GrokCLI(BaseCLI):
                 ),
                 line_handler=_grok_line_handler,
                 provider_label="Grok Build",
-            ):
-                if isinstance(event, AssistantTextDelta) and event.text:
-                    accumulated.append(event.text)
-                out = event
-                if isinstance(event, ResultEvent):
-                    saw_result = True
-                    # Grok end events often omit the full text; fill from deltas.
-                    if not event.result and accumulated:
-                        out = event.model_copy(update={"result": "".join(accumulated)})
-                yield out
-
-            if not saw_result and accumulated:
-                yield ResultEvent(type="result", result="".join(accumulated), is_error=False)
+            )
+            async for event in _assemble_grok_stream(raw_stream):
+                yield event
         finally:
             self._cleanup_prompt_files()
 
@@ -225,6 +219,71 @@ async def _grok_line_handler(line: str) -> AsyncGenerator[StreamEvent, None]:
     """Parse a single Grok streaming-json line into stream events."""
     for event in parse_grok_stream_line(line):
         yield event
+
+
+def _track_assembled_event(
+    event: StreamEvent,
+    *,
+    accumulated: list[str],
+) -> tuple[StreamEvent, bool]:
+    """Update accumulated text; return (maybe-filled event, is_result)."""
+    if isinstance(event, AssistantTextDelta) and event.text:
+        accumulated.append(event.text)
+        return event, False
+    if isinstance(event, ResultEvent):
+        if not event.result and accumulated:
+            event = event.model_copy(update={"result": "".join(accumulated)})
+        return event, True
+    return event, False
+
+
+async def _assemble_grok_stream(
+    raw_stream: AsyncIterator[StreamEvent],
+    *,
+    assembler: GrokStreamAssembler | None = None,
+) -> AsyncGenerator[StreamEvent, None]:
+    """Apply GrokStreamAssembler + idle WORKING detection over a raw event stream."""
+    asm = assembler or GrokStreamAssembler()
+    accumulated: list[str] = []
+    saw_result = False
+    idle_s = max(asm.working_idle_ms, 1) / 1000.0
+    stream_iter = raw_stream.__aiter__()
+    pending: asyncio.Task[StreamEvent] | None = None
+
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(stream_iter.__anext__())
+            done, _ = await asyncio.wait({pending}, timeout=idle_s)
+            if not done:
+                for event in asm.on_idle():
+                    yield event
+                continue
+
+            try:
+                raw_event = pending.result()
+            except StopAsyncIteration:
+                pending = None
+                break
+            pending = None
+
+            for event in asm.process(raw_event):
+                out, is_result = _track_assembled_event(event, accumulated=accumulated)
+                saw_result = saw_result or is_result
+                yield out
+
+        for event in asm.flush():
+            out, is_result = _track_assembled_event(event, accumulated=accumulated)
+            saw_result = saw_result or is_result
+            yield out
+
+        if not saw_result and accumulated:
+            yield ResultEvent(type="result", result="".join(accumulated), is_error=False)
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                await pending
 
 
 def _log_cmd(cmd: list[str], *, streaming: bool = False) -> None:

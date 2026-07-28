@@ -190,21 +190,38 @@ class TestEditStreamEditor:
         assert "x1" not in last_text
 
     async def test_overflow_continuation_excludes_sealed_content(self) -> None:
-        """Overflow seals the first message; its content must not repeat afterwards."""
+        """Overflow seals chunks permanently; later text must not rewrite them."""
         bot, editor = _make_editor()
         await editor.append_text("A" * 3000)
         await editor.append_text("B" * 3000)
 
-        # First message sealed via edit, continuation sent as a second message
-        assert bot.send_message.call_count == 2
+        # First chunk sealed (create or edit), remainder as a second message
+        assert bot.send_message.call_count >= 2
         continuation = str(bot.send_message.call_args.kwargs["text"])
         assert "AAA" not in continuation
 
-        # Later edits render only the unsealed remainder, not the sealed chunk
+        # Next text opens a fresh message (overflow fully committed) — no re-split
+        sends_before = bot.send_message.call_count
         await editor.append_text("C" * 10)
-        edited = str(bot.edit_message_text.call_args.kwargs["text"])
-        assert "AAA" not in edited
-        assert "CCC" in edited
+        assert bot.send_message.call_count == sends_before + 1
+        fresh = str(bot.send_message.call_args.kwargs["text"])
+        assert "AAA" not in fresh
+        assert "BBB" not in fresh
+        assert "CCC" in fresh
+
+    async def test_overflow_then_grow_does_not_duplicate_prefix(self) -> None:
+        """Growing past the limit again must not re-emit an earlier overflow chunk."""
+        bot, editor = _make_editor()
+        await editor.append_text("A" * 3000)
+        await editor.append_text("B" * 3000)
+        sealed_sends = bot.send_message.call_count
+        await editor.append_text("D" * 3000)
+        await editor.append_text("E" * 3000)
+        # New overflow creates more messages, but never re-introduces AAA into tails
+        assert bot.send_message.call_count > sealed_sends
+        for call in bot.send_message.call_args_list[sealed_sends:]:
+            text = str(call.kwargs.get("text", ""))
+            assert "AAA" not in text
 
     @staticmethod
     def _get_last_message_text(bot: MagicMock) -> str:

@@ -10,8 +10,13 @@ import pytest
 
 from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.factory import create_cli
-from ductor_bot.cli.grok_events import parse_grok_json, parse_grok_stream_line
-from ductor_bot.cli.grok_provider import GrokCLI, _parse_response
+from ductor_bot.cli.grok_events import (
+    GrokStreamAssembler,
+    parse_grok_json,
+    parse_grok_stream_line,
+    soft_space_join,
+)
+from ductor_bot.cli.grok_provider import GrokCLI, _assemble_grok_stream, _parse_response
 from ductor_bot.cli.param_resolver import TaskExecutionConfig
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
@@ -113,6 +118,80 @@ class TestGrokEvents:
         assert len(events) == 1
         assert isinstance(events[0], SystemStatusEvent)
         assert events[0].status == "max_turns_reached"
+
+
+class TestGrokSoftSpace:
+    def test_inserts_space_after_period(self) -> None:
+        assert soft_space_join("tmp`.", "Listing") == " Listing"
+
+    def test_no_space_when_already_spaced(self) -> None:
+        assert soft_space_join("Hello.", " World") == " World"
+
+    def test_no_space_for_markdown_star(self) -> None:
+        assert soft_space_join("top.", "**8**") == "**8**"
+
+    def test_empty_prev(self) -> None:
+        assert soft_space_join("", "Hi") == "Hi"
+
+
+class TestGrokStreamAssembler:
+    def test_soft_space_across_deltas(self) -> None:
+        asm = GrokStreamAssembler(min_chars=1, max_chars=1000)
+        asm.process(AssistantTextDelta(type="assistant", text="done."))
+        # Force emit first sentence so tail is tracked
+        out = asm.flush()
+        assert len(out) == 1
+        assert isinstance(out[0], AssistantTextDelta)
+        assert out[0].text == "done."
+        out2 = asm.process(AssistantTextDelta(type="assistant", text="Next"))
+        out2 += asm.flush()
+        text = "".join(e.text for e in out2 if isinstance(e, AssistantTextDelta))
+        assert text == " Next"
+
+    def test_coalesces_small_tokens(self) -> None:
+        asm = GrokStreamAssembler(min_chars=50, max_chars=500)
+        emitted: list[str] = []
+        for ch in "Hello world. ":
+            emitted.extend(
+                e.text
+                for e in asm.process(AssistantTextDelta(type="assistant", text=ch))
+                if isinstance(e, AssistantTextDelta)
+            )
+        # Under min_chars without enough sentence content — still buffered
+        emitted.extend(e.text for e in asm.flush() if isinstance(e, AssistantTextDelta))
+        assert "".join(emitted) == "Hello world. "
+
+    def test_working_on_idle_once(self) -> None:
+        asm = GrokStreamAssembler(min_chars=10, max_chars=100, working_idle_ms=1)
+        asm.process(ThinkingEvent(type="assistant", text="plan"))
+        idle1 = asm.on_idle()
+        assert any(isinstance(e, SystemStatusEvent) and e.status == "working" for e in idle1)
+        idle2 = asm.on_idle()
+        assert not any(isinstance(e, SystemStatusEvent) and e.status == "working" for e in idle2)
+
+    def test_result_flushes_buffered_text(self) -> None:
+        asm = GrokStreamAssembler(min_chars=1000, max_chars=5000)
+        asm.process(AssistantTextDelta(type="assistant", text="short"))
+        out = asm.process(ResultEvent(type="result", result="", is_error=False))
+        assert isinstance(out[0], AssistantTextDelta)
+        assert out[0].text == "short"
+        assert isinstance(out[1], ResultEvent)
+
+
+class TestAssembleGrokStream:
+    async def test_idle_emits_working_then_text(self) -> None:
+        async def raw() -> Any:
+            yield ThinkingEvent(type="assistant", text="t")
+            await __import__("asyncio").sleep(0.05)
+            yield AssistantTextDelta(type="assistant", text="Hi.")
+            yield ResultEvent(type="result", result="Hi.", is_error=False)
+
+        asm = GrokStreamAssembler(min_chars=1, max_chars=100, working_idle_ms=20)
+        events = [e async for e in _assemble_grok_stream(raw(), assembler=asm)]
+        statuses = [e.status for e in events if isinstance(e, SystemStatusEvent)]
+        assert "working" in statuses
+        texts = [e.text for e in events if isinstance(e, AssistantTextDelta)]
+        assert "Hi." in "".join(texts)
 
 
 class TestGrokProvider:
