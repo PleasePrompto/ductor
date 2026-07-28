@@ -68,6 +68,36 @@ class TestCronSanitisation:
         raw = 'Message sent successfully. "Hi" delivered to Telegram (id 5).'
         assert sanitize_cron_result_text(raw) == ""
 
+    def test_sanitize_heartbeat_exact(self) -> None:
+        assert sanitize_cron_result_text("HEARTBEAT_OK") == ""
+
+    def test_sanitize_heartbeat_last_line_wins(self) -> None:
+        raw = "Gathering sources.\nFound nothing useful.\nHEARTBEAT_OK"
+        assert sanitize_cron_result_text(raw) == ""
+
+    def test_sanitize_strips_glued_process_preamble(self) -> None:
+        raw = (
+            "Gathering today's sources fresh — no 2026-07-28 memory entry yet."
+            "Pull 2 Strength logged today with RPE 10 — health signal that can "
+            "bypass hyperfocus. Checking event-prep and steps context."
+            "Gate delivered. Updating memory and writing the proactive trace, "
+            "then sending the health-only recap."
+            "🌙 28.07 вт · огонь\n\n"
+            "✅ Сделано: Pull 2 Strength\n"
+            "📊 День: 0.3k шагов"
+        )
+        clean = sanitize_cron_result_text(raw)
+        assert clean.startswith("🌙 28.07")
+        assert "Gathering" not in clean
+        assert "Gate delivered" not in clean
+        assert "Pull 2 Strength" in clean
+
+    def test_sanitize_strips_multiline_narration_before_emoji(self) -> None:
+        raw = "Checking calendar.\nGate delivered.\n✅ Done: morning plan ready\nSee you."
+        clean = sanitize_cron_result_text(raw)
+        assert clean.startswith("✅ Done:")
+        assert "Checking calendar" not in clean
+
 
 # ---------------------------------------------------------------------------
 # Cron broadcast

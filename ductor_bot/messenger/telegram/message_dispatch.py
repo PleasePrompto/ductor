@@ -307,6 +307,7 @@ async def run_streaming_message(  # noqa: C901, PLR0915
         system_map: dict[str, str] = {
             "thinking": "THINKING",
             "compacting": "COMPACTING",
+            "working": "WORKING",
             "recovering": "Please wait, recovering...",
             "timeout_warning": "TIMEOUT APPROACHING",
             "timeout_extended": "TIMEOUT EXTENDED",
@@ -319,6 +320,10 @@ async def run_streaming_message(  # noqa: C901, PLR0915
                 return
             if not dispatch.streaming_cfg.show_thinking_indicator:
                 return
+        # Grok omits tool stream events; WORKING covers long silent tool turns.
+        # Gate with tool progress so users can disable both together.
+        if status == "working" and not dispatch.streaming_cfg.show_tool_progress:
+            return
         await tracker.set_system()
         await coalescer.flush(force=True)
         if reasoning_coalescer is not None:

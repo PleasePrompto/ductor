@@ -275,31 +275,40 @@ class EditStreamEditor:
         self._s.last_edit_time = asyncio.get_event_loop().time()
 
     async def _handle_overflow(self, chunks: list[str]) -> None:
-        """Seal current message with first chunk, continue in a new one."""
+        """Seal overflow into permanent Telegram messages; never re-split them.
+
+        Token-level streams (Grok) re-render growing HTML on every edit. If the
+        overflow *tail* stays in the active buffer, a later split can rewrite an
+        already-sent message and spawn near-duplicate stubs. Instead: emit every
+        chunk once, clear the active buffer, and let subsequent text open a fresh
+        message.
+        """
+        if not chunks:
+            return
+
         if self._s.active_msg is not None:
             await self._edit_message(chunks[0])
         else:
             await self._create_message(chunks[0])
 
-        logger.debug("Message sealed, starting new segment")
+        for chunk in chunks[1:]:
+            if not chunk.strip():
+                continue
+            self._s.active_msg = None
+            await self._create_message(chunk)
 
-        # We must permanently split our state so the next render doesn't include chunks[0] again.
-        self._flush_text_segment()
-        if self._s.tool_tracker.has_entries:
-            self._flush_tool_segment()
+        logger.debug("Message sealed after overflow chunks=%d", len(chunks))
 
-        remaining = "\n\n".join(chunks[1:])
-
-        # Discard the old unsealed segments and indicators, replace with the remaining HTML
+        # Fully commit: sealed Telegram messages already hold the content.
+        self._s.raw_text_parts = []
+        self._s.tool_tracker = _ToolTracker()
         self._s.segments = self._s.segments[: self._s.sealed_segment_idx]
-        if remaining.strip():
-            self._s.segments.append(remaining)
-
-        self._s.indicator_indices.clear()
-
+        self._s.indicator_indices = {
+            i for i in self._s.indicator_indices if i < self._s.sealed_segment_idx
+        }
+        # Detach so the next append creates a new message instead of rewriting a
+        # sealed overflow chunk.
         self._s.active_msg = None
-        if remaining.strip():
-            await self._create_message(remaining)
         self._s.last_edit_time = asyncio.get_event_loop().time()
 
     async def _create_message(self, text: str) -> None:
