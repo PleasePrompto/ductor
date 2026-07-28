@@ -110,12 +110,40 @@ class TestMarkdownToTelegramHTML:
         assert "\u2022 item one" in result
         assert "\u2022 item two" in result
 
-    def test_table_rendered_as_pre(self) -> None:
+    def test_table_rendered_as_bullets(self) -> None:
         from ductor_bot.messenger.telegram.formatting import markdown_to_telegram_html
 
         md = "| A | B |\n|---|---|\n| 1 | 2 |"
         result = markdown_to_telegram_html(md)
+        # Mobile-friendly bullets, not monospace column grids.
+        assert "<pre>" not in result
+        assert "• 1 — 2" in result
+        assert "\u2500" not in result
+
+    def test_table_like_fenced_code_becomes_bullets(self) -> None:
+        from ductor_bot.messenger.telegram.formatting import markdown_to_telegram_html
+
+        md = (
+            "Connected MCPs:\n\n"
+            "```\n"
+            "| MCP | Role |\n"
+            "|---|---|\n"
+            "| **cronometer** | food log |\n"
+            "| athletedata | wearables |\n"
+            "```\n"
+        )
+        result = markdown_to_telegram_html(md)
+        assert "<pre>" not in result
+        assert "• cronometer — food log" in result
+        assert "• athletedata — wearables" in result
+
+    def test_real_code_fence_still_pre(self) -> None:
+        from ductor_bot.messenger.telegram.formatting import markdown_to_telegram_html
+
+        md = "```python\nprint(1)\n```"
+        result = markdown_to_telegram_html(md)
         assert "<pre>" in result
+        assert "print(1)" in result
 
     def test_nested_bold_inside_heading(self) -> None:
         from ductor_bot.messenger.telegram.formatting import markdown_to_telegram_html

@@ -1,8 +1,13 @@
 """Convert standard Markdown to Telegram-compatible HTML.
 
 Telegram HTML supports: <b>, <i>, <s>, <u>, <code>, <pre>, <a href>,
-<blockquote>, <tg-spoiler>.  This module converts Claude's Markdown output
+<blockquote>, <tg-spoiler>.  This module converts agent Markdown output
 into that subset so messages render properly in Telegram clients.
+
+Markdown tables and table-like fenced code blocks become plain bullet
+lines (``• key — value``) instead of column-aligned ``<pre>`` grids.
+Monospace grids with box-drawing separators break badly on mobile clients.
+Real code fences (non-table content) still render as ``<pre>``.
 """
 
 from __future__ import annotations
@@ -33,13 +38,27 @@ def _is_separator_row(line: str) -> bool:
     return bool(re.match(r"^\s*\|?[\s:]*-{2,}[\s:]*(\|[\s:]*-{2,}[\s:]*)*\|?\s*$", line))
 
 
+def _strip_md_inline(cell: str) -> str:
+    """Drop light markdown emphasis so bullets stay clean in Telegram."""
+    cell = re.sub(r"\*\*(.+?)\*\*", r"\1", cell)
+    cell = re.sub(r"__(.+?)__", r"\1", cell)
+    cell = re.sub(r"`([^`]+)`", r"\1", cell)
+    cell = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", cell)
+    return cell.strip()
+
+
 def _format_table(lines: list[str]) -> str:
-    """Convert parsed Markdown table lines into a column-aligned monospace block."""
+    """Convert Markdown table lines into Telegram-friendly bullet list.
+
+    Prefer:
+      • header0: col1 — col2
+    over monospace padded columns with box-drawing separators.
+    """
     rows: list[list[str]] = []
     for line in lines:
         if _is_separator_row(line):
             continue
-        rows.append(_parse_table_row(line))
+        rows.append([_strip_md_inline(c) for c in _parse_table_row(line)])
 
     if not rows:
         return "\n".join(lines)
@@ -48,15 +67,69 @@ def _format_table(lines: list[str]) -> str:
     for row in rows:
         row.extend("" for _ in range(n_cols - len(row)))
 
-    widths = [max(len(row[c]) for row in rows) for c in range(n_cols)]
+    # Drop pure header-ish first row when it is labels only (MCP / Что даёт).
+    body = rows
+    if len(rows) >= 2:
+        header = rows[0]
+        # If every header cell is short/label-like, skip printing header as a row.
+        if all(len(c) <= 24 for c in header):
+            body = rows[1:]
 
     out: list[str] = []
-    for i, row in enumerate(rows):
-        cells = [cell.ljust(widths[c]) for c, cell in enumerate(row)]
-        out.append("  ".join(cells))
-        if i == 0 and len(rows) > 1:
-            out.append("  ".join("\u2500" * w for w in widths))
+    for row in body:
+        if n_cols == 1:
+            out.append(f"• {row[0]}")
+            continue
+        key = row[0] or "—"
+        rest = [c for c in row[1:] if c]
+        if not rest:
+            out.append(f"• {key}")
+        elif len(rest) == 1:
+            out.append(f"• {key} — {rest[0]}")
+        else:
+            out.append(f"• {key} — {' · '.join(rest)}")
     return "\n".join(out)
+
+
+def _looks_like_markdown_table(code: str) -> bool:
+    """True if fenced code content is mostly a markdown/pipe table."""
+    lines = [ln for ln in code.strip().splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return False
+    pipe_rows = sum(1 for ln in lines if "|" in ln and re.search(r"\|.*\|", ln.strip()))
+    # At least half the lines look like table rows, min 2.
+    return pipe_rows >= 2 and pipe_rows >= max(2, len(lines) // 2)
+
+
+def _looks_like_ascii_grid(code: str) -> bool:
+    """True if fenced block is a padded column grid (box-drawing / multi-space cols)."""
+    lines = [ln.rstrip() for ln in code.strip().splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return False
+    box = sum(1 for ln in lines if re.search(r"[─━┌┐└┘│┃]", ln) or re.search(r"-{3,}", ln))
+    multi_space = sum(1 for ln in lines if re.search(r"\S  +\S", ln))
+    return box >= 1 or multi_space >= max(2, len(lines) // 2)
+
+
+def _format_ascii_grid(code: str) -> str:
+    """Best-effort: collapse multi-space columns into 'key — value' bullets."""
+    out: list[str] = []
+    for ln in code.splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if re.fullmatch(r"[─━\-|=+\s]+", s):
+            continue
+        # Split on 2+ spaces
+        parts = [p.strip() for p in re.split(r" {2,}", s) if p.strip()]
+        if len(parts) >= 2:
+            key, *rest = parts
+            key = _strip_md_inline(key.strip("* "))
+            val = " · ".join(_strip_md_inline(p) for p in rest)
+            out.append(f"• {key} — {val}")
+        else:
+            out.append(f"• {_strip_md_inline(parts[0] if parts else s)}")
+    return "\n".join(out) if out else code
 
 
 def _convert_blockquotes(text: str) -> str:
@@ -111,15 +184,30 @@ def markdown_to_telegram_html(text: str) -> str:
 
     Handles: code blocks, inline code, bold, italic, strikethrough,
     links, headings, blockquotes, horizontal rules, tables, and list bullets.
+    Tables become bullets (not monospace grids).
     """
     text = strip_button_syntax(text)
 
     code_blocks: list[tuple[str, str]] = []
+    # Free-text blocks promoted from table-like fenced code (already bulletized).
+    promoted_blocks: list[str] = []
     inline_codes: list[str] = []
 
     def _save_code_block(m: re.Match[str]) -> str:
         lang = m.group(1) or ""
         code = m.group(2)
+        # Table-like or ASCII-grid fences → bullets, not <pre>.
+        if _looks_like_markdown_table(code):
+            rows = [ln for ln in code.splitlines() if ln.strip()]
+            bullet = _format_table(rows)
+            idx = len(promoted_blocks)
+            promoted_blocks.append(bullet)
+            return _placeholder("PB", idx)
+        if _looks_like_ascii_grid(code):
+            bullet = _format_ascii_grid(code)
+            idx = len(promoted_blocks)
+            promoted_blocks.append(bullet)
+            return _placeholder("PB", idx)
         idx = len(code_blocks)
         code_blocks.append((lang, code))
         return _placeholder("CB", idx)
@@ -148,8 +236,12 @@ def markdown_to_telegram_html(text: str) -> str:
     for i, code in enumerate(inline_codes):
         text = text.replace(_placeholder("IC", i), f"<code>{html.escape(code)}</code>")
 
+    # Tables and promoted table-code: plain text (bullets already include •).
     for i, table_text in enumerate(table_blocks):
-        text = text.replace(_placeholder("TB", i), f"<pre>{html.escape(table_text)}</pre>")
+        text = text.replace(_placeholder("TB", i), html.escape(table_text))
+
+    for i, promoted in enumerate(promoted_blocks):
+        text = text.replace(_placeholder("PB", i), html.escape(promoted))
 
     for i, (lang, code) in enumerate(code_blocks):
         escaped = html.escape(code)
