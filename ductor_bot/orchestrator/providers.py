@@ -135,9 +135,24 @@ class ProviderManager:
         set_antigravity_models(frozenset(models))
         self.refresh_known_model_ids()
 
-    def on_grok_models_refresh(self, models: tuple[str, ...]) -> None:
-        """Callback for GrokCacheObserver: update model registry."""
-        set_grok_models(models)
+    def on_grok_models_refresh(self, models: tuple[object, ...]) -> None:
+        """Callback for GrokCacheObserver: update model registry + effort menus.
+
+        Accepts either legacy ``tuple[str, ...]`` (IDs only) or
+        ``tuple[GrokModelInfo, ...]`` from the effort-aware cache.
+        """
+        from ductor_bot.cli.grok_discovery import GrokModelInfo
+        from ductor_bot.config import set_grok_model_efforts
+
+        if not models:
+            return
+
+        if isinstance(models[0], GrokModelInfo):
+            infos = tuple(m for m in models if isinstance(m, GrokModelInfo))
+            set_grok_models(tuple(m.id for m in infos))
+            set_grok_model_efforts({m.id: m.supported_efforts for m in infos})
+        else:
+            set_grok_models(tuple(str(m) for m in models))
         self.refresh_known_model_ids()
 
     def refresh_gemini_api_key_mode(self) -> bool:

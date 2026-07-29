@@ -13,7 +13,6 @@ from ductor_bot.config import (
     CLAUDE_MODELS_ORDERED,
     CLAUDE_SUPPORTED_EFFORTS,
     CODEX_SUPPORTED_EFFORTS_FALLBACK,
-    GROK_SUPPORTED_EFFORTS,
     get_antigravity_models,
     get_gemini_models,
     get_grok_models_ordered,
@@ -105,17 +104,26 @@ def _build_switch_summary(ctx: _SwitchSummaryContext) -> str:
 
 
 def _supported_efforts(orch: Orchestrator, model_id: str) -> tuple[str, ...]:
-    """Return the reasoning-effort levels supported by *model_id*'s provider.
+    """Return the reasoning-effort levels supported by *model_id*.
 
-    Claude accepts a fixed set (incl. ``max``). Codex uses the live model
-    cache when available, else a fallback constant so ``max`` is still
-    rejected. Other providers don't use reasoning effort.
+    Claude accepts a fixed set (incl. ``max``). Codex and Grok use the live
+    model cache when available so the /model and /effort menus only offer
+    levels the active model actually accepts; both fall back to a
+    conservative constant when discovery is unavailable.
     """
     provider = orch.models.provider_for(model_id)
     if provider == "claude":
         return CLAUDE_SUPPORTED_EFFORTS
     if provider == "grok":
-        return GROK_SUPPORTED_EFFORTS
+        grok_cache = (
+            orch._observers.grok_cache_obs.get_cache() if orch._observers.grok_cache_obs else None
+        )
+        model_info = grok_cache.get_model(model_id) if grok_cache else None
+        if model_info is not None and model_info.supported_efforts:
+            return tuple(model_info.supported_efforts)
+        from ductor_bot.config import get_grok_supported_efforts
+
+        return get_grok_supported_efforts(model_id)
     if provider == "codex":
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None

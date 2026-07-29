@@ -16,7 +16,6 @@ from ductor_bot.config import (
     CLAUDE_MODELS,
     CLAUDE_SUPPORTED_EFFORTS,
     GROK_MODELS,
-    GROK_SUPPORTED_EFFORTS,
     get_gemini_models,
 )
 
@@ -116,8 +115,14 @@ def _resolve_reasoning_effort(
             requested_effort, CLAUDE_SUPPORTED_EFFORTS, "Claude", model, explicit=explicit
         )
     if provider == "grok":
+        from ductor_bot.config import get_grok_supported_efforts
+
         return _static_effort(
-            requested_effort, GROK_SUPPORTED_EFFORTS, "Grok", model, explicit=explicit
+            requested_effort,
+            get_grok_supported_efforts(model),
+            "Grok",
+            model,
+            explicit=explicit,
         )
 
     if provider == "codex" and codex_cache:
