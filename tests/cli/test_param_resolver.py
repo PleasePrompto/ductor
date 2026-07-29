@@ -211,6 +211,61 @@ def test_resolve_claude_rejects_invalid_reasoning(
         )
 
 
+def test_resolve_grok_accepts_discovered_efforts(
+    base_config: AgentConfig, codex_cache: CodexModelCache
+) -> None:
+    """Grok effort validation follows per-model discovery menus."""
+    from ductor_bot.config import reset_grok_models, set_grok_model_efforts, set_grok_models
+
+    reset_grok_models()
+    set_grok_models(("grok-4.5",))
+    set_grok_model_efforts({"grok-4.5": ("low", "medium", "high")})
+
+    ok = resolve_cli_config(
+        base_config,
+        codex_cache,
+        task_overrides=TaskOverrides(
+            provider="grok",
+            model="grok-4.5",
+            reasoning_effort="low",
+        ),
+    )
+    assert ok.provider == "grok"
+    assert ok.reasoning_effort == "low"
+
+    with pytest.raises(DuctorError, match="Invalid reasoning effort"):
+        resolve_cli_config(
+            base_config,
+            codex_cache,
+            task_overrides=TaskOverrides(
+                provider="grok",
+                model="grok-4.5",
+                reasoning_effort="minimal",
+            ),
+        )
+
+    reset_grok_models()
+
+
+def test_resolve_grok_fallback_rejects_canonical_only_levels(
+    base_config: AgentConfig, codex_cache: CodexModelCache
+) -> None:
+    """Without discovery, Grok only allows the conservative low/medium/high set."""
+    from ductor_bot.config import reset_grok_models
+
+    reset_grok_models()
+    with pytest.raises(DuctorError, match="Invalid reasoning effort"):
+        resolve_cli_config(
+            base_config,
+            codex_cache,
+            task_overrides=TaskOverrides(
+                provider="grok",
+                model="grok-4.5",
+                reasoning_effort="xhigh",
+            ),
+        )
+
+
 def test_resolve_gemini_model_from_discovery(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:

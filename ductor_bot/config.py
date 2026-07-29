@@ -624,21 +624,23 @@ GROK_MODELS_ORDERED: tuple[str, ...] = (
     "grok-composer-2.5-fast",
 )
 GROK_MODELS: frozenset[str] = frozenset(GROK_MODELS_ORDERED)
-# Canonical Grok headless levels (plus max alias of xhigh). See grok --help.
+# Conservative Grok reasoning-effort fallback when per-model discovery is
+# unavailable. The CLI vocabulary is larger (none/minimal/low/medium/high/
+# xhigh/max) but each model only accepts levels its menu advertises — e.g.
+# grok-4.5 currently accepts only low/medium/high. Prefer the live Grok model
+# cache over this constant when building /model and /effort menus.
 GROK_SUPPORTED_EFFORTS: tuple[str, ...] = (
-    "none",
-    "minimal",
     "low",
     "medium",
     "high",
-    "xhigh",
-    "max",
 )
 
 _runtime_gemini: list[frozenset[str]] = [frozenset()]
 _runtime_antigravity: list[frozenset[str]] = [frozenset()]
 _runtime_grok: list[frozenset[str]] = [frozenset()]
 _runtime_grok_ordered: list[tuple[str, ...]] = [()]
+# Per-model Grok effort menus from discovery (model_id → ordered levels).
+_runtime_grok_efforts: dict[str, tuple[str, ...]] = {}
 
 
 class ModelRegistry:
@@ -734,6 +736,8 @@ def set_grok_models(models: tuple[str, ...] | frozenset[str] | list[str]) -> Non
 
     Refuses to overwrite with an empty set to prevent cache wipe.
     Preserves discovery order when a sequence is provided.
+    Does not clear effort menus; call :func:`set_grok_model_efforts` when
+    discovery also returns per-model effort support.
     """
     if not models:
         return
@@ -747,7 +751,27 @@ def set_grok_models(models: tuple[str, ...] | frozenset[str] | list[str]) -> Non
     _runtime_grok[0] = frozenset(ordered)
 
 
+def set_grok_model_efforts(efforts: dict[str, tuple[str, ...]]) -> None:
+    """Replace the runtime per-model Grok reasoning-effort menus.
+
+    Keys are model IDs; values are ordered effort levels accepted by that
+    model (as advertised by the Grok CLI). Empty mapping clears the table.
+    """
+    _runtime_grok_efforts.clear()
+    for model_id, levels in efforts.items():
+        mid = str(model_id).strip()
+        if not mid or not levels:
+            continue
+        _runtime_grok_efforts[mid] = tuple(levels)
+
+
+def get_grok_supported_efforts(model_id: str) -> tuple[str, ...]:
+    """Return effort levels for *model_id*, or the conservative fallback."""
+    return _runtime_grok_efforts.get(model_id) or GROK_SUPPORTED_EFFORTS
+
+
 def reset_grok_models() -> None:
     """Clear runtime Grok models. For test teardown only."""
     _runtime_grok[0] = frozenset()
     _runtime_grok_ordered[0] = ()
+    _runtime_grok_efforts.clear()
