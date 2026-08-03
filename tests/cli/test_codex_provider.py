@@ -303,6 +303,14 @@ class TestBuildCommand:
         assert "resume" in cmd
         assert "--json" not in cmd
 
+    def test_resume_session_includes_cli_parameters(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, cli_parameters=["--disable", "plugins"])
+
+        cmd = cli._build_command("hello", resume_session="th-1")
+
+        separator = cmd.index("--")
+        assert cmd[separator - 2 : separator] == ["--disable", "plugins"]
+
     def test_prompt_composed_in_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, system_prompt="SYS", append_system_prompt="APPEND")
         cmd = cli._build_command("user msg")

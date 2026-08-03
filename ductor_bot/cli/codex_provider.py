@@ -122,6 +122,8 @@ class CodexCLI(BaseCLI):
             cmd += ["--model", cfg.model]
         if cfg.reasoning_effort and cfg.reasoning_effort != "default":
             cmd += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
+        if cfg.cli_parameters:
+            cmd.extend(cfg.cli_parameters)
         cmd += ["--", session_id]
         cmd.append("-")
         return cmd
