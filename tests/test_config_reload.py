@@ -228,6 +228,16 @@ class TestConfigReloader:
         assert cfg.project_roots == {"my-project": "~/code/my-project"}
         assert applied.get("project_roots") == {"my-project": "~/code/my-project"}
 
+    async def test_equal_length_rewrite_is_detected(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "config.json"
+        cfg = self._write_config(config_path, model="opus")
+        reloader = ConfigReloader(config_path, cfg)
+
+        self._write_config(config_path, model="haiku")
+        await reloader._check()
+
+        assert cfg.model == "haiku"
+
     async def test_same_content_rewrite_no_callback(self, tmp_path: Path) -> None:
         config_path = tmp_path / "config.json"
         cfg = self._write_config(config_path, model="sonnet")
@@ -235,7 +245,7 @@ class TestConfigReloader:
         on_hot = MagicMock()
         reloader = ConfigReloader(config_path, cfg, on_hot_reload=on_hot)
 
-        # Rewrite with same content (mtime changes but no diff)
+        # Rewrite with same content (filesystem metadata may change, content does not).
         self._write_config(config_path, model="sonnet")
 
         await reloader._check()

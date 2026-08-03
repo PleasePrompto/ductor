@@ -1,6 +1,6 @@
 """Centralized config hot-reload: watch config.json and apply safe changes at runtime.
 
-Mtime-based watcher (5-second poll) that detects config file changes, validates
+Content-based watcher (5-second poll) that detects config file changes, validates
 the new config via Pydantic, diffs against the current config, and applies
 hot-reloadable fields without restart. Fields requiring restart are logged as
 warnings.
@@ -121,16 +121,16 @@ class ConfigReloader:
         self._config = current_config
         self._on_hot_reload = on_hot_reload
         self._on_restart_needed = on_restart_needed
-        self._last_mtime: float = 0.0
+        self._last_content: bytes | None = None
         self._task: asyncio.Task[None] | None = None
-        self._init_mtime()
+        self._init_content()
 
-    def _init_mtime(self) -> None:
-        """Read the initial mtime so we don't trigger on first poll."""
+    def _init_content(self) -> None:
+        """Read the initial content so we don't trigger on first poll."""
         try:
-            self._last_mtime = self._path.stat().st_mtime
+            self._last_content = self._path.read_bytes()
         except OSError:
-            self._last_mtime = 0.0
+            self._last_content = None
 
     async def start(self) -> None:
         """Start the background polling task."""
@@ -150,25 +150,26 @@ class ConfigReloader:
         logger.info("Config reloader stopped")
 
     async def _poll_loop(self) -> None:
-        """Poll config file mtime and trigger reload on change."""
+        """Poll config file content and trigger reload on change."""
         while True:
             await asyncio.sleep(_POLL_INTERVAL)
             await self._check()
 
     async def _check(self) -> None:
-        """Check mtime, load, diff, and apply if changed."""
+        """Read, diff, and apply the config if its content changed."""
         try:
-            stat = self._path.stat()
+            raw = await asyncio.to_thread(self._path.read_bytes)
         except OSError:
+            self._last_content = None
             return
 
-        if stat.st_mtime <= self._last_mtime:
+        if raw == self._last_content:
             return
 
-        self._last_mtime = stat.st_mtime
+        self._last_content = raw
         logger.info("Config file changed, reloading...")
 
-        new_config = await self._load_config()
+        new_config = self._load_config(raw)
         if new_config is None:
             return
 
@@ -185,10 +186,9 @@ class ConfigReloader:
         if restart and self._on_restart_needed:
             self._on_restart_needed(restart)
 
-    async def _load_config(self) -> AgentConfig | None:
+    def _load_config(self, raw: bytes) -> AgentConfig | None:
         """Load and validate config.json. Returns None on error."""
         try:
-            raw = await asyncio.to_thread(self._path.read_text, "utf-8")
             data = json.loads(raw)
             return AgentConfig(**data)
         except (OSError, json.JSONDecodeError) as exc:

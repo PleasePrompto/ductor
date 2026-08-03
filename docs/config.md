@@ -574,7 +574,7 @@ Toggles are read live from `config.json` on each skill-sync tick (independent of
 
 ## Runtime hot-reload (`config_reload.py`)
 
-`Orchestrator.create()` starts `ConfigReloader`, which polls `config.json` every 5 seconds, validates it with `AgentConfig`, diffs top-level fields, and applies safe changes without restart.
+`Orchestrator.create()` starts `ConfigReloader`, which polls `config.json` content every 5 seconds, validates it with `AgentConfig`, diffs top-level fields, and applies safe changes without restart. Content comparison avoids missing rapid or equal-size rewrites on filesystems with coarse timestamp updates.
 
 Hot-reloadable top-level fields:
 
