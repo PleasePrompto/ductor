@@ -11,6 +11,7 @@
      Note: since 2026-06-18 Gemini CLI no longer serves requests for individual
      Google accounts (free/Pro/Ultra) — it requires an API key or a Gemini Code
      Assist license. For the free individual tier, use Antigravity (`agy`) instead.
+   - Grok CLI: `npm install -g @xai-official/grok` and authenticate in `grok`.
 4. One of these messaging transports:
     - **Telegram**: Bot token from [@BotFather](https://t.me/BotFather) + user ID from [@userinfobot](https://t.me/userinfobot)
     - **Matrix**: install Matrix support first (`ductor install matrix` or `pip install \"ductor[matrix]\"`), then provide homeserver URL, user ID, and password/access token
@@ -145,6 +146,13 @@ Notes:
 - Container is reused between calls.
 - On Linux, ductor maps UID/GID to avoid root-owned files.
 - If Docker setup fails at startup, ductor logs warning and falls back to host execution.
+
+Grok sandbox behavior:
+
+- Only the default `~/.grok` directory is mounted, and only when it exists before the container starts.
+- If `~/.grok` does not exist, create an empty directory before logging in inside the container; otherwise the login is lost when the container is recreated.
+- Custom `GROK_HOME` locations are unsupported, as with the other providers.
+- Running `grok update` inside the container is unsupported. The image owns the CLI version; run `ductor docker rebuild` to update it.
 
 Docker CLI shortcuts:
 

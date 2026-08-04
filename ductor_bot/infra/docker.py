@@ -199,7 +199,7 @@ class DockerManager:
                 f"[bold cyan]Building sandbox image '{image}'...[/bold cyan]\n"
                 "[dim]  Downloading Debian bookworm + Node.js 22 base image\n"
                 "  Installing Python, build tools, Git\n"
-                f"  Installing Claude, Codex, and Gemini CLIs{extras_msg}\n"
+                f"  Installing Claude, Codex, Gemini, and Grok CLIs{extras_msg}\n"
                 "  This may take a few minutes on first run...[/dim]"
             )
             if not await self._build_image(image):
@@ -368,6 +368,7 @@ class DockerManager:
             (home / ".claude", f"{container_home}/.claude", "rw"),
             (home / ".codex", f"{container_home}/.codex", "rw"),
             (home / ".gemini", f"{container_home}/.gemini", "rw"),
+            (home / ".grok", f"{container_home}/.grok", "rw"),
         ]
 
         # Optional: mount host cache dir for browser profiles & binaries.

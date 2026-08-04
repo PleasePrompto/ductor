@@ -59,9 +59,12 @@ Restart code: `42` (`EXIT_RESTART`).
 - container (re)start
 - mounts:
   - `~/.ductor -> /ductor`
-  - provider homes (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.claude.json` when present)
+  - provider homes (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.grok`, `~/.claude.json` when present)
   - optional host cache mount
   - user-configured `docker.mounts` to `/mnt/<name>`
+
+The sandbox image owns the Grok CLI version. `grok update` inside the container is unsupported;
+use `ductor docker rebuild` to update it.
 
 Docker extras (`docker_extras.py`):
 
