@@ -133,6 +133,121 @@ def docker_paths(tmp_path: Path) -> DuctorPaths:
 class TestDockerManagerMounts:
     """Integration tests: verify mounts appear in the docker run command."""
 
+    async def test_existing_grok_home_is_mounted(
+        self, tmp_path: Path, docker_paths: DuctorPaths
+    ) -> None:
+        (tmp_path / ".grok").mkdir()
+        config = DockerConfig(enabled=True)
+        from ductor_bot.infra.docker import DockerManager
+
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+
+        with (
+            patch("ductor_bot.infra.docker.which", return_value="/usr/bin/docker"),
+            patch.object(Path, "home", return_value=tmp_path),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            await mgr.setup()
+
+        expected = ["-v", f"{tmp_path}/.grok:/home/node/.grok:rw"]
+        assert any(run_args[index : index + 2] == expected for index in range(len(run_args) - 1))
+
+    async def test_missing_grok_home_is_not_mounted(
+        self, tmp_path: Path, docker_paths: DuctorPaths
+    ) -> None:
+        config = DockerConfig(enabled=True)
+        from ductor_bot.infra.docker import DockerManager
+
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+
+        with (
+            patch("ductor_bot.infra.docker.which", return_value="/usr/bin/docker"),
+            patch.object(Path, "home", return_value=tmp_path),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            await mgr.setup()
+
+        assert run_args
+        mount_args = [run_args[index + 1] for index, arg in enumerate(run_args[:-1]) if arg == "-v"]
+        assert all(str(tmp_path / ".grok") not in arg for arg in mount_args)
+        assert all("/home/node/.grok" not in arg for arg in mount_args)
+
+    async def test_existing_provider_homes_remain_mounted(
+        self, tmp_path: Path, docker_paths: DuctorPaths
+    ) -> None:
+        provider_homes = [".claude", ".codex", ".gemini"]
+        for provider_home in provider_homes:
+            (tmp_path / provider_home).mkdir()
+
+        config = DockerConfig(enabled=True)
+        from ductor_bot.infra.docker import DockerManager
+
+        mgr = DockerManager(config, docker_paths)
+        run_args: list[str] = []
+
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "rm -f" in cmd:
+                return 0, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+
+        with (
+            patch("ductor_bot.infra.docker.which", return_value="/usr/bin/docker"),
+            patch.object(Path, "home", return_value=tmp_path),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+        ):
+            await mgr.setup()
+
+        for provider_home in provider_homes:
+            expected = [
+                "-v",
+                f"{tmp_path}/{provider_home}:/home/node/{provider_home}:rw",
+            ]
+            assert any(
+                run_args[index : index + 2] == expected for index in range(len(run_args) - 1)
+            )
+
     async def test_single_mount_in_run_cmd(self, tmp_path: Path, docker_paths: DuctorPaths) -> None:
         proj = tmp_path / "myapp"
         proj.mkdir()

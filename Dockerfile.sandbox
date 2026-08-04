@@ -1,6 +1,6 @@
 # Dockerfile.sandbox -- lightweight sandbox for ductor CLI execution.
-# Based on Node 22 (Debian bookworm) with Python 3, Claude Code CLI,
-# and Codex CLI pre-installed.  The container runs "sleep infinity" so
+# Based on Node 22 (Debian bookworm) with Python 3 and the Claude Code,
+# Codex, Gemini, and Grok CLIs pre-installed.  The container runs "sleep infinity" so
 # ductor can `docker exec` into it on demand.
 
 FROM node:22-bookworm-slim
@@ -35,6 +35,42 @@ RUN rm -f /usr/lib/python*/EXTERNALLY-MANAGED
 
 # Install Claude Code CLI and Codex CLI
 RUN npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli
+
+# xAI Grok CLI. The npm package is a thin trampoline: it materializes a ~158MB
+# native binary into $GROK_HOME on first run and then execs it without a version
+# check. $GROK_HOME doubles as the auth directory, which is bind-mounted from the
+# host, so a materialized binary would outlive image rebuilds and pin the version
+# forever. Relocate the binary into the image instead, so the image -- not the
+# writable auth home -- owns the version, matching the other three CLIs.
+RUN set -eu; \
+    export GROK_HOME=/tmp/grok-build; \
+    export npm_config_cache=/tmp/grok-npm-cache; \
+    npm install -g @xai-official/grok; \
+    VER="$(node -p "require('/usr/local/lib/node_modules/@xai-official/grok/package.json').version")"; \
+    printf '%s\n' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; \
+    grok --version > /dev/null; \
+    SRC="$(readlink -e "$GROK_HOME/bin/grok")"; \
+    case "$SRC" in "$GROK_HOME"/bin/*) ;; *) exit 1 ;; esac; \
+    [ -f "$SRC" ] && [ -x "$SRC" ]; \
+    mkdir -p /usr/local/lib/grok; \
+    mv "$SRC" /usr/local/lib/grok/grok; \
+    chmod 0755 /usr/local/lib/grok/grok; \
+    /usr/local/lib/grok/grok --version > /tmp/grok-v1.txt; \
+    grep -Fq "grok $VER " /tmp/grok-v1.txt; \
+    npm uninstall -g @xai-official/grok; \
+    rmdir /usr/local/lib/node_modules/@xai-official 2>/dev/null || true; \
+    printf '%s\n' \
+        '#!/bin/sh' \
+        '# Installed via npm; the binary was relocated so the image owns the version.' \
+        'export GROK_MANAGED_BY_NPM=1' \
+        'export GROK_DISABLE_AUTOUPDATER=1' \
+        'exec /usr/local/lib/grok/grok "$@"' > /usr/local/bin/grok; \
+    chmod 0755 /usr/local/bin/grok; \
+    grok --version > /tmp/grok-v2.txt; \
+    grep -Fq "grok $VER " /tmp/grok-v2.txt; \
+    echo "grok CLI baked into image: $VER"; \
+    rm -rf "$GROK_HOME" "$npm_config_cache" \
+           /tmp/grok-v1.txt /tmp/grok-v2.txt
 
 # Prepare a writable data directory
 RUN mkdir -p /data && chown node:node /data
