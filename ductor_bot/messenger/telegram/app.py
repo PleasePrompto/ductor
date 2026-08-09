@@ -1410,9 +1410,9 @@ class TelegramBot:
             text = f"@{name} {text}"
         logger.debug("Message text=%s", text[:80])
 
-        # #63: status_reaction (stage-based) wins over seen_reaction (one-shot).
-        # Both enabled would fight over the same Telegram emoji slot.
-        if self._config.scene.seen_reaction and not self._config.scene.status_reaction:
+        # Lifecycle reactions start with an accepted marker; foreground
+        # dispatch replaces it with processing/final state.
+        if self._config.scene.seen_reaction and text.strip().lower() not in {"session", "sessions"}:
             await self._set_seen_reaction(message)
 
         if self._config.streaming.enabled:

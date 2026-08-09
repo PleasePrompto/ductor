@@ -536,7 +536,7 @@ async def _finalize_turn(  # noqa: PLR0913
         _reg.clear_interrupt(key.chat_id)
         await _preserve_session_from_response(orch, session, response, reason="abort")
         logger.info("%s flow aborted/interrupted by user", flow_label)
-        return OrchestratorResult(text="")
+        return OrchestratorResult(text="", is_error=True)
     if response.timed_out:
         return await _handle_timeout(orch, key, session, response, request)
     if _is_invalid_session(response) and not request.allow_invalid_session_recovery:
@@ -545,7 +545,7 @@ async def _finalize_turn(  # noqa: PLR0913
     if response.is_error:
         if _is_sigkill(response):
             logger.warning("recovery.sigkill chat=%s action=user-retry", key.chat_id)
-            return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True)
+            return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True, is_error=True)
         model_name, provider_name = _request_target(orch, request)
         await _preserve_session_from_response(orch, session, response, reason="error")
         return await _reset_on_error(
@@ -708,10 +708,10 @@ def _finish_normal(
     """Post-processing for normal() and normal_streaming()."""
     if response.is_error:
         if response.timed_out:
-            return OrchestratorResult(text=t("timeout.generic"))
+            return OrchestratorResult(text=t("timeout.generic"), is_error=True)
         if response.result.strip():
-            return OrchestratorResult(text=t("error.generic", detail=response.result[:500]))
-        return OrchestratorResult(text=t("error.check_logs"))
+            return OrchestratorResult(text=t("error.generic", detail=response.result[:500]), is_error=True)
+        return OrchestratorResult(text=t("error.check_logs"), is_error=True)
 
     # #84: tool-only turns (agent silently updates memory/files without
     # generating text) used to return an empty string here -- Telegram's
@@ -839,13 +839,13 @@ async def named_session_flow(
     ):
         _reg.clear_interrupt(key.chat_id)
         orch._named_sessions.set_status(key.chat_id, session_name, "idle")
-        return OrchestratorResult(text="")
+        return OrchestratorResult(text="", is_error=True)
     if _is_invalid_session(response) and ns.source_kind == "codex_import":
         orch._named_sessions.end_session(key.chat_id, session_name)
         return OrchestratorResult(text=f"{tag}{t('session.import_unavailable')}")
     if response.is_error:
         orch._named_sessions.set_status(key.chat_id, session_name, "idle")
-        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}")
+        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}", is_error=True)
 
     orch._named_sessions.update_after_response(key.chat_id, session_name, response.session_id or "")
     return OrchestratorResult(text=f"{tag}{response.result}")
@@ -926,13 +926,13 @@ async def named_session_streaming(
     ):
         _reg2.clear_interrupt(key.chat_id)
         orch._named_sessions.set_status(key.chat_id, session_name, "idle")
-        return OrchestratorResult(text="")
+        return OrchestratorResult(text="", is_error=True)
     if _is_invalid_session(response) and ns.source_kind == "codex_import":
         orch._named_sessions.end_session(key.chat_id, session_name)
         return OrchestratorResult(text=f"{tag}{t('session.import_unavailable')}")
     if response.is_error:
         orch._named_sessions.set_status(key.chat_id, session_name, "idle")
-        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}")
+        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}", is_error=True)
 
     orch._named_sessions.update_after_response(key.chat_id, session_name, response.session_id or "")
     return OrchestratorResult(text=f"{tag}{response.result}")

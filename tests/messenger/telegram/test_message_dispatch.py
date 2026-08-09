@@ -104,6 +104,18 @@ async def test_reaction_tracker_swallows_errors() -> None:
     assert bot.set_message_reaction.await_count >= 1
 
 
+async def test_lifecycle_reactions_replace_with_success_or_warning() -> None:
+    bot = _make_bot()
+    tracker = ReactionTracker(bot, chat_id=1, message_id=42, enabled=True, lifecycle=True)
+
+    await tracker.set_thinking()
+    await tracker.set_success()
+    await tracker.set_warning()
+    await tracker.clear()
+
+    assert _emitted_emojis(bot) == ["🧠", "✅", "⚠️", None]
+
+
 async def test_non_streaming_reacts_on_trigger_message_not_reply_to() -> None:
     """MED #10: reaction anchors on the user's current trigger, not reply_to.
 
@@ -159,6 +171,22 @@ async def test_non_streaming_reacts_on_trigger_message_not_reply_to() -> None:
         assert call.kwargs["message_id"] == 777, (
             f"expected reaction on trigger (777), got {call.kwargs['message_id']}"
         )
+
+
+async def test_non_streaming_lifecycle_marks_success_after_delivery() -> None:
+    bot = _make_bot()
+    trigger = MagicMock(message_id=777)
+    scene = MagicMock(status_reaction=False, seen_reaction=True, technical_footer=False)
+    orchestrator = MagicMock()
+    orchestrator.handle_message = AsyncMock(return_value=OrchestratorResult(text="reply"))
+    dispatch = NonStreamingDispatch(
+        bot=bot, orchestrator=orchestrator, key=SessionKey(chat_id=1), text="hello",
+        allowed_roots=None, message=trigger, reply_to=trigger, scene_config=scene,
+    )
+    with patch("ductor_bot.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock, return_value=True):
+        await run_non_streaming_message(dispatch)
+
+    assert _emitted_emojis(bot) == ["🧠", "✅"]
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 _REACTION_THINKING = "\U0001f914"  # 🤔
 _REACTION_SYSTEM = "\U0001f4af"  # 💯
 _REACTION_DEFAULT = _REACTION_THINKING
+_LIFECYCLE_THINKING = "🧠"
+_LIFECYCLE_SUCCESS = "✅"
+_LIFECYCLE_WARNING = "⚠️"
 
 # Tool-name prefix (lowercase) -> emoji. First matching prefix wins.
 _REACTION_TOOL_MAP: tuple[tuple[tuple[str, ...], str], ...] = (
@@ -57,7 +60,7 @@ class ReactionTracker:
     flow can unconditionally call the tracker regardless of config.
     """
 
-    __slots__ = ("_bot", "_chat_id", "_current", "_enabled", "_message_id")
+    __slots__ = ("_bot", "_chat_id", "_current", "_enabled", "_lifecycle", "_message_id")
 
     def __init__(
         self,
@@ -66,20 +69,22 @@ class ReactionTracker:
         message_id: int,
         *,
         enabled: bool,
+        lifecycle: bool = False,
     ) -> None:
         self._bot = bot
         self._chat_id = chat_id
         self._message_id = message_id
         self._enabled = enabled
+        self._lifecycle = lifecycle
         self._current: str | None = None
 
     async def set_thinking(self) -> None:
         """Mark the turn as "thinking" (default idle/processing state)."""
-        await self._apply(_REACTION_THINKING)
+        await self._apply(_LIFECYCLE_THINKING if self._lifecycle else _REACTION_THINKING)
 
     async def set_system(self) -> None:
         """Mark a system event (compacting, timeout warning, ...)."""
-        await self._apply(_REACTION_SYSTEM)
+        await self._apply(_LIFECYCLE_THINKING if self._lifecycle else _REACTION_SYSTEM)
 
     async def set_tool(self, tool_name: str) -> None:
         """Map ``tool_name`` to an emoji via ``_REACTION_TOOL_MAP``.
@@ -87,6 +92,9 @@ class ReactionTracker:
         Unknown tool names fall back to ``_REACTION_DEFAULT`` (🤔) — never
         no-op. Callers want *some* visible stage change.
         """
+        if self._lifecycle:
+            await self.set_thinking()
+            return
         lower = (tool_name or "").lower()
         emoji = _REACTION_DEFAULT
         for prefixes, candidate in _REACTION_TOOL_MAP:
@@ -98,6 +106,16 @@ class ReactionTracker:
     async def clear(self) -> None:
         """Remove any reaction set by this tracker."""
         await self._apply(None)
+
+    async def set_success(self) -> None:
+        """Mark a successfully delivered lifecycle turn."""
+        if self._lifecycle:
+            await self._apply(_LIFECYCLE_SUCCESS)
+
+    async def set_warning(self) -> None:
+        """Mark a failed, cancelled, or interrupted lifecycle turn."""
+        if self._lifecycle:
+            await self._apply(_LIFECYCLE_WARNING)
 
     async def _apply(self, emoji: str | None) -> None:
         if not self._enabled:
@@ -141,6 +159,10 @@ def _build_footer(result: OrchestratorResult, scene: SceneConfig | None) -> str:
 
 def _status_reaction_enabled(scene: SceneConfig | None) -> bool:
     return bool(scene is not None and scene.status_reaction)
+
+
+def _lifecycle_reaction_enabled(scene: SceneConfig | None) -> bool:
+    return bool(scene is not None and getattr(scene, "seen_reaction", False) is True)
 
 
 def _format_reasoning_chunk(text: str) -> str:
@@ -202,7 +224,11 @@ async def run_non_streaming_message(
         dispatch.bot,
         dispatch.key.chat_id,
         reaction_target.message_id if reaction_target is not None else 0,
-        enabled=_status_reaction_enabled(dispatch.scene_config) and reaction_target is not None,
+        enabled=(
+            (_status_reaction_enabled(dispatch.scene_config) or _lifecycle_reaction_enabled(dispatch.scene_config))
+            and reaction_target is not None
+        ),
+        lifecycle=_lifecycle_reaction_enabled(dispatch.scene_config),
     )
     try:
         await tracker.set_thinking()
@@ -212,7 +238,7 @@ async def run_non_streaming_message(
         footer = _build_footer(result, dispatch.scene_config)
         result.text += footer
         reply_id = dispatch.reply_to.message_id if dispatch.reply_to else None
-        await send_rich(
+        delivered = await send_rich(
             dispatch.bot,
             dispatch.key.chat_id,
             result.text,
@@ -222,9 +248,17 @@ async def run_non_streaming_message(
                 thread_id=dispatch.thread_id,
             ),
         )
+        if result.is_error or not delivered:
+            await tracker.set_warning()
+        else:
+            await tracker.set_success()
         return result.text
+    except Exception:
+        await tracker.set_warning()
+        raise
     finally:
-        await tracker.clear()
+        if not _lifecycle_reaction_enabled(dispatch.scene_config):
+            await tracker.clear()
 
 
 async def run_streaming_message(  # noqa: C901, PLR0915
@@ -237,7 +271,8 @@ async def run_streaming_message(  # noqa: C901, PLR0915
         dispatch.bot,
         dispatch.key.chat_id,
         dispatch.message.message_id,
-        enabled=_status_reaction_enabled(dispatch.scene_config),
+        enabled=_status_reaction_enabled(dispatch.scene_config) or _lifecycle_reaction_enabled(dispatch.scene_config),
+        lifecycle=_lifecycle_reaction_enabled(dispatch.scene_config),
     )
 
     editor = create_stream_editor(
@@ -367,8 +402,9 @@ async def run_streaming_message(  # noqa: C901, PLR0915
             editor.has_content,
         )
 
+        delivered = True
         if result.stream_fallback or not streamed_text_sent or not editor.has_content:
-            await send_rich(
+            delivered = await send_rich(
                 dispatch.bot,
                 dispatch.key.chat_id,
                 result.text,
@@ -387,6 +423,14 @@ async def run_streaming_message(  # noqa: C901, PLR0915
                 thread_id=dispatch.thread_id,
             )
 
+        if result.is_error or not delivered:
+            await tracker.set_warning()
+        else:
+            await tracker.set_success()
         return result.text
+    except Exception:
+        await tracker.set_warning()
+        raise
     finally:
-        await tracker.clear()
+        if not _lifecycle_reaction_enabled(dispatch.scene_config):
+            await tracker.clear()
