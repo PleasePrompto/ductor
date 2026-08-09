@@ -133,6 +133,7 @@ MAX_INTERAGENT_SESSIONS_PER_CHAT = 32
 
 _MAX_NAME_ATTEMPTS = 50
 _MAX_IMPORTED_NAME_LENGTH = 24
+_MAX_DISPLAY_TITLE_LENGTH = 72
 
 
 def generate_name(existing: set[str]) -> str:
@@ -166,6 +167,16 @@ def suggest_name(raw: str, existing: set[str]) -> str:
     return generate_name(existing)
 
 
+def suggest_display_title(raw: str) -> str:
+    """Return a readable, stable display title derived from the opening prompt."""
+    title = " ".join(raw.split())
+    if not title:
+        return ""
+    if len(title) <= _MAX_DISPLAY_TITLE_LENGTH:
+        return title
+    return f"{title[: _MAX_DISPLAY_TITLE_LENGTH - 3].rstrip()}..."
+
+
 @dataclass(slots=True)
 class NamedSession:
     """State for a named background session."""
@@ -187,6 +198,7 @@ class NamedSession:
     source_kind: str = "ductor"
     planner_mode: bool = False
     planner_waiting: bool = False
+    display_title: str = ""
 
 
 def _session_from_dict(data: dict[str, Any]) -> NamedSession:
@@ -209,6 +221,7 @@ def _session_from_dict(data: dict[str, Any]) -> NamedSession:
         source_kind=str(data.get("source_kind", "ductor")),
         planner_mode=bool(data.get("planner_mode", False)),
         planner_waiting=bool(data.get("planner_waiting", False)),
+        display_title=str(data.get("display_title", "")),
     )
 
 
@@ -225,6 +238,7 @@ class NamedSessionRegistry:
         self._lock = asyncio.Lock()
         self._sessions: dict[tuple[int, str], NamedSession] = {}
         self._recovered_running: dict[tuple[int, str], NamedSession] = {}
+        self._active_targets: dict[str, str] = {}
         self._load()
 
     def _load(self) -> None:
@@ -233,10 +247,19 @@ class NamedSessionRegistry:
         if not raw:
             return
         entries: list[dict[str, Any]] = raw.get("sessions", [])
+        active_targets = raw.get("active_targets", {})
+        if isinstance(active_targets, dict):
+            self._active_targets = {
+                str(key): str(value)
+                for key, value in active_targets.items()
+                if isinstance(value, str) and value
+            }
         for entry in entries:
             ns = _session_from_dict(entry)
             if ns.status == "ended" or not ns.name:
                 continue
+            if not ns.display_title:
+                ns.display_title = suggest_display_title(ns.prompt_preview)
             # Downgrade stale "running" to "idle" after restart
             if ns.status == "running":
                 self._recovered_running[(ns.chat_id, ns.name)] = NamedSession(
@@ -256,6 +279,7 @@ class NamedSessionRegistry:
                     working_dir=ns.working_dir,
                     source_kind=ns.source_kind,
                     planner_mode=ns.planner_mode,
+                    display_title=ns.display_title,
                 )
                 ns.status = "idle"
                 ns.planner_waiting = False
@@ -265,7 +289,7 @@ class NamedSessionRegistry:
     def _persist(self) -> None:
         """Write all non-ended sessions to JSON."""
         entries = [asdict(ns) for ns in self._sessions.values() if ns.status != "ended"]
-        atomic_json_save(self._path, {"sessions": entries})
+        atomic_json_save(self._path, {"sessions": entries, "active_targets": self._active_targets})
 
     def create(  # noqa: PLR0913  -- session identity + provider/model/effort are all intrinsic
         self,
@@ -296,6 +320,7 @@ class NamedSessionRegistry:
             reasoning_effort=reasoning_effort,
             transport=session_key.transport,
             topic_id=session_key.topic_id,
+            display_title=suggest_display_title(prompt_preview),
         )
         self._sessions[(chat_id, name)] = session
         self._persist()
@@ -340,6 +365,7 @@ class NamedSessionRegistry:
         if ns is None or ns.status == "ended":
             return False
         ns.status = "ended"
+        self._clear_active_name(chat_id, name)
         self._persist()
         logger.info("Named session ended name=%s chat=%d", name, chat_id)
         return True
@@ -352,6 +378,11 @@ class NamedSessionRegistry:
                 ns.status = "ended"
                 count += 1
         if count:
+            self._active_targets = {
+                storage_key: name
+                for storage_key, name in self._active_targets.items()
+                if SessionKey.parse(storage_key).chat_id != chat_id
+            }
             self._persist()
             logger.info("All named sessions ended chat=%d count=%d", chat_id, count)
         return count
@@ -389,6 +420,37 @@ class NamedSessionRegistry:
             self._evict_oldest_interagent(session.chat_id)
         self._sessions[(session.chat_id, session.name)] = session
         self._persist()
+
+    def active_target(self, key: SessionKey) -> str | None:
+        """Return the selected named target for this transport/chat/topic."""
+        name = self._active_targets.get(key.storage_key)
+        session = self.get(key.chat_id, name) if name else None
+        if session is None or session.status == "ended":
+            if name:
+                self._active_targets.pop(key.storage_key, None)
+                self._persist()
+            return None
+        return name
+
+    def set_active_target(self, key: SessionKey, name: str | None) -> bool:
+        """Select a named target, or return routing to the main session."""
+        if name is None:
+            self._active_targets.pop(key.storage_key, None)
+            self._persist()
+            return True
+        session = self.get(key.chat_id, name)
+        if session is None or session.status == "ended":
+            return False
+        self._active_targets[key.storage_key] = name
+        self._persist()
+        return True
+
+    def _clear_active_name(self, chat_id: int, name: str) -> None:
+        self._active_targets = {
+            storage_key: target
+            for storage_key, target in self._active_targets.items()
+            if target != name or SessionKey.parse(storage_key).chat_id != chat_id
+        }
 
     def _evict_oldest_interagent(self, chat_id: int) -> None:
         """Drop oldest non-running inter-agent sessions above the per-chat cap."""

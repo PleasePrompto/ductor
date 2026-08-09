@@ -133,6 +133,26 @@ async def test_root_page_shows_browse_codex_button(
     assert "Browse Codex" in labels
 
 
+async def test_root_page_shows_readable_active_target_and_switches_to_main(
+    orch: Orchestrator,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser",
+        lambda: CodexHistoryBrowser(projects=()),
+    )
+    key = SessionKey(chat_id=1, topic_id=44)
+    ns = orch._named_sessions.create(1, "codex", "gpt-5.4", "Prepare the July release notes", key=key)
+    orch._named_sessions.update_after_response(1, ns.name, "sid")
+
+    selected = await handle_session_callback(orch, key, f"nsc:sw:{ns.name}")
+    assert "Current target:** Prepare the July release notes" in selected.text
+    assert "Use main chat" in [button.text for row in selected.buttons.rows for button in row]
+
+    main = await handle_session_callback(orch, key, "nsc:swm")
+    assert "Current target:** Main chat" in main.text
+
+
 async def test_project_page_shows_start_fresh_button(
     orch: Orchestrator,
     monkeypatch,

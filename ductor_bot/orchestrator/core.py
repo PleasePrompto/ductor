@@ -67,7 +67,12 @@ from ductor_bot.orchestrator.registry import CommandRegistry, OrchestratorResult
 from ductor_bot.security import detect_suspicious_patterns
 from ductor_bot.session import SessionKey, SessionManager
 from ductor_bot.session.manager import SessionData
-from ductor_bot.session.named import NamedSession, NamedSessionRegistry, suggest_name
+from ductor_bot.session.named import (
+    NamedSession,
+    NamedSessionRegistry,
+    suggest_display_title,
+    suggest_name,
+)
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
 from ductor_bot.workspace.project_roots import resolve_project_root
@@ -388,6 +393,9 @@ class Orchestrator:
         if result is not None:
             return result
 
+        if dispatch.cmd in {"session", "sessions"}:
+            return await cmd_sessions(self, dispatch.key, dispatch.text)
+
         await self._ensure_docker()
 
         # _known_model_ids only covers Claude + Gemini IDs (refreshed on Gemini
@@ -415,6 +423,18 @@ class Orchestrator:
                         cbs=dispatch.streaming_callbacks(),
                     )
                 return await named_session_flow(self, dispatch.key, first_key, session_prompt)
+
+        active_target = self._named_sessions.active_target(dispatch.key)
+        if active_target is not None:
+            if dispatch.streaming:
+                return await named_session_streaming(
+                    self,
+                    dispatch.key,
+                    active_target,
+                    dispatch.text,
+                    cbs=dispatch.streaming_callbacks(),
+                )
+            return await named_session_flow(self, dispatch.key, active_target, dispatch.text)
 
         if directives.is_directive_only and directives.has_model:
             return OrchestratorResult(
@@ -742,6 +762,13 @@ class Orchestrator:
         """List active named sessions for a chat."""
         return self._named_sessions.list_active(chat_id)
 
+    def active_named_target(self, key: SessionKey) -> NamedSession | None:
+        name = self._named_sessions.active_target(key)
+        return self._named_sessions.get(key.chat_id, name) if name else None
+
+    def switch_named_target(self, key: SessionKey, name: str | None) -> bool:
+        return self._named_sessions.set_active_target(key, name)
+
     async def set_main_planner_state(
         self, key: SessionKey, *, provider: str, model: str,
         enabled: bool | None = None, waiting: bool | None = None,
@@ -795,6 +822,7 @@ class Orchestrator:
             name=name, chat_id=chat_id, provider="codex", model=self.codex_import_model(),
             session_id=session_id, prompt_preview=prompt_preview[:60], status="idle", created_at=time.time(),
             working_dir=working_dir, source_kind="codex_import",
+            display_title=suggest_display_title(thread_name or prompt_preview),
         )
         self._named_sessions.add(session)
         return session

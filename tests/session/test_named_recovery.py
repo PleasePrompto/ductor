@@ -196,6 +196,30 @@ class TestReasoningEffort:
         assert loaded.reasoning_effort == "high"
 
 
+class TestDisplayTitleAndActiveTarget:
+    def test_prompt_title_and_scoped_target_survive_reload(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        key = SessionKey.for_transport("tg", 9, 42)
+        ns = reg.create(
+            chat_id=9,
+            provider="codex",
+            model="gpt-5.4",
+            prompt_preview="Review the payment retry flow and propose a safe rollout",
+            key=key,
+        )
+        reg.update_after_response(9, ns.name, "sid")
+        assert ns.display_title == "Review the payment retry flow and propose a safe rollout"
+        assert reg.set_active_target(key, ns.name)
+        assert reg.active_target(key) == ns.name
+        assert reg.active_target(SessionKey.telegram(9)) is None
+
+        reloaded = _make_registry(tmp_path)
+        loaded = reloaded.get(9, ns.name)
+        assert loaded is not None
+        assert loaded.display_title == ns.display_title
+        assert reloaded.active_target(key) == ns.name
+
+
 class TestInteragentQuotaIsolation:
     """Inter-agent sessions must not starve the user quota and must stay bounded (#174)."""
 

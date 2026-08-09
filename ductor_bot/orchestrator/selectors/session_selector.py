@@ -60,6 +60,18 @@ async def handle_session_callback(  # noqa: C901, PLR0911, PLR0912, PLR0915
     if action == "r":
         return await _build_root_page(orch, key)
 
+    if action == "swm":
+        orch.switch_named_target(key, None)
+        return await _build_root_page(orch, key, note="Now using the main chat.")
+
+    if action.startswith("sw:"):
+        name = action[3:]
+        if orch.switch_named_target(key, name):
+            session = orch.get_named_session(key.chat_id, name)
+            title = _named_title(session) if session is not None else name
+            return await _build_root_page(orch, key, note=f"Now using: {title}")
+        return await _build_root_page(orch, key, note="That session is no longer available.")
+
     if action == "endall":
         count = orch._named_sessions.end_all(key.chat_id)
         note = t("sessions.ended_all_one", count=count) if count else t("sessions.ended_all_none")
@@ -252,7 +264,11 @@ def _current_codex_bucket(session: SessionData | None) -> ProviderSessionData | 
 
 
 def _named_session_buttons(ns: NamedSession) -> list[Button]:
-    buttons = [Button(text=t("sessions.btn_end", name=ns.name), callback_data=f"nsc:end:{ns.name}")]
+    title = _named_title(ns)
+    buttons = [
+        Button(text=f"Switch: {title[:36]}", callback_data=f"nsc:sw:{ns.name}"),
+        Button(text=t("sessions.btn_end", name=title[:36]), callback_data=f"nsc:end:{ns.name}"),
+    ]
     if ns.provider == "codex" and ns.session_id:
         buttons.append(
             Button(
@@ -261,6 +277,10 @@ def _named_session_buttons(ns: NamedSession) -> list[Button]:
             )
         )
     return buttons
+
+
+def _named_title(ns: NamedSession) -> str:
+    return ns.display_title or ns.prompt_preview or ns.name
 
 
 def _desktop_resume_text(*, target: str, command: str) -> str:
@@ -435,6 +455,7 @@ async def _build_root_page(  # noqa: C901, PLR0912
     note: str = "",
 ) -> SelectorResponse:
     sessions = orch.list_named_sessions(key.chat_id)
+    selected_target = orch.active_named_target(key)
     current_session = await orch._sessions.get_active(key)
     topic_sessions = await orch.list_topic_sessions(key.chat_id)
     browser = await _load_codex_browser()
@@ -474,6 +495,11 @@ async def _build_root_page(  # noqa: C901, PLR0912
                 ]
             )
 
+    active_label = _named_title(selected_target) if selected_target else "Main chat"
+    lines.append(f"**Current target:** {active_label}")
+    if selected_target is not None:
+        rows.append([Button(text="Use main chat", callback_data="nsc:swm")])
+
     if topic_block:
         lines.append(topic_block)
 
@@ -483,7 +509,7 @@ async def _build_root_page(  # noqa: C901, PLR0912
             age = format_age(max(0.0, now - ns.created_at))
             msgs = f"{ns.message_count} msg" if ns.message_count == 1 else f"{ns.message_count} msgs"
             lines.append(
-                f"  {idx}. **{ns.name}** | {ns.provider}/{ns.model}"
+                f"  {idx}. **{_named_title(ns)}** | {ns.provider}/{ns.model}"
                 f" | {ns.status} ({msgs}, {age})"
             )
             markers = _planner_markers(
