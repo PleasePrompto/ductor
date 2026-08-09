@@ -83,7 +83,6 @@ if TYPE_CHECKING:
     from ductor_bot.bus.lock_pool import LockPool
     from ductor_bot.config import ModelRegistry
     from ductor_bot.multiagent.supervisor import AgentSupervisor
-    from ductor_bot.session.named import NamedSession
     from ductor_bot.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
@@ -383,7 +382,7 @@ class Orchestrator:
             logger.exception("Unexpected error in handle_message")
             return OrchestratorResult(text="An internal error occurred. Please try again.")
 
-    async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:
+    async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:  # noqa: C901, PLR0911
         result = await self._command_registry.dispatch(
             dispatch.cmd,
             self,
@@ -805,7 +804,9 @@ class Orchestrator:
         model_name, working_dir = self.codex_import_model(), ""
         if active is not None and "codex" in active.provider_sessions:
             bucket = active.provider_sessions["codex"]
-            model_name, working_dir = bucket.model, bucket.working_dir
+            if active.provider == "codex":
+                model_name = active.model
+            working_dir = bucket.working_dir
         return await self._sessions.set_provider_session_state(
             key, provider="codex", model=model_name, session_id="", working_dir=working_dir,
             source_kind="codex_import",

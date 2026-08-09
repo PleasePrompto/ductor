@@ -448,7 +448,7 @@ def _recent_background_task_entries(
     return tuple(entries)
 
 
-async def _build_root_page(  # noqa: C901, PLR0912
+async def _build_root_page(  # noqa: C901, PLR0912, PLR0915
     orch: Orchestrator,
     key: SessionKey,
     *,
