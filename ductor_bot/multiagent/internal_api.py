@@ -292,6 +292,7 @@ class InternalAgentAPI:
             model_override=data.get("model") or "",
             thinking_override=data.get("thinking") or "",
             priority=normalise_priority(data.get("priority")),
+            parent_prompt=data.get("parent_prompt") or "",
         )
 
         try:

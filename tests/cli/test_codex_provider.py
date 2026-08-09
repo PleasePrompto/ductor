@@ -263,6 +263,25 @@ class TestBuildCommand:
         cmd = cli._build_command("hello")
         assert "--instructions" not in cmd
 
+    @pytest.mark.parametrize(
+        ("effort", "should_have_flag"),
+        [("high", True), ("default", False), ("", False)],
+    )
+    def test_resume_reasoning_effort(
+        self, monkeypatch: pytest.MonkeyPatch, effort: str, should_have_flag: bool
+    ) -> None:
+        cli = _make_cli(monkeypatch, reasoning_effort=effort)
+        cmd = cli._build_command("continue", resume_session="session-123")
+        assert cmd[:2] == ["/usr/bin/codex", "exec"]
+        assert "resume" in cmd
+        if should_have_flag:
+            assert "-c" in cmd
+            idx = cmd.index("-c")
+            assert cmd[idx + 1] == f"model_reasoning_effort={effort}"
+        else:
+            assert "-c" not in cmd
+        assert cmd[-2:] == ["session-123", "continue"]
+
     def test_images_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, images=["img1.png", "img2.jpg"])
         cmd = cli._build_command("hello")

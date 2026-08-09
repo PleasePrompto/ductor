@@ -6,7 +6,6 @@ import shlex
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from ductor_bot.infra.json_store import load_json
@@ -51,8 +50,8 @@ def run_codex_resume(session_id: str, working_dir: str = "") -> int:
 def load_resume_targets(paths: DuctorPaths) -> list[CodexResumeTarget]:
     """Load all ductor-known Codex sessions that have a resumable session id."""
     targets: list[CodexResumeTarget] = []
-    targets.extend(_load_main_targets(paths.sessions_path))
-    targets.extend(_load_named_targets(paths.named_sessions_path))
+    targets.extend(_load_main_targets(paths))
+    targets.extend(_load_named_targets(paths))
     return sorted(targets, key=lambda item: (-item.updated_at, item.label))
 
 
@@ -76,8 +75,8 @@ def latest_resume_target(paths: DuctorPaths, *, main_only: bool = False) -> Code
     return targets[0] if targets else None
 
 
-def _load_main_targets(path: Path) -> list[CodexResumeTarget]:
-    raw = load_json(path)
+def _load_main_targets(paths: DuctorPaths) -> list[CodexResumeTarget]:
+    raw = load_json(paths.sessions_path)
     if not isinstance(raw, dict):
         return []
     targets: list[CodexResumeTarget] = []
@@ -97,14 +96,19 @@ def _load_main_targets(path: Path) -> list[CodexResumeTarget]:
         topic_id = _optional_int(entry.get("topic_id"))
         topic_name = str(entry.get("topic_name", "") or "")
         label = _main_label(chat_id=chat_id, topic_id=topic_id, topic_name=topic_name)
+        source_kind = str(codex.get("source_kind", "ductor") or "ductor")
         targets.append(
             CodexResumeTarget(
                 label=label,
                 target=f"main:{storage_key}",
                 session_id=session_id,
-                working_dir=str(codex.get("working_dir", "") or ""),
+                working_dir=_resume_working_dir(
+                    str(codex.get("working_dir", "") or ""),
+                    source_kind=source_kind,
+                    paths=paths,
+                ),
                 model=str(entry.get("model", "") or ""),
-                source_kind=str(codex.get("source_kind", "ductor") or "ductor"),
+                source_kind=source_kind,
                 updated_at=_parse_updated(entry.get("last_active")),
                 chat_id=chat_id,
                 topic_id=topic_id,
@@ -113,8 +117,8 @@ def _load_main_targets(path: Path) -> list[CodexResumeTarget]:
     return targets
 
 
-def _load_named_targets(path: Path) -> list[CodexResumeTarget]:
-    raw = load_json(path)
+def _load_named_targets(paths: DuctorPaths) -> list[CodexResumeTarget]:
+    raw = load_json(paths.named_sessions_path)
     if not isinstance(raw, dict):
         return []
     sessions = raw.get("sessions", [])
@@ -132,14 +136,19 @@ def _load_named_targets(path: Path) -> list[CodexResumeTarget]:
         name = str(entry.get("name", "") or "")
         if not session_id or not name:
             continue
+        source_kind = str(entry.get("source_kind", "ductor") or "ductor")
         targets.append(
             CodexResumeTarget(
                 label=f"@{name}",
                 target=f"@{name}",
                 session_id=session_id,
-                working_dir=str(entry.get("working_dir", "") or ""),
+                working_dir=_resume_working_dir(
+                    str(entry.get("working_dir", "") or ""),
+                    source_kind=source_kind,
+                    paths=paths,
+                ),
                 model=str(entry.get("model", "") or ""),
-                source_kind=str(entry.get("source_kind", "ductor") or "ductor"),
+                source_kind=source_kind,
                 updated_at=float(entry.get("created_at", 0.0) or 0.0),
                 chat_id=_safe_int(entry.get("chat_id", 0)),
             )
@@ -153,6 +162,14 @@ def _main_label(*, chat_id: int, topic_id: int | None, topic_name: str) -> str:
     if topic_name:
         return f"topic {topic_name} ({chat_id}/{topic_id})"
     return f"topic {chat_id}/{topic_id}"
+
+
+def _resume_working_dir(raw: str, *, source_kind: str, paths: DuctorPaths) -> str:
+    if raw:
+        return raw
+    if source_kind == "ductor":
+        return str(paths.workspace)
+    return ""
 
 
 def _safe_int(value: Any) -> int:

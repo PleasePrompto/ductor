@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ductor Codex Handoff</title>
+  <style>
+    :root {
+      --bg: #f7f3ea;
+      --paper: #fffdf8;
+      --ink: #1e2724;
+      --muted: #5e6964;
+      --line: #d9d0c0;
+      --accent: #006d77;
+      --accent-2: #b54708;
+      --code-bg: #16201d;
+      --code-ink: #e9f2ed;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(135deg, rgba(0, 109, 119, 0.08), transparent 36rem),
+        radial-gradient(circle at top right, rgba(181, 71, 8, 0.12), transparent 28rem),
+        var(--bg);
+      color: var(--ink);
+      font: 17px/1.58 Georgia, "Times New Roman", serif;
+    }
+
+    main {
+      width: min(980px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 56px 0 72px;
+    }
+
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 28px;
+      margin-bottom: 34px;
+    }
+
+    .eyebrow {
+      color: var(--accent-2);
+      font: 700 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin: 10px 0 14px;
+      font-size: clamp(42px, 8vw, 86px);
+      line-height: 0.92;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 21px;
+    }
+
+    section {
+      background: color-mix(in srgb, var(--paper) 86%, transparent);
+      border: 1px solid var(--line);
+      margin: 22px 0;
+      padding: 26px;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font: 800 26px/1.1 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    ol,
+    ul {
+      margin: 0;
+      padding-left: 1.35rem;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    code {
+      background: rgba(0, 109, 119, 0.1);
+      border: 1px solid rgba(0, 109, 119, 0.16);
+      padding: 0.08rem 0.32rem;
+      font: 0.92em/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 14px 0 0;
+      padding: 16px;
+      background: var(--code-bg);
+      color: var(--code-ink);
+      border-left: 6px solid var(--accent);
+    }
+
+    pre code {
+      background: none;
+      border: 0;
+      padding: 0;
+      color: inherit;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .callout {
+      border-left: 6px solid var(--accent-2);
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    @media (max-width: 720px) {
+      main {
+        width: min(100% - 22px, 980px);
+        padding-top: 32px;
+      }
+
+      section {
+        padding: 20px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Ductor / Codex</div>
+      <h1>Phone and desktop handoff</h1>
+      <p class="lead">
+        Continue Codex from Telegram, then pick that same session back up in the local
+        interactive Codex CLI. This is session-id handoff, not a shared live terminal.
+      </p>
+    </header>
+
+    <section>
+      <h2>What It Solves</h2>
+      <p>
+        Ductor runs Codex through <code>codex exec</code>, so sessions created or continued
+        from Telegram can be hidden from plain <code>codex resume</code>. The handoff feature
+        gives you the exact desktop command with the right flags and project directory.
+      </p>
+    </section>
+
+    <div class="grid">
+      <section>
+        <h2>Phone To Desktop</h2>
+        <ol>
+          <li>Open Telegram and send <code>/sessions</code>.</li>
+          <li>Tap <code>Resume On Desktop</code> for the attached Codex session.</li>
+          <li>Run the shown command in your desktop terminal.</li>
+        </ol>
+        <pre><code>codex resume --include-non-interactive --all --cd /path/to/project &lt;session_id&gt;</code></pre>
+      </section>
+
+      <section>
+        <h2>Desktop Helper</h2>
+        <p>List ductor-known Codex sessions:</p>
+        <pre><code>ductor codex resume</code></pre>
+        <p>Resume a named attached session:</p>
+        <pre><code>ductor codex resume @pm99</code></pre>
+      </section>
+    </div>
+
+    <section>
+      <h2>Useful Commands</h2>
+      <pre><code>ductor codex resume --main
+ductor codex resume --last-phone
+ductor codex resume --print @pm99
+ductor codex resume --help</code></pre>
+      <p class="small">
+        Use <code>--print</code> when you want to see the raw Codex command without launching the TUI.
+      </p>
+    </section>
+
+    <section>
+      <h2>Desktop To Phone</h2>
+      <ol>
+        <li>Open Telegram and send <code>/sessions</code>.</li>
+        <li>Tap <code>Browse Codex</code>.</li>
+        <li>Pick the project and session.</li>
+        <li>Use <code>Use In This Chat</code> for the main chat, or <code>Attach As Named</code> for a named target.</li>
+      </ol>
+    </section>
+
+    <section class="callout">
+      <h2>Limits By Design</h2>
+      <ul>
+        <li>This does not attach Telegram to an already-open desktop TUI process.</li>
+        <li>A fresh Telegram session needs one completed Codex turn before it has a desktop-resumable session id.</li>
+        <li>Named sessions resume with <code>ductor codex resume @name</code>.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

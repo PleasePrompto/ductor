@@ -624,6 +624,15 @@ class Orchestrator:
             reasoning_effort=effort,
             key=SessionKey.for_transport(request.transport, chat_id, request.thread_id),
         )
+        if provider_name == "codex":
+            ns.working_dir = str(self._paths.workspace)
+            ns.source_kind = "ductor"
+            self._named_sessions.set_handoff_context(
+                chat_id,
+                ns.name,
+                working_dir=ns.working_dir,
+                source_kind=ns.source_kind,
+            )
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
         sub = BackgroundSubmit(
             chat_id=chat_id,

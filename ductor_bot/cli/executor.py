@@ -58,6 +58,8 @@ def build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
         env["DUCTOR_CHAT_ID"] = str(config.chat_id)
     if config.topic_id:
         env["DUCTOR_TOPIC_ID"] = str(config.topic_id)
+    if config.parent_prompt:
+        env["DUCTOR_PARENT_PROMPT"] = config.parent_prompt
     env["DUCTOR_TRANSPORT"] = config.transport
     if task_id := task_id_from_label(config.process_label):
         env["DUCTOR_TASK_ID"] = task_id

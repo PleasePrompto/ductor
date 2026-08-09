@@ -307,6 +307,22 @@ class NamedSessionRegistry:
         )
         return session
 
+    def set_handoff_context(
+        self,
+        chat_id: int,
+        name: str,
+        *,
+        working_dir: str,
+        source_kind: str,
+    ) -> None:
+        """Persist resume metadata for a named session."""
+        ns = self._sessions.get((chat_id, name))
+        if ns is None:
+            return
+        ns.working_dir = working_dir
+        ns.source_kind = source_kind
+        self._persist()
+
     def get(self, chat_id: int, name: str) -> NamedSession | None:
         """Look up a named session (any status)."""
         return self._sessions.get((chat_id, name))

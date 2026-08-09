@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 NSC_PREFIX = "nsc:"
 _PROJECTS_PER_PAGE = 8
 _SESSIONS_PER_PAGE = 6
+_PROJECT_PATH_LIMIT = 72
+_SESSION_TITLE_LIMIT = 116
+_SESSION_SNIPPET_LIMIT = 42
 
 
 def is_session_selector_callback(data: str) -> bool:
@@ -270,6 +273,14 @@ def _desktop_resume_text(*, target: str, command: str) -> str:
     )
 
 
+def _desktop_working_dir(raw: str, *, source_kind: str, fallback: str) -> str:
+    if raw:
+        return raw
+    if source_kind == "ductor":
+        return fallback
+    return ""
+
+
 async def _load_codex_browser() -> CodexHistoryBrowser:
     return await asyncio.to_thread(load_codex_history_browser)
 
@@ -341,6 +352,80 @@ def _format_updated_age(updated_ts: float) -> str:
     if updated_ts <= 0:
         return "?"
     return format_age(max(0.0, time.time() - updated_ts))
+
+
+def _clip_text(value: str, limit: int) -> str:
+    compact = " ".join(value.split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: max(1, limit - 3)].rstrip()}..."
+
+
+def _codex_session_title(session: CodexHistorySession) -> str:
+    title = session.thread_name
+    if session.is_ductor_task:
+        return f"(Task) {title}"
+    if session.is_subagent:
+        return f"(Agent) {title}"
+    return f"(D) {title}" if session.is_ductor_touched else title
+
+
+def _codex_session_mix(project: CodexHistoryProject) -> str:
+    task_count = sum(1 for session in project.sessions if session.is_ductor_task)
+    agent_count = sum(1 for session in project.sessions if session.is_subagent)
+    human_count = max(0, len(project.sessions) - task_count - agent_count)
+    return f"H:{human_count} T:{task_count} A:{agent_count}"
+
+
+def _codex_session_snippet_line(session: CodexHistorySession) -> str:
+    parts: list[str] = []
+    if session.first_prompt and not session.is_ductor_task:
+        parts.append(f"F:{_clip_text(session.first_prompt, _SESSION_SNIPPET_LIMIT)}")
+    if session.preview and session.preview != session.first_prompt:
+        parts.append(f"L:{_clip_text(session.preview, _SESSION_SNIPPET_LIMIT)}")
+    if session.last_output_summary:
+        parts.append(f"O:{_clip_text(session.last_output_summary, _SESSION_SNIPPET_LIMIT)}")
+    return " | ".join(parts)
+
+
+def _codex_session_entry_lines(session: CodexHistorySession, *, label: str) -> tuple[str, ...]:
+    session_title = _clip_text(_codex_session_title(session), _SESSION_TITLE_LIMIT)
+    meta_bits = [_format_updated_age(session.updated_ts)]
+    if session.model:
+        meta_bits.insert(0, session.model)
+    lines = [f"  {label}. {session_title} | {' | '.join(meta_bits)}"]
+    snippet_line = _codex_session_snippet_line(session)
+    if snippet_line:
+        lines.append(f"     {snippet_line}")
+    return tuple(lines)
+
+
+def _codex_session_entry_button(
+    session: CodexHistorySession,
+    *,
+    label: str,
+    callback_data: str,
+) -> Button:
+    return Button(
+        text=f"{label}. {_codex_session_title(session)[:22]}",
+        callback_data=callback_data,
+    )
+
+
+def _recent_background_task_entries(
+    project: CodexHistoryProject,
+    visible_indexes: set[int],
+    *,
+    limit: int = 3,
+) -> tuple[tuple[int, CodexHistorySession], ...]:
+    entries: list[tuple[int, CodexHistorySession]] = []
+    for session_index, session in enumerate(project.sessions):
+        if session_index in visible_indexes or not session.is_ductor_task:
+            continue
+        entries.append((session_index, session))
+        if len(entries) >= limit:
+            break
+    return tuple(entries)
 
 
 async def _build_root_page(  # noqa: C901, PLR0912
@@ -465,9 +550,10 @@ async def _build_codex_projects_page(
         project_index = start + offset
         lines.append(
             f"  {project_index + 1}. **{project.label}**"
-            f" | {len(project.sessions)} | {_format_updated_age(project.updated_ts)}"
+            f" | {len(project.sessions)} | {_codex_session_mix(project)}"
+            f" | {_format_updated_age(project.updated_ts)}"
         )
-        lines.append(f"     `{project.working_dir}`")
+        lines.append(f"     `{_clip_text(project.working_dir, _PROJECT_PATH_LIMIT)}`")
         rows.append(
             [
                 Button(
@@ -484,7 +570,10 @@ async def _build_codex_projects_page(
     if note:
         footer_lines.append(note)
 
-    nav_row = [Button(text=t("sessions.btn_back"), callback_data="nsc:r")]
+    nav_row = [
+        Button(text=t("sessions.btn_back"), callback_data="nsc:r"),
+        Button(text=t("sessions.btn_refresh"), callback_data=f"nsc:cxp:{page}"),
+    ]
     if page > 0:
         nav_row.append(Button(text=t("sessions.btn_prev"), callback_data=f"nsc:cxp:{page - 1}"))
     if (page + 1) * _PROJECTS_PER_PAGE < len(browser.projects):
@@ -505,7 +594,14 @@ async def _build_main_desktop_resume_page(
     codex = _current_codex_bucket(active)
     if active is None or codex is None or not codex.session_id:
         return await _build_root_page(orch, key, note=t("sessions.desktop_resume_unavailable"))
-    command = build_codex_resume_command(codex.session_id, codex.working_dir)
+    command = build_codex_resume_command(
+        codex.session_id,
+        _desktop_working_dir(
+            codex.working_dir,
+            source_kind=codex.source_kind,
+            fallback=str(orch.paths.workspace),
+        ),
+    )
     return SelectorResponse(
         text=_desktop_resume_text(target=t("sessions.desktop_resume_main_target"), command=command),
         buttons=ButtonGrid(rows=[[Button(text=t("sessions.btn_back"), callback_data="nsc:r")]]),
@@ -520,7 +616,14 @@ async def _build_named_desktop_resume_page(
     ns = orch.get_named_session(key.chat_id, name)
     if ns is None or ns.provider != "codex" or not ns.session_id:
         return await _build_root_page(orch, key, note=t("sessions.desktop_resume_unavailable"))
-    command = build_codex_resume_command(ns.session_id, ns.working_dir)
+    command = build_codex_resume_command(
+        ns.session_id,
+        _desktop_working_dir(
+            ns.working_dir,
+            source_kind=ns.source_kind,
+            fallback=str(orch.paths.workspace),
+        ),
+    )
     return SelectorResponse(
         text=_desktop_resume_text(target=f"@{ns.name}", command=command),
         buttons=ButtonGrid(rows=[[Button(text=t("sessions.btn_back"), callback_data="nsc:r")]]),
@@ -539,7 +642,12 @@ async def _build_codex_sessions_page(
         return await _build_codex_projects_page(page=0, note=t("sessions.unknown_action"))
 
     start, sessions = _session_page_slice(project, page)
-    lines = [f"**{project.label}**", f"`{project.working_dir}`"]
+    project_page = project_index // _PROJECTS_PER_PAGE
+    lines = [
+        f"**{project.label}**",
+        f"`{_clip_text(project.working_dir, _PROJECT_PATH_LIMIT)}`",
+        f"{_codex_session_mix(project)} | D=Ductor T=Task A=Agent",
+    ]
     rows: list[list[Button]] = [
         [
             Button(
@@ -548,31 +656,44 @@ async def _build_codex_sessions_page(
             )
         ]
     ]
+    visible_session_indexes: set[int] = set()
     for offset, session in enumerate(sessions):
         session_index = start + offset
-        meta_bits = [_format_updated_age(session.updated_ts)]
-        if session.model:
-            meta_bits.insert(0, session.model)
-        lines.append(
-            f"  {session_index + 1}. {session.thread_name}"
-            f" | {' | '.join(meta_bits)}"
-        )
-        if session.first_prompt:
-            lines.append(f"     {t('sessions.codex_first_prompt_label')} _{session.first_prompt[:120]}_")
-        if session.preview and session.preview != session.first_prompt:
-            lines.append(f"     {t('sessions.codex_latest_prompt_label')} _{session.preview[:120]}_")
-        if session.last_output_summary:
-            lines.append(
-                f"     {t('sessions.codex_output_summary_label')} _{session.last_output_summary[:120]}_"
-            )
+        visible_session_indexes.add(session_index)
+        label = str(session_index + 1)
+        lines.extend(_codex_session_entry_lines(session, label=label))
         rows.append(
             [
-                Button(
-                    text=f"{session_index + 1}. {session.thread_name[:22]}",
-                    callback_data=f"nsc:cxd:{project_index}:{session_index}:{project_index // _PROJECTS_PER_PAGE}:{page}",
+                _codex_session_entry_button(
+                    session,
+                    label=label,
+                    callback_data=(
+                        f"nsc:cxd:{project_index}:{session_index}:{project_page}:{page}"
+                    ),
                 )
             ]
         )
+
+
+    if page == 0:
+        recent_tasks = _recent_background_task_entries(project, visible_session_indexes)
+        if recent_tasks:
+            lines.append("")
+            lines.append("Recent background tasks:")
+            for task_number, (session_index, session) in enumerate(recent_tasks, 1):
+                label = f"Task {task_number}"
+                lines.extend(_codex_session_entry_lines(session, label=label))
+                rows.append(
+                    [
+                        _codex_session_entry_button(
+                            session,
+                            label=label,
+                            callback_data=(
+                                f"nsc:cxd:{project_index}:{session_index}:{project_page}:{page}"
+                            ),
+                        )
+                    ]
+                )
 
     footer_lines = [
         t(
@@ -588,6 +709,10 @@ async def _build_codex_sessions_page(
         Button(
             text=t("sessions.btn_back"),
             callback_data=f"nsc:cxp:{project_index // _PROJECTS_PER_PAGE}",
+        ),
+        Button(
+            text=t("sessions.btn_refresh"),
+            callback_data=f"nsc:cxs:{project_index}:{page}",
         )
     ]
     if page > 0:
@@ -651,9 +776,10 @@ async def _build_codex_detail_page(
     if selected is None:
         return await _build_codex_projects_page(page=0, note=t("sessions.unknown_action"))
     project, session = selected
+    session_title = _codex_session_title(session)
 
     lines = [
-        session.thread_name,
+        session_title,
         f"{t('sessions.codex_project_label')} `{project.working_dir}`",
         (
             f"{t('sessions.codex_updated_label')} {_format_updated_age(session.updated_ts)}"
@@ -663,7 +789,10 @@ async def _build_codex_detail_page(
     if session.model:
         lines.append(f"{t('sessions.codex_model_label')} `{session.model}`")
     if session.first_prompt:
-        lines.append(f"{t('sessions.codex_first_prompt_label')} {session.first_prompt}")
+        prompt_label = (
+            "Worker instruction:" if session.is_ductor_task else t("sessions.codex_first_prompt_label")
+        )
+        lines.append(f"{prompt_label} {session.first_prompt}")
     if session.preview and session.preview != session.first_prompt:
         lines.append(f"{t('sessions.codex_latest_prompt_label')} {session.preview}")
     if session.last_output_summary:
@@ -672,6 +801,8 @@ async def _build_codex_detail_page(
         lines.append(f"{t('sessions.codex_source_label')} `{session.source}`")
     if session.cli_version:
         lines.append(f"{t('sessions.codex_cli_label')} `{session.cli_version}`")
+    if session.launch_dir:
+        lines.append(f"{t('sessions.codex_launch_label')} `{session.launch_dir}`")
 
     if note:
         lines.append("")
@@ -723,7 +854,7 @@ async def _build_browser_desktop_resume_page(
     _project, session = selected
     command = build_codex_resume_command(session.session_id, session.working_dir)
     return SelectorResponse(
-        text=_desktop_resume_text(target=session.thread_name, command=command),
+        text=_desktop_resume_text(target=_codex_session_title(session), command=command),
         buttons=ButtonGrid(
             rows=[
                 [
@@ -753,7 +884,7 @@ async def _build_codex_confirm_page(
         text=fmt(
             t("sessions.codex_confirm_header"),
             SEP,
-            t("sessions.codex_confirm_body", thread=session.thread_name),
+            t("sessions.codex_confirm_body", thread=_codex_session_title(session)),
         ),
         buttons=ButtonGrid(
             rows=[
@@ -806,7 +937,7 @@ async def _attach_codex_import(  # noqa: PLR0913
     return await _build_root_page(
         orch,
         key,
-        note=t("sessions.codex_attach_done", thread=session.thread_name),
+        note=t("sessions.codex_attach_done", thread=_codex_session_title(session)),
     )
 
 

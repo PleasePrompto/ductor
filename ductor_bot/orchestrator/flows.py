@@ -9,6 +9,7 @@ import signal
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.stream_events import ToolUseEvent
@@ -117,6 +118,7 @@ async def _prepare_normal(
     )
     if session.session_id:
         set_log_context(session_id=session.session_id)
+    _ensure_codex_working_dir(orch, session)
     logger.info(
         "Session resolved sid=%s new=%s msgs=%d",
         session.session_id[:8] if session.session_id else "<new>",
@@ -169,6 +171,20 @@ async def _prepare_normal(
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
     return request, session
+
+
+def _ensure_codex_working_dir(orch: Orchestrator, session: SessionData) -> None:
+    """Persist a useful cwd for Ductor-created Codex sessions."""
+    if session.provider != "codex" or session.source_kind != "ductor":
+        return
+    if session.working_dir and not _is_low_value_ductor_working_dir(session.working_dir):
+        return
+    session.working_dir = str(orch.paths.workspace)
+
+
+def _is_low_value_ductor_working_dir(raw: str) -> bool:
+    path = Path(raw).expanduser()
+    return path.name == "Agents"
 
 
 async def _update_session(

@@ -91,6 +91,55 @@ def test_load_resume_targets_reads_main_and_named_sessions(tmp_path: Path) -> No
     assert latest_resume_target(paths, main_only=True).session_id == "main-session"  # type: ignore[union-attr]
 
 
+def test_load_resume_targets_falls_back_for_ductor_created_sessions(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    paths.sessions_path.write_text(
+        json.dumps(
+            {
+                "tg:1": {
+                    "transport": "tg",
+                    "chat_id": 1,
+                    "provider": "codex",
+                    "model": "gpt-5.4",
+                    "last_active": "2026-04-24T10:00:00+00:00",
+                    "provider_sessions": {
+                        "codex": {
+                            "session_id": "main-session",
+                            "working_dir": "",
+                            "source_kind": "ductor",
+                        }
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    paths.named_sessions_path.write_text(
+        json.dumps(
+            {
+                "sessions": [
+                    {
+                        "name": "pm99",
+                        "chat_id": 1,
+                        "provider": "codex",
+                        "model": "gpt-5.4",
+                        "session_id": "named-session",
+                        "working_dir": "",
+                        "source_kind": "ductor",
+                        "status": "idle",
+                        "created_at": 1.0,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    targets = load_resume_targets(paths)
+
+    assert [target.working_dir for target in targets] == [str(paths.workspace), str(paths.workspace)]
+
+
 def test_load_resume_targets_skips_unresumable_entries(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     paths.sessions_path.write_text(
