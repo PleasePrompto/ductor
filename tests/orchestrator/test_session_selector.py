@@ -153,6 +153,23 @@ async def test_root_page_shows_readable_active_target_and_switches_to_main(
     assert "Current target:** Main chat" in main.text
 
 
+async def test_selector_rename_prompts_for_next_message(
+    orch: Orchestrator,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser",
+        lambda: CodexHistoryBrowser(projects=()),
+    )
+    key = SessionKey(chat_id=1)
+    ns = orch._named_sessions.create(1, "codex", "gpt-5.4", "Prepare release notes", key=key)
+
+    response = await handle_session_callback(orch, key, f"nsc:ren:{ns.name}")
+
+    assert "Send the new title" in response.text
+    assert orch._named_sessions.pending_rename(key) == ns.name
+
+
 async def test_project_page_shows_start_fresh_button(
     orch: Orchestrator,
     monkeypatch,

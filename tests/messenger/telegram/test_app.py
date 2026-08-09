@@ -80,6 +80,8 @@ def _make_orchestrator(
     paths.ductor_home = Path("/tmp/test-ductor")
     paths.telegram_files_dir = Path("/tmp/test-workspace/telegram_files")
     orch.paths = paths
+    orch.process_registry.active_count.return_value = 0
+    orch.lock_pool.locked_count.return_value = 0
     return orch
 
 
@@ -191,7 +193,7 @@ class TestTelegramBotRun:
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message", "callback_query"])
         tg_bot._dp.start_polling = AsyncMock()
         code = await tg_bot.run()
-        bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=True)
+        bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
         tg_bot._dp.start_polling.assert_called_once_with(
             bot_instance,
             allowed_updates=["message", "callback_query"],
@@ -1255,6 +1257,32 @@ class TestWatchRestartMarker:
 
         # CancelledError is caught internally, exit code stays 0
         assert tg_bot._exit_code == 0
+
+    async def test_drain_waits_for_registered_foreground_work(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        orch = _make_orchestrator()
+        orch.process_registry.active_count.side_effect = [1, 0]
+        orch.lock_pool.locked_count.side_effect = [1, 0]
+        tg_bot._orchestrator = orch
+
+        assert await tg_bot._drain_foreground_work_for_restart() is True
+        assert orch.process_registry.active_count.call_count == 2
+
+    async def test_named_reply_routes_without_user_entering_internal_name(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        orch = _make_orchestrator()
+        named = MagicMock(status="idle")
+        orch.get_named_session.return_value = named
+        tg_bot._orchestrator = orch
+        message = _make_message()
+        reply = MagicMock()
+        reply.text = "**[redowl | codex]**\nResult"
+        reply.caption = None
+        message.reply_to_message = reply
+
+        from ductor_bot.session.key import SessionKey
+
+        assert tg_bot._named_reply_target(message, SessionKey.telegram(1)) == "redowl"
 
 
 # ---------------------------------------------------------------------------

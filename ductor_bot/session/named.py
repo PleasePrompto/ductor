@@ -177,6 +177,16 @@ def suggest_display_title(raw: str) -> str:
     return f"{title[: _MAX_DISPLAY_TITLE_LENGTH - 3].rstrip()}..."
 
 
+def validate_display_title(raw: str) -> str:
+    """Normalize a user-supplied title, rejecting unusable values."""
+    title = " ".join(raw.split())
+    if not title:
+        raise ValueError("Session title cannot be empty.")
+    if len(title) > _MAX_DISPLAY_TITLE_LENGTH:
+        raise ValueError(f"Session title must be {_MAX_DISPLAY_TITLE_LENGTH} characters or fewer.")
+    return title
+
+
 @dataclass(slots=True)
 class NamedSession:
     """State for a named background session."""
@@ -239,6 +249,7 @@ class NamedSessionRegistry:
         self._sessions: dict[tuple[int, str], NamedSession] = {}
         self._recovered_running: dict[tuple[int, str], NamedSession] = {}
         self._active_targets: dict[str, str] = {}
+        self._rename_targets: dict[str, str] = {}
         self._load()
 
     def _load(self) -> None:
@@ -252,6 +263,13 @@ class NamedSessionRegistry:
             self._active_targets = {
                 str(key): str(value)
                 for key, value in active_targets.items()
+                if isinstance(value, str) and value
+            }
+        rename_targets = raw.get("rename_targets", {})
+        if isinstance(rename_targets, dict):
+            self._rename_targets = {
+                str(key): str(value)
+                for key, value in rename_targets.items()
                 if isinstance(value, str) and value
             }
         for entry in entries:
@@ -289,7 +307,14 @@ class NamedSessionRegistry:
     def _persist(self) -> None:
         """Write all non-ended sessions to JSON."""
         entries = [asdict(ns) for ns in self._sessions.values() if ns.status != "ended"]
-        atomic_json_save(self._path, {"sessions": entries, "active_targets": self._active_targets})
+        atomic_json_save(
+            self._path,
+            {
+                "sessions": entries,
+                "active_targets": self._active_targets,
+                "rename_targets": self._rename_targets,
+            },
+        )
 
     def create(  # noqa: PLR0913, PLR0917  -- session identity + provider/model/effort are all intrinsic
         self,
@@ -366,6 +391,7 @@ class NamedSessionRegistry:
             return False
         ns.status = "ended"
         self._clear_active_name(chat_id, name)
+        self._clear_rename_name(chat_id, name)
         self._persist()
         logger.info("Named session ended name=%s chat=%d", name, chat_id)
         return True
@@ -381,6 +407,11 @@ class NamedSessionRegistry:
             self._active_targets = {
                 storage_key: name
                 for storage_key, name in self._active_targets.items()
+                if SessionKey.parse(storage_key).chat_id != chat_id
+            }
+            self._rename_targets = {
+                storage_key: name
+                for storage_key, name in self._rename_targets.items()
                 if SessionKey.parse(storage_key).chat_id != chat_id
             }
             self._persist()
@@ -445,10 +476,56 @@ class NamedSessionRegistry:
         self._persist()
         return True
 
+    def begin_rename(self, key: SessionKey, name: str) -> bool:
+        """Make the next ordinary message rename a named session in this scope."""
+        session = self.get(key.chat_id, name)
+        if session is None or session.status == "ended":
+            return False
+        self._rename_targets[key.storage_key] = name
+        self._persist()
+        return True
+
+    def pending_rename(self, key: SessionKey) -> str | None:
+        """Return the named session awaiting a display-title reply."""
+        name = self._rename_targets.get(key.storage_key)
+        session = self.get(key.chat_id, name) if name else None
+        if session is None or session.status == "ended":
+            if name:
+                self._rename_targets.pop(key.storage_key, None)
+                self._persist()
+            return None
+        return name
+
+    def rename_display_title(self, chat_id: int, name: str, title: str) -> NamedSession:
+        """Persist a validated user-facing title without changing stable identity."""
+        session = self.get(chat_id, name)
+        if session is None or session.status == "ended":
+            raise ValueError("That session is no longer available.")
+        session.display_title = validate_display_title(title)
+        self._persist()
+        return session
+
+    def complete_rename(self, key: SessionKey, title: str) -> NamedSession | None:
+        """Apply a pending rename; invalid titles keep the pending target for retry."""
+        name = self.pending_rename(key)
+        if name is None:
+            return None
+        session = self.rename_display_title(key.chat_id, name, title)
+        self._rename_targets.pop(key.storage_key, None)
+        self._persist()
+        return session
+
     def _clear_active_name(self, chat_id: int, name: str) -> None:
         self._active_targets = {
             storage_key: target
             for storage_key, target in self._active_targets.items()
+            if target != name or SessionKey.parse(storage_key).chat_id != chat_id
+        }
+
+    def _clear_rename_name(self, chat_id: int, name: str) -> None:
+        self._rename_targets = {
+            storage_key: target
+            for storage_key, target in self._rename_targets.items()
             if target != name or SessionKey.parse(storage_key).chat_id != chat_id
         }
 

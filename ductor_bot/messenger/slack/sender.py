@@ -36,8 +36,8 @@ async def send_rich(
 ) -> str | None:
     """Send a Slack message, splitting long text and uploading tagged files."""
     opts = opts or SlackSendOpts()
-    files = _FILE_TAG_RE.findall(text)
-    cleaned = _FILE_TAG_RE.sub("", text).strip()
+    files = _FILE_TAG_RE.findall(text) if opts.parse_file_tags else []
+    cleaned = _FILE_TAG_RE.sub("", text).strip() if opts.parse_file_tags else text.strip()
     last_ts: str | None = None
 
     for chunk in _split_text(cleaned):

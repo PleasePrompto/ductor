@@ -72,6 +72,16 @@ async def handle_session_callback(  # noqa: C901, PLR0911, PLR0912, PLR0915
             return await _build_root_page(orch, key, note=f"Now using: {title}")
         return await _build_root_page(orch, key, note="That session is no longer available.")
 
+    if action.startswith("ren:"):
+        name = action[4:]
+        if orch._named_sessions.begin_rename(key, name):
+            session = orch.get_named_session(key.chat_id, name)
+            title = _named_title(session) if session is not None else name
+            return await _build_root_page(
+                orch, key, note=f"Send the new title for {title} as your next message."
+            )
+        return await _build_root_page(orch, key, note="That session is no longer available.")
+
     if action == "endall":
         count = orch._named_sessions.end_all(key.chat_id)
         note = t("sessions.ended_all_one", count=count) if count else t("sessions.ended_all_none")
@@ -267,6 +277,7 @@ def _named_session_buttons(ns: NamedSession) -> list[Button]:
     title = _named_title(ns)
     buttons = [
         Button(text=f"Switch: {title[:36]}", callback_data=f"nsc:sw:{ns.name}"),
+        Button(text="Rename", callback_data=f"nsc:ren:{ns.name}"),
         Button(text=t("sessions.btn_end", name=title[:36]), callback_data=f"nsc:end:{ns.name}"),
     ]
     if ns.provider == "codex" and ns.session_id:

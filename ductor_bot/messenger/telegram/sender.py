@@ -198,8 +198,8 @@ async def send_rich(
     the return value.
     """
     o = opts or SendRichOpts()
-    file_paths = FILE_PATH_RE.findall(text)
-    clean_text = FILE_PATH_RE.sub("", text).strip()
+    file_paths = FILE_PATH_RE.findall(text) if o.parse_file_tags else []
+    clean_text = FILE_PATH_RE.sub("", text).strip() if o.parse_file_tags else text.strip()
     logger.debug("Sending rich text chars=%d files=%d", len(clean_text), len(file_paths))
 
     button_markup = o.reply_markup if o.reply_markup is not None else extract_buttons(clean_text)[1]

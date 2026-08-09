@@ -12,3 +12,4 @@ class BaseSendOpts:
     """Shared send options across all transports."""
 
     allowed_roots: Sequence[Path] | None = None
+    parse_file_tags: bool = True

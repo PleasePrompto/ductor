@@ -256,6 +256,19 @@ def from_interagent_result(
 # -- Task results & questions --------------------------------------------------
 
 
+_MAX_TASK_INJECTION_CHARS = 48_000
+
+
+def _bounded_task_diagnostic(text: str) -> str:
+    """Keep task-result injection below subprocess argument-size limits."""
+    if len(text) <= _MAX_TASK_INJECTION_CHARS:
+        return text
+    head = text[: _MAX_TASK_INJECTION_CHARS // 2]
+    tail = text[-(_MAX_TASK_INJECTION_CHARS // 2) :]
+    omitted = len(text) - len(head) - len(tail)
+    return f"{head}\n\n[... {omitted} characters omitted for safe delivery ...]\n\n{tail}"
+
+
 def from_task_result(result: TaskResult) -> Envelope:
     """Convert a background task result.
 
@@ -296,7 +309,7 @@ def _build_task_injection_prompt(result: TaskResult) -> str:
     if result.status in ("failed", "timeout"):
         return (
             f"[BACKGROUND TASK FAILED: task_id='{task_id}' name='{result.name}']\n"
-            f"Error: {result.error}\n"
+            f"Error: {_bounded_task_diagnostic(result.error)}\n"
             f"Provider: {result.provider}/{result.model} | "
             f"Duration: {result.elapsed_seconds:.0f}s\n\n"
             f"Original task: {result.original_prompt}\n\n"
@@ -307,7 +320,7 @@ def _build_task_injection_prompt(result: TaskResult) -> str:
         f"[BACKGROUND TASK COMPLETED: task_id='{task_id}' name='{result.name}']\n"
         f"Provider: {result.provider}/{result.model} | "
         f"Duration: {result.elapsed_seconds:.0f}s\n\n"
-        f"{result.result_text}\n\n"
+        f"{_bounded_task_diagnostic(result.result_text)}\n\n"
         f"[END TASK RESULT]\n\n"
         f"Original task: {result.original_prompt}\n\n"
         f"Review this result critically:\n"

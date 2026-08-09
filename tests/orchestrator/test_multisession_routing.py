@@ -33,3 +33,15 @@ async def test_free_text_sessions_opens_selector(orch, monkeypatch) -> None:
     result = await orch.handle_message(SessionKey.telegram(1), "sessions")
 
     assert result.text == "selector"
+
+
+async def test_pending_rename_consumes_next_message_without_running_a_turn(orch, monkeypatch) -> None:
+    key = SessionKey.telegram(1)
+    ns = orch._named_sessions.create(1, "codex", "gpt-5.4", "Original", key=key)
+    assert orch._named_sessions.begin_rename(key, ns.name)
+    monkeypatch.setattr(orch, "_ensure_docker", AsyncMock())
+
+    result = await orch.handle_message(key, "Release checklist")
+
+    assert result.text == "Renamed session to: Release checklist"
+    assert orch.get_named_session(1, ns.name).display_title == "Release checklist"  # type: ignore[union-attr]

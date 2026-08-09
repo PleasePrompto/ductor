@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,21 +24,18 @@ from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.i18n import t
-from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
+from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker, write_restart_marker
 from ductor_bot.infra.updater import UpdateObserver
 from ductor_bot.infra.version import VersionInfo, get_current_version
 from ductor_bot.log_context import set_log_context
 from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.messenger.telegram.callbacks import (
+    build_button_followup_prompt,
     edit_selector_response,
     mark_button_choice,
     parse_ns_callback,
 )
 from ductor_bot.messenger.telegram.chat_tracker import ChatRecord, ChatTracker
-from ductor_bot.messenger.telegram.callbacks import (
-    build_button_followup_prompt,
-    parse_ns_callback,
-)
 from ductor_bot.messenger.telegram.file_browser import (
     file_browser_start,
     handle_file_browser_callback,
@@ -104,6 +102,9 @@ logger = logging.getLogger(__name__)
 
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "ductor_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
+_RESTART_DRAIN_TIMEOUT_SECONDS = 45.0
+_RESTART_DRAIN_POLL_SECONDS = 0.25
+_NAMED_RESULT_TAG = re.compile(r"^\*\*\[([a-z0-9]+) \| [^\]]+\]\*\*", re.IGNORECASE)
 
 # Backward-compatible patch points used by tests.
 TypingContext = _TypingContext
@@ -1324,8 +1325,6 @@ class TelegramBot:
 
         async with self._sequential.get_lock(key.lock_key):
             if self._config.streaming.enabled:
-                from ductor_bot.orchestrator.flows import named_session_streaming
-
                 task_id = self._orch.submit_named_followup_bg(
                     key.chat_id, session_name, prompt, msg.message_id, thread_id
                 )
@@ -1405,6 +1404,10 @@ class TelegramBot:
 
         key = get_session_key(message)
         thread_id = get_thread_id(message)
+        if name := self._named_reply_target(message, key):
+            # Keep the stable name internal: a direct reply is turned into the
+            # existing named-session directive before it reaches the router.
+            text = f"@{name} {text}"
         logger.debug("Message text=%s", text[:80])
 
         # #63: status_reaction (stage-based) wins over seen_reaction (one-shot).
@@ -1416,6 +1419,19 @@ class TelegramBot:
             await self._handle_streaming(message, key, text, thread_id=thread_id)
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
+
+    def _named_reply_target(self, message: Message, key: SessionKey) -> str | None:
+        """Resolve a reply to one of our named-session result headers."""
+        replied = getattr(message, "reply_to_message", None)
+        if replied is None:
+            return None
+        source_text = getattr(replied, "text", None) or getattr(replied, "caption", None) or ""
+        match = _NAMED_RESULT_TAG.match(source_text)
+        if match is None:
+            return None
+        name = match.group(1)
+        session = self._orch.get_named_session(key.chat_id, name)
+        return name if session is not None and session.status != "ended" else None
 
     async def _set_seen_reaction(self, message: Message) -> None:
         """Set a seen reaction on the user message. Graceful degradation on failure."""
@@ -1653,24 +1669,59 @@ class TelegramBot:
             while True:
                 await asyncio.sleep(2.0)
                 if await asyncio.to_thread(consume_restart_marker, marker_path=marker):
-                    logger.info("Restart marker detected, stopping polling")
+                    drained = await self._drain_foreground_work_for_restart()
+                    if not drained:
+                        logger.warning(
+                            "Restart drain timed out; leaving polling active so in-flight work is not lost"
+                        )
+                        await asyncio.to_thread(write_restart_marker, marker_path=marker)
+                        continue
+                    logger.info("Restart marker detected; foreground work drained, stopping polling")
                     self._exit_code = EXIT_RESTART
                     await self._dp.stop_polling()
+                    # A handler can have started in the narrow interval after
+                    # the first zero-work observation. Polling is now stopped,
+                    # so this second drain closes that race without accepting
+                    # or dropping further Telegram updates.
+                    await self._drain_foreground_work_for_restart()
         except asyncio.CancelledError:
             logger.debug("Restart watcher cancelled")
+
+    async def _drain_foreground_work_for_restart(self) -> bool:
+        """Wait briefly for registered foreground/named turns to finish safely.
+
+        Polling stays live while locks or CLI processes are active, so their
+        completion and result delivery are not cut off.  Background jobs are
+        intentionally not included: their observer owns separate lifecycle
+        and they are not foreground Telegram turns.
+        """
+        deadline = asyncio.get_running_loop().time() + _RESTART_DRAIN_TIMEOUT_SECONDS
+        last_reported: tuple[int, int] | None = None
+        while True:
+            processes = self._orch.process_registry.active_count()
+            lock_pool = self._orch.lock_pool
+            locks = lock_pool.locked_count() if lock_pool is not None else 0
+            if not processes and not locks:
+                return True
+            state = (processes, locks)
+            if state != last_reported:
+                logger.info(
+                    "Restart waiting for foreground work: %d process(es), %d dispatch lock(s)",
+                    processes,
+                    locks,
+                )
+                last_reported = state
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(_RESTART_DRAIN_POLL_SECONDS)
 
     async def run(self) -> int:
         """Start polling. Returns exit code (0 = normal, 42 = restart)."""
         logger.info("Starting Telegram bot (aiogram, long-polling)...")
-        await self._bot.delete_webhook(drop_pending_updates=True)
-        # Flush any lingering polling session from a previous instance (e.g.
-        # after /agent_restart).  offset=-1 confirms all pending updates and
-        # immediately takes over the polling slot on Telegram's servers,
-        # preventing TelegramConflictError on the first real getUpdates call.
-        with contextlib.suppress(Exception):
-            from aiogram.methods import GetUpdates
-
-            await self._bot(GetUpdates(offset=-1, timeout=0))
+        # Remove a webhook if one was configured, but never acknowledge queued
+        # updates here.  A marker restart must resume polling from Telegram's
+        # retained offset, otherwise messages received during handoff vanish.
+        await self._bot.delete_webhook(drop_pending_updates=False)
         allowed_updates = self._dp.resolve_used_update_types()
         logger.info("Polling allowed_updates=%s", ",".join(allowed_updates))
         await self._dp.start_polling(

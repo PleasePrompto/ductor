@@ -153,6 +153,9 @@ class MatrixTransport:
         room_id = self._resolve_room(env)
         if not room_id:
             return
+        opts = self._opts(env)
+        if env.status in {"failed", "timeout", "cancelled"}:
+            opts.parse_file_tags = False
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
 
         note = ""
@@ -167,9 +170,9 @@ class MatrixTransport:
             note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
 
         if note:
-            await matrix_send_rich(self._bot.client, room_id, note)
+            await matrix_send_rich(self._bot.client, room_id, note, opts)
         if env.needs_injection and env.result_text:
-            await matrix_send_rich(self._bot.client, room_id, env.result_text)
+            await matrix_send_rich(self._bot.client, room_id, env.result_text, opts)
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         room_id = self._resolve_room(env)

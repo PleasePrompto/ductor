@@ -42,6 +42,10 @@ class LockPool:
         """Return True if any topic-scoped lock for *chat_id* is held."""
         return any(lock.locked() for (cid, _), lock in self._locks.items() if cid == chat_id)
 
+    def locked_count(self) -> int:
+        """Return active dispatch locks across all chat/topic scopes."""
+        return sum(lock.locked() for lock in self._locks.values())
+
     def __len__(self) -> int:
         return len(self._locks)
 

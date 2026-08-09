@@ -175,6 +175,14 @@ class ProcessRegistry:
             return any(e.process.returncode is None and e.topic_id == topic_id for e in entries)
         return any(e.process.returncode is None for e in entries)
 
+    def active_count(self) -> int:
+        """Return the number of live registered subprocesses across all chats."""
+        return sum(
+            entry.process.returncode is None
+            for entries in self._processes.values()
+            for entry in entries
+        )
+
     async def kill_by_label(self, chat_id: int, label: str) -> int:
         """Kill processes matching *label* for *chat_id*. Returns count killed."""
         async with self._kill_lock:

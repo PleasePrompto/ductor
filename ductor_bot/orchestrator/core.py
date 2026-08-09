@@ -280,6 +280,11 @@ class Orchestrator:
         return self._process_registry
 
     @property
+    def lock_pool(self) -> LockPool | None:
+        """Shared dispatch lock pool, when the transport has initialized it."""
+        return self._lock_pool
+
+    @property
     def bg_observer(self) -> BackgroundObserver | None:
         """Public access to the background observer."""
         return self._observers.background
@@ -394,6 +399,15 @@ class Orchestrator:
 
         if dispatch.cmd in {"session", "sessions"}:
             return await cmd_sessions(self, dispatch.key, dispatch.text)
+
+        pending_rename = self._named_sessions.pending_rename(dispatch.key)
+        if pending_rename is not None:
+            try:
+                session = self._named_sessions.complete_rename(dispatch.key, dispatch.text)
+            except ValueError as exc:
+                return OrchestratorResult(text=f"Rename not saved: {exc}")
+            assert session is not None
+            return OrchestratorResult(text=f"Renamed session to: {session.display_title}")
 
         await self._ensure_docker()
 

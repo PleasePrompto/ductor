@@ -284,6 +284,16 @@ def test_from_task_result_failed() -> None:
     assert "crash" in env.prompt
 
 
+def test_task_result_injection_is_bounded_for_subprocess_safety() -> None:
+    huge = "A" * 60_000 + "END"
+    env = from_task_result(_FakeTaskResult(result_text=huge))
+
+    assert len(env.prompt) < 55_000
+    assert "characters omitted for safe delivery" in env.prompt
+    assert env.prompt.count("A") > 40_000
+    assert "END" in env.prompt
+
+
 def test_from_task_result_cancelled() -> None:
     env = from_task_result(_FakeTaskResult(status="cancelled"))
     assert env.lock_mode == LockMode.NONE

@@ -56,6 +56,19 @@ class TestSendRich:
         bot.send_message.assert_called_once()
         bot.send_document.assert_called_once()
 
+    async def test_diagnostic_file_tag_is_preserved_without_upload(self) -> None:
+        from ductor_bot.messenger.telegram.sender import SendRichOpts, send_rich
+
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+        bot.send_document = AsyncMock()
+        text = "CLI failed while reading <file:/missing/diagnostic.log>"
+
+        await send_rich(bot, 1, text, SendRichOpts(parse_file_tags=False))
+
+        assert "&lt;file:/missing/diagnostic.log&gt;" in bot.send_message.call_args.kwargs["text"]
+        bot.send_document.assert_not_called()
+
     async def test_reply_to_first_chunk(self) -> None:
         from ductor_bot.messenger.telegram.sender import SendRichOpts, send_rich
 

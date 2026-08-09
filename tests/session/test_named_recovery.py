@@ -77,6 +77,29 @@ class TestLastPrompt:
         assert updated.planner_mode is True
         assert updated.planner_waiting is False
 
+    def test_rename_round_trips_and_is_scoped_to_session_key(self, tmp_path: Path) -> None:
+        path = tmp_path / "named_sessions.json"
+        reg = NamedSessionRegistry(path)
+        key = SessionKey.telegram(1, 42)
+        ns = reg.create(1, "codex", "gpt", "original title", key=key)
+
+        assert reg.begin_rename(key, ns.name)
+        renamed = reg.complete_rename(key, "  Better   title ")
+        assert renamed is not None
+        assert renamed.display_title == "Better title"
+        assert NamedSessionRegistry(path).get(1, ns.name).display_title == "Better title"  # type: ignore[union-attr]
+
+    def test_rename_rejects_empty_or_overlong_title(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(1, "codex", "gpt", "original")
+        key = SessionKey.telegram(1)
+        assert reg.begin_rename(key, ns.name)
+        with pytest.raises(ValueError, match="cannot be empty"):
+            reg.complete_rename(key, "   ")
+        assert reg.pending_rename(key) == ns.name
+        with pytest.raises(ValueError, match="72 characters"):
+            reg.complete_rename(key, "x" * 73)
+
 
 class TestRecoveredRunning:
     def _persist_running_session(

@@ -186,6 +186,10 @@ class TelegramTransport:
     async def _deliver_task_result(self, env: Envelope) -> None:
         """Deliver task result notification + injected response."""
         opts = self._opts(env)
+        # Failure diagnostics often quote CLI text verbatim. Keep any file-tag
+        # looking text visible rather than treating it as an attachment.
+        if env.status in {"failed", "timeout", "cancelled"}:
+            opts.parse_file_tags = False
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
 
         # 1. Notification (skip "waiting" — question already shown)
