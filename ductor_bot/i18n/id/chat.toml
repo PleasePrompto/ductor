@@ -199,6 +199,20 @@ topics_header = "Topik:"
 named_header = "Bernama:"
 named_empty = "Tidak ada sesi aktif.\n  Mulai dengan `/session <prompt>`."
 
+# Search labels are present here while the older Indonesian catalog falls back
+# to English for the rest of the sessions selector.
+btn_search = "Cari"
+btn_search_project = "Cari di proyek ini"
+btn_search_again = "Cari lagi"
+btn_clear = "Hapus"
+codex_search_prompt = "Kirim istilah untuk mencari riwayat Codex Anda."
+codex_search_project_prompt = "Kirim istilah untuk mencari di proyek ini."
+codex_search_missing = "Pencarian itu sudah kedaluwarsa."
+codex_search_scope_all = "semua proyek"
+codex_search_scope_project = "proyek ini"
+codex_search_results = "Cari: `{query}` ({scope})"
+codex_search_none = "Tidak ada sesi Codex normal yang cocok."
+
 ended_all_one = "Semua {count} sesi diakhiri."
 ended_all_none = "Tidak ada sesi aktif."
 ended_one = "Sesi '{name}' diakhiri."

@@ -14,6 +14,7 @@ from ductor_bot.background import (
     BackgroundTask,
 )
 from ductor_bot.cli.process_registry import ProcessRegistry
+from ductor_bot.cli.codex_history import normalize_codex_search_query
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.cli.types import AgentRequest
@@ -131,6 +132,15 @@ class _MessageDispatch:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CodexSearchState:
+    """Ephemeral selector state, isolated by the full transport/topic key."""
+
+    query: str
+    working_dir: str | None = None
+    back_callback: str = "nsc:cxp:0"
+
+
 class Orchestrator:
     """Routes messages through command dispatch and conversation flows."""
 
@@ -149,6 +159,8 @@ class Orchestrator:
         self._providers = ProviderManager(config)
         self._sessions = SessionManager(paths.sessions_path, config)
         self._named_sessions = NamedSessionRegistry(paths.named_sessions_path)
+        self._pending_codex_search: dict[str, CodexSearchState] = {}
+        self._codex_searches: dict[str, CodexSearchState] = {}
         self._process_registry = ProcessRegistry()
         self._lock_pool: LockPool | None = None
         self._cli_service = CLIService(
@@ -409,6 +421,22 @@ class Orchestrator:
             assert session is not None
             return OrchestratorResult(text=f"Renamed session to: {session.display_title}")
 
+        pending_search = self._pending_codex_search.pop(dispatch.key.storage_key, None)
+        if pending_search is not None:
+            query = normalize_codex_search_query(dispatch.text)
+            if not query:
+                self._pending_codex_search[dispatch.key.storage_key] = pending_search
+                return OrchestratorResult(text="Search terms cannot be empty.")
+            self._codex_searches[dispatch.key.storage_key] = CodexSearchState(
+                query=query,
+                working_dir=pending_search.working_dir,
+                back_callback=pending_search.back_callback,
+            )
+            from ductor_bot.orchestrator.selectors.session_selector import codex_search_page
+
+            response = await codex_search_page(self, dispatch.key, page=0)
+            return OrchestratorResult(text=response.text, buttons=response.buttons)
+
         await self._ensure_docker()
 
         # _known_model_ids only covers Claude + Gemini IDs (refreshed on Gemini
@@ -449,6 +477,16 @@ class Orchestrator:
                 )
             return await named_session_flow(self, dispatch.key, active_target, dispatch.text)
 
+        search_prefix = "search codex "
+        if dispatch.text.casefold().startswith(search_prefix):
+            query = normalize_codex_search_query(dispatch.text[len(search_prefix) :])
+            if query:
+                self._codex_searches[dispatch.key.storage_key] = CodexSearchState(query=query)
+                from ductor_bot.orchestrator.selectors.session_selector import codex_search_page
+
+                response = await codex_search_page(self, dispatch.key, page=0)
+                return OrchestratorResult(text=response.text, buttons=response.buttons)
+
         if directives.is_directive_only and directives.has_model:
             return OrchestratorResult(
                 text=f"Next message will use: {directives.model}\n"
@@ -472,6 +510,25 @@ class Orchestrator:
             prompt_text,
             model_override=directives.model,
         )
+
+    def begin_codex_search(
+        self,
+        key: SessionKey,
+        *,
+        working_dir: str | None = None,
+        back_callback: str = "nsc:cxp:0",
+    ) -> None:
+        """Make the next ordinary message a scoped Codex history query."""
+        self._pending_codex_search[key.storage_key] = CodexSearchState(
+            query="", working_dir=working_dir, back_callback=back_callback
+        )
+
+    def codex_search_state(self, key: SessionKey) -> CodexSearchState | None:
+        return self._codex_searches.get(key.storage_key)
+
+    def clear_codex_search(self, key: SessionKey) -> CodexSearchState | None:
+        self._pending_codex_search.pop(key.storage_key, None)
+        return self._codex_searches.pop(key.storage_key, None)
 
     def _register_commands(self) -> None:
         reg = self._command_registry

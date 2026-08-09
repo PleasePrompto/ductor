@@ -11,6 +11,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+MAX_CODEX_SEARCH_QUERY_LENGTH = 240
+MAX_CODEX_SEARCH_TOKENS = 12
+MAX_CODEX_SEARCH_RESULTS = 60
+
 
 @dataclass(frozen=True, slots=True)
 class CodexHistorySession:
@@ -54,6 +58,66 @@ class CodexHistoryBrowser:
     projects: tuple[CodexHistoryProject, ...]
     skipped_count: int = 0
     history_available: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class CodexHistorySearchResult:
+    """A ranked, user-facing Codex history match."""
+
+    project_index: int
+    session_index: int
+    project: CodexHistoryProject
+    session: CodexHistorySession
+    score: int
+
+
+def codex_search_tokens(query: str) -> tuple[str, ...]:
+    """Normalize a bounded free-text search query into case-insensitive tokens."""
+    compact = normalize_codex_search_query(query)
+    return tuple(token for token in compact.casefold().split() if token)[:MAX_CODEX_SEARCH_TOKENS]
+
+
+def normalize_codex_search_query(query: str) -> str:
+    """Compact a query before retaining it in ephemeral selector state."""
+    return " ".join(query.split())[:MAX_CODEX_SEARCH_QUERY_LENGTH]
+
+
+def search_codex_history(
+    browser: CodexHistoryBrowser,
+    query: str,
+    *,
+    working_dir: str | None = None,
+    include_ductor: bool = False,
+) -> tuple[CodexHistorySearchResult, ...]:
+    """Return bounded all-token Codex matches, ranked by useful fields then recency."""
+    tokens = codex_search_tokens(query)
+    if not tokens:
+        return ()
+    found: list[CodexHistorySearchResult] = []
+    for project_index, project in enumerate(browser.projects):
+        if working_dir is not None and project.working_dir != working_dir:
+            continue
+        for session_index, session in enumerate(project.sessions):
+            if not include_ductor and (session.is_ductor_task or session.is_subagent):
+                continue
+            fields = (
+                (100, session.thread_name),
+                (50, session.first_prompt),
+                (50, session.preview),
+                (45, session.last_output_summary),
+                (40, session.last_reply),
+                (20, session.working_dir),
+                (15, session.launch_dir),
+            )
+            haystack = " ".join(value.casefold() for _weight, value in fields if value)
+            if not all(token in haystack for token in tokens):
+                continue
+            score = sum(
+                weight for weight, value in fields if value and any(token in value.casefold() for token in tokens)
+            )
+            found.append(CodexHistorySearchResult(project_index, session_index, project, session, score))
+    found.sort(key=lambda item: (-item.score, -item.session.updated_ts, item.session.session_id))
+    return tuple(found[:MAX_CODEX_SEARCH_RESULTS])
 
 
 @dataclass(frozen=True, slots=True)

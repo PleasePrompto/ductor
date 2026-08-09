@@ -13,6 +13,7 @@ from ductor_bot.cli.codex_history import (
     CodexHistoryProject,
     CodexHistorySession,
     load_codex_history_browser,
+    search_codex_history,
 )
 from ductor_bot.i18n import t
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
@@ -33,6 +34,7 @@ _SESSIONS_PER_PAGE = 6
 _PROJECT_PATH_LIMIT = 72
 _SESSION_TITLE_LIMIT = 116
 _SESSION_SNIPPET_LIMIT = 42
+_SEARCH_RESULTS_PER_PAGE = 6
 
 
 def is_session_selector_callback(data: str) -> bool:
@@ -59,6 +61,37 @@ async def handle_session_callback(  # noqa: C901, PLR0911, PLR0912, PLR0915
 
     if action == "r":
         return await _build_root_page(orch, key)
+
+    if action == "cxq":
+        orch.begin_codex_search(key)
+        return await _build_codex_projects_page(page=0, note=t("sessions.codex_search_prompt"))
+
+    if action.startswith("cxqp:"):
+        parsed = _parse_ints(action[5:], expected=2)
+        if parsed is None:
+            return await _build_root_page(orch, key, note=t("sessions.unknown_action"))
+        project_index, page = parsed
+        browser = await _load_codex_browser()
+        project = _selected_project(browser, project_index)
+        if project is None:
+            return await _build_codex_projects_page(page=0, note=t("sessions.unknown_action"))
+        orch.begin_codex_search(
+            key,
+            working_dir=project.working_dir,
+            back_callback=f"nsc:cxs:{project_index}:{page}",
+        )
+        return await _build_codex_sessions_page(
+            project_index=project_index, page=page, note=t("sessions.codex_search_project_prompt")
+        )
+
+    if action.startswith("cxsr:"):
+        return await codex_search_page(orch, key, page=_parse_int(action[5:], default=0))
+
+    if action == "cxsc":
+        previous = orch.clear_codex_search(key)
+        if previous is not None:
+            return await _response_for_callback(orch, key, previous.back_callback)
+        return await _build_codex_projects_page(page=0)
 
     if action == "swm":
         orch.switch_named_target(key, None)
@@ -151,6 +184,19 @@ async def handle_session_callback(  # noqa: C901, PLR0911, PLR0912, PLR0915
             session_index=session_index,
             project_page=project_page,
             session_page=session_page,
+        )
+
+    if action.startswith("cxsd:"):
+        parsed = _parse_ints(action[5:], expected=5)
+        if parsed is None:
+            return await _build_root_page(orch, key, note=t("sessions.unknown_action"))
+        project_index, session_index, project_page, session_page, search_page = parsed
+        return await _build_codex_detail_page(
+            project_index=project_index,
+            session_index=session_index,
+            project_page=project_page,
+            session_page=session_page,
+            back_callback=f"nsc:cxsr:{search_page}",
         )
 
     if action.startswith("cxdc:"):
@@ -610,6 +656,7 @@ async def _build_codex_projects_page(
     nav_row = [
         Button(text=t("sessions.btn_back"), callback_data="nsc:r"),
         Button(text=t("sessions.btn_refresh"), callback_data=f"nsc:cxp:{page}"),
+        Button(text=t("sessions.btn_search"), callback_data="nsc:cxq"),
     ]
     if page > 0:
         nav_row.append(Button(text=t("sessions.btn_prev"), callback_data=f"nsc:cxp:{page - 1}"))
@@ -693,6 +740,14 @@ async def _build_codex_sessions_page(
             )
         ]
     ]
+    rows.append(
+        [
+            Button(
+                text=t("sessions.btn_search_project"),
+                callback_data=f"nsc:cxqp:{project_index}:{page}",
+            )
+        ]
+    )
     visible_session_indexes: set[int] = set()
     for offset, session in enumerate(sessions):
         session_index = start + offset
@@ -768,6 +823,60 @@ async def _build_codex_sessions_page(
     )
 
 
+async def codex_search_page(orch: Orchestrator, key: SessionKey, *, page: int) -> SelectorResponse:
+    """Render stored, scoped search state without putting the query in callbacks."""
+    state = orch.codex_search_state(key)
+    if state is None:
+        return await _build_codex_projects_page(page=0, note=t("sessions.codex_search_missing"))
+    browser = await _load_codex_browser()
+    matches = search_codex_history(browser, state.query, working_dir=state.working_dir)
+    start = max(0, page) * _SEARCH_RESULTS_PER_PAGE
+    visible = matches[start : start + _SEARCH_RESULTS_PER_PAGE]
+    scope = t("sessions.codex_search_scope_project") if state.working_dir else t("sessions.codex_search_scope_all")
+    safe_query = _clip_text(state.query, 80).replace("`", "'")
+    lines = [t("sessions.codex_search_results", query=safe_query, scope=scope)]
+    rows: list[list[Button]] = []
+    for offset, result in enumerate(visible, start=1):
+        label = str(start + offset)
+        lines.extend(_codex_session_entry_lines(result.session, label=label))
+        rows.append([
+            _codex_session_entry_button(
+                result.session,
+                label=label,
+                callback_data=(
+                    f"nsc:cxsd:{result.project_index}:{result.session_index}:"
+                    f"{result.project_index // _PROJECTS_PER_PAGE}:0:{page}"
+                ),
+            )
+        ])
+    if not visible:
+        lines.append(t("sessions.codex_search_none"))
+    total = _total_pages(len(matches), _SEARCH_RESULTS_PER_PAGE)
+    nav_row = [
+        Button(text=t("sessions.btn_back"), callback_data=state.back_callback),
+        Button(text=t("sessions.btn_refresh"), callback_data=f"nsc:cxsr:{page}"),
+        Button(text=t("sessions.btn_search_again"), callback_data="nsc:cxq"),
+        Button(text=t("sessions.btn_clear"), callback_data="nsc:cxsc"),
+    ]
+    if page > 0:
+        nav_row.append(Button(text=t("sessions.btn_prev"), callback_data=f"nsc:cxsr:{page - 1}"))
+    if start + _SEARCH_RESULTS_PER_PAGE < len(matches):
+        nav_row.append(Button(text=t("sessions.btn_next"), callback_data=f"nsc:cxsr:{page + 1}"))
+    rows.append(nav_row)
+    return SelectorResponse(
+        text=fmt(
+            t("sessions.codex_header"), SEP, "\n".join(lines), SEP,
+            t("sessions.codex_page", current=page + 1, total=total),
+        ),
+        buttons=ButtonGrid(rows=rows),
+    )
+
+
+async def _response_for_callback(orch: Orchestrator, key: SessionKey, callback_data: str) -> SelectorResponse:
+    """Use normal callback routing for the stored scope without exposing query text."""
+    return await handle_session_callback(orch, key, callback_data)
+
+
 async def _build_codex_fresh_confirm_page(
     *,
     project_index: int,
@@ -807,6 +916,7 @@ async def _build_codex_detail_page(
     project_page: int,
     session_page: int,
     note: str = "",
+    back_callback: str = "",
 ) -> SelectorResponse:
     browser = await _load_codex_browser()
     selected = _selected_session(browser, project_index, session_index)
@@ -867,7 +977,7 @@ async def _build_codex_detail_page(
         [
             Button(
                 text=t("sessions.btn_back"),
-                callback_data=f"nsc:cxs:{project_index}:{session_page}",
+                callback_data=back_callback or f"nsc:cxs:{project_index}:{session_page}",
             )
         ],
     ]

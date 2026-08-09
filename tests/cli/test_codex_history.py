@@ -9,7 +9,46 @@ from pathlib import Path
 
 import pytest
 
-from ductor_bot.cli.codex_history import load_codex_history_browser
+from ductor_bot.cli.codex_history import (
+    CodexHistoryBrowser,
+    CodexHistoryProject,
+    CodexHistorySession,
+    load_codex_history_browser,
+    search_codex_history,
+)
+
+
+def test_search_codex_history_matches_all_tokens_scores_and_hides_workers() -> None:
+    def session(name: str, *, updated: float, task: bool = False, output: str = "") -> CodexHistorySession:
+        return CodexHistorySession(
+            session_id=name,
+            thread_name=name,
+            updated_at="",
+            updated_ts=updated,
+            working_dir="/work/alpha",
+            preview="release checklist",
+            source="terminal",
+            cli_version="",
+            summary=name,
+            first_prompt="review release",
+            last_output_summary=output,
+            is_ductor_task=task,
+        )
+
+    title = session("Release review", updated=2)
+    output = session("Other", updated=3, output="review the release output")
+    worker = session("Release worker", updated=4, task=True)
+    browser = CodexHistoryBrowser(
+        projects=(
+            CodexHistoryProject("/work/alpha", "alpha", "", 4, (output, title, worker)),
+        )
+    )
+
+    results = search_codex_history(browser, "RELEASE review")
+
+    assert [item.session.session_id for item in results] == ["Release review", "Other"]
+    assert results[0].score > results[1].score
+    assert search_codex_history(browser, "release missing") == ()
 
 
 @pytest.fixture(autouse=True)

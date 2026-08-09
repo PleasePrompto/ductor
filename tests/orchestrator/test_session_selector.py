@@ -133,6 +133,39 @@ async def test_root_page_shows_browse_codex_button(
     assert "Browse Codex" in labels
 
 
+async def test_codex_search_buttons_render_scoped_results_and_keep_callbacks_short(
+    orch: Orchestrator,
+    monkeypatch,
+) -> None:
+    browser = _browser(str(orch.paths.workspace))
+    monkeypatch.setattr(
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser", lambda: browser
+    )
+    key = SessionKey.telegram(1)
+
+    prompt = await handle_session_callback(orch, key, "nsc:cxq")
+    assert "Send the terms" in prompt.text
+    orch._codex_searches[key.storage_key] = orch._pending_codex_search.pop(key.storage_key).__class__(
+        query="Imported", back_callback="nsc:cxp:0"
+    )
+    result = await handle_session_callback(orch, key, "nsc:cxsr:0")
+
+    assert "Imported thread" in result.text
+    callbacks = [button.callback_data for row in result.buttons.rows for button in row]
+    assert all("Imported" not in callback and len(callback.encode()) <= 64 for callback in callbacks)
+    assert {"Search again", "Clear"} <= {button.text for row in result.buttons.rows for button in row}
+
+    detail_callback = next(callback for callback in callbacks if callback.startswith("nsc:cxsd:"))
+    detail = await handle_session_callback(orch, key, detail_callback)
+    assert "nsc:cxsr:0" in [button.callback_data for row in detail.buttons.rows for button in row]
+
+    orch._codex_searches[key.storage_key] = orch._codex_searches[key.storage_key].__class__(
+        query="Imported `escaped`", back_callback="nsc:cxp:0"
+    )
+    escaped = await handle_session_callback(orch, key, "nsc:cxsr:0")
+    assert "`escaped`" not in escaped.text
+
+
 async def test_root_page_shows_readable_active_target_and_switches_to_main(
     orch: Orchestrator,
     monkeypatch,
