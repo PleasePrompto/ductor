@@ -9,7 +9,7 @@ from ductor_bot.cli.codex_history import (
     CodexHistoryProject,
     CodexHistorySession,
 )
-from ductor_bot.orchestrator.core import Orchestrator
+from ductor_bot.orchestrator.core import CodexSearchState, Orchestrator
 from ductor_bot.orchestrator.selectors.session_selector import (
     handle_session_callback,
     session_selector_start,
@@ -151,9 +151,14 @@ async def test_codex_search_buttons_render_scoped_results_and_keep_callbacks_sho
     result = await handle_session_callback(orch, key, "nsc:cxsr:0")
 
     assert "Imported thread" in result.text
+    assert "🔎 Codex Search" in result.text
+    assert "Query: `Imported`" in result.text
+    assert "Scope: all projects" in result.text
+    assert "Results: 1" in result.text
     callbacks = [button.callback_data for row in result.buttons.rows for button in row]
     assert all("Imported" not in callback and len(callback.encode()) <= 64 for callback in callbacks)
-    assert {"Search again", "Clear"} <= {button.text for row in result.buttons.rows for button in row}
+    labels = {button.text for row in result.buttons.rows for button in row}
+    assert {"🔎 Search again", "🧹 Clear", "Details"} <= labels
 
     detail_callback = next(callback for callback in callbacks if callback.startswith("nsc:cxsd:"))
     detail = await handle_session_callback(orch, key, detail_callback)
@@ -164,6 +169,78 @@ async def test_codex_search_buttons_render_scoped_results_and_keep_callbacks_sho
     )
     escaped = await handle_session_callback(orch, key, "nsc:cxsr:0")
     assert "`escaped`" not in escaped.text
+
+
+async def test_search_direct_use_confirms_and_returns_to_result_origin(
+    orch: Orchestrator,
+    monkeypatch,
+) -> None:
+    browser = _browser(str(orch.paths.workspace))
+    monkeypatch.setattr(
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser", lambda: browser
+    )
+    key = SessionKey.telegram(1)
+    await orch._sessions.set_provider_session_state(
+        key,
+        provider="codex",
+        model="gpt-5.4",
+        session_id="existing",
+        working_dir=str(orch.paths.workspace),
+        source_kind="ductor",
+    )
+    orch._codex_searches[key.storage_key] = CodexSearchState(
+        query="Imported", back_callback="nsc:cxp:0"
+    )
+
+    results = await handle_session_callback(orch, key, "nsc:cxsr:0")
+    direct = next(
+        button.callback_data
+        for row in results.buttons.rows
+        for button in row
+        if button.callback_data.startswith("nsc:cxsu:")
+    )
+    confirm = await handle_session_callback(orch, key, direct)
+    confirm_callbacks = [button.callback_data for row in confirm.buttons.rows for button in row]
+
+    assert "Replace Current Codex Context" in confirm.text
+    assert "nsc:cxsr:0" in confirm_callbacks
+    assert any(callback.startswith("nsc:cxsuy:") for callback in confirm_callbacks)
+    cancelled = await handle_session_callback(orch, key, next(callback for callback in confirm_callbacks if callback == "nsc:cxsr:0"))
+    assert "🔎 Codex Search" in cancelled.text
+
+    confirmed = await handle_session_callback(
+        orch,
+        key,
+        next(callback for callback in confirm_callbacks if callback.startswith("nsc:cxsuy:")),
+    )
+    assert "Attached Codex session" in confirmed.text
+    active = await orch._sessions.get_active(key)
+    assert active is not None and active.session_id == "sess-import-1"
+
+
+async def test_project_search_again_preserves_scope_and_menu_labels(
+    orch: Orchestrator,
+    monkeypatch,
+) -> None:
+    browser = _browser(str(orch.paths.workspace))
+    monkeypatch.setattr(
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser", lambda: browser
+    )
+    key = SessionKey.telegram(1)
+
+    project = await handle_session_callback(orch, key, "nsc:cxs:0:0")
+    labels = {button.text for row in project.buttons.rows for button in row}
+    assert {"🔎 Search this project", "🌐 Search all"} <= labels
+    scoped = await handle_session_callback(orch, key, "nsc:cxqp:0:0")
+    assert "this project" in scoped.text
+    orch._codex_searches[key.storage_key] = orch._pending_codex_search.pop(key.storage_key).__class__(
+        query="Imported", working_dir=str(orch.paths.workspace), back_callback="nsc:cxs:0:0"
+    )
+    again = await handle_session_callback(orch, key, "nsc:cxqa")
+
+    assert "this project" in again.text
+    pending = orch._pending_codex_search[key.storage_key]
+    assert pending.working_dir == str(orch.paths.workspace)
 
 
 async def test_root_page_shows_readable_active_target_and_switches_to_main(
