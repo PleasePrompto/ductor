@@ -80,7 +80,7 @@ def _make_orchestrator(
     paths.ductor_home = Path("/tmp/test-ductor")
     paths.telegram_files_dir = Path("/tmp/test-workspace/telegram_files")
     orch.paths = paths
-    orch.process_registry.active_count.return_value = 0
+    orch.process_registry.foreground_active_count.return_value = 0
     orch.lock_pool.locked_count.return_value = 0
     return orch
 
@@ -1261,12 +1261,12 @@ class TestWatchRestartMarker:
     async def test_drain_waits_for_registered_foreground_work(self) -> None:
         tg_bot, _ = _make_tg_bot()
         orch = _make_orchestrator()
-        orch.process_registry.active_count.side_effect = [1, 0]
+        orch.process_registry.foreground_active_count.side_effect = [1, 0]
         orch.lock_pool.locked_count.side_effect = [1, 0]
         tg_bot._orchestrator = orch
 
         assert await tg_bot._drain_foreground_work_for_restart() is True
-        assert orch.process_registry.active_count.call_count == 2
+        assert orch.process_registry.foreground_active_count.call_count == 2
 
     async def test_named_reply_routes_without_user_entering_internal_name(self) -> None:
         tg_bot, _ = _make_tg_bot()

@@ -1698,7 +1698,7 @@ class TelegramBot:
         deadline = asyncio.get_running_loop().time() + _RESTART_DRAIN_TIMEOUT_SECONDS
         last_reported: tuple[int, int] | None = None
         while True:
-            processes = self._orch.process_registry.active_count()
+            processes = self._orch.process_registry.foreground_active_count()
             lock_pool = self._orch.lock_pool
             locks = lock_pool.locked_count() if lock_pool is not None else 0
             if not processes and not locks:
