@@ -219,6 +219,8 @@ codex_search_header = "**🔎 Pencarian Codex**"
 codex_search_query = "Kueri: `{query}`"
 codex_search_scope = "Cakupan: {scope}"
 codex_search_count = "Hasil: {count}"
+codex_search_tap_hint = "Ketuk sesi untuk melampirkan dan menggunakannya."
+codex_search_attached = "Menggunakan: {name}"
 codex_search_none = "Tidak ada sesi Codex normal yang cocok."
 
 ended_all_one = "Semua {count} sesi diakhiri."

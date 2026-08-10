@@ -884,7 +884,14 @@ class Orchestrator:
         )
 
     def import_codex_named_session(
-        self, chat_id: int, *, session_id: str, working_dir: str, thread_name: str, prompt_preview: str,
+        self,
+        chat_id: int,
+        *,
+        session_id: str,
+        working_dir: str,
+        thread_name: str,
+        prompt_preview: str,
+        key: SessionKey | None = None,
     ) -> NamedSession:
         name = suggest_name(
             thread_name.strip() or prompt_preview.strip() or "codex",
@@ -893,11 +900,44 @@ class Orchestrator:
         session = NamedSession(
             name=name, chat_id=chat_id, provider="codex", model=self.codex_import_model(),
             session_id=session_id, prompt_preview=prompt_preview[:60], status="idle", created_at=time.time(),
+            transport=key.transport if key is not None else "tg",
+            topic_id=key.topic_id if key is not None else None,
             working_dir=working_dir, source_kind="codex_import",
             display_title=suggest_display_title(thread_name or prompt_preview),
         )
         self._named_sessions.add(session)
         return session
+
+    def attach_codex_named_target(
+        self,
+        key: SessionKey,
+        *,
+        session_id: str,
+        working_dir: str,
+        thread_name: str,
+        prompt_preview: str,
+    ) -> NamedSession:
+        """Reuse or attach a Codex thread, then activate it only for ``key``."""
+        existing = next(
+            (
+                session
+                for session in self.list_named_sessions(key.chat_id)
+                if session.provider == "codex"
+                and session.source_kind == "codex_import"
+                and session.session_id == session_id
+            ),
+            None,
+        )
+        attached = existing or self.import_codex_named_session(
+            key.chat_id,
+            session_id=session_id,
+            working_dir=working_dir,
+            thread_name=thread_name,
+            prompt_preview=prompt_preview,
+            key=key,
+        )
+        self.switch_named_target(key, attached.name)
+        return attached
 
     async def list_topic_sessions(self, chat_id: int) -> list[SessionData]:
         """Return fresh topic sessions for *chat_id*."""

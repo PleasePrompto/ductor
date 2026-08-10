@@ -250,20 +250,19 @@ async def handle_session_callback(  # noqa: C901, PLR0911, PLR0912, PLR0915
             require_confirm=False,
         )
 
-    if action.startswith("cxsu:"):
+    if action.startswith("cxsn:"):
         parsed = _parse_ints(action[5:], expected=5)
         if parsed is None:
             return await _build_root_page(orch, key, note=t("sessions.unknown_action"))
         project_index, session_index, project_page, session_page, search_page = parsed
-        return await _attach_codex_import(
+        return await _attach_codex_as_active_named(
             orch,
             key,
             project_index,
             session_index,
             project_page,
             session_page,
-            require_confirm=False,
-            back_callback=f"nsc:cxsr:{search_page}",
+            search_page=search_page,
         )
 
     if action.startswith("cxuy:"):
@@ -872,7 +871,13 @@ async def _build_codex_sessions_page(
     )
 
 
-async def codex_search_page(orch: Orchestrator, key: SessionKey, *, page: int) -> SelectorResponse:
+async def codex_search_page(
+    orch: Orchestrator,
+    key: SessionKey,
+    *,
+    page: int,
+    note: str = "",
+) -> SelectorResponse:
     """Render stored, scoped search state without putting the query in callbacks."""
     state = orch.codex_search_state(key)
     if state is None:
@@ -884,6 +889,7 @@ async def codex_search_page(orch: Orchestrator, key: SessionKey, *, page: int) -
     scope = t("sessions.codex_search_scope_project") if state.working_dir else t("sessions.codex_search_scope_all")
     safe_query = _clip_text(state.query, 80).replace("`", "'")
     lines = [
+        t("sessions.codex_search_tap_hint"),
         t("sessions.codex_search_query", query=safe_query),
         t("sessions.codex_search_scope", scope=scope),
         t("sessions.codex_search_count", count=len(matches)),
@@ -898,7 +904,7 @@ async def codex_search_page(orch: Orchestrator, key: SessionKey, *, page: int) -
                 Button(
                     text=f"▶ {label}. {_codex_session_title(result.session)[:20]}",
                     callback_data=(
-                        f"nsc:cxsu:{result.project_index}:{result.session_index}:{project_page}:0:{page}"
+                        f"nsc:cxsn:{result.project_index}:{result.session_index}:{project_page}:0:{page}"
                     ),
                 ),
                 Button(
@@ -911,6 +917,8 @@ async def codex_search_page(orch: Orchestrator, key: SessionKey, *, page: int) -
         )
     if not visible:
         lines.append(t("sessions.codex_search_none"))
+    if note:
+        lines.append(note)
     total = _total_pages(len(matches), _SEARCH_RESULTS_PER_PAGE)
     nav_row = [
         Button(text=t("sessions.btn_search_back"), callback_data=state.back_callback),
@@ -1172,6 +1180,46 @@ async def _attach_codex_import(  # noqa: PLR0913
         orch,
         key,
         note=t("sessions.codex_attach_done", thread=_codex_session_title(session)),
+    )
+
+
+async def _attach_codex_as_active_named(
+    orch: Orchestrator,
+    key: SessionKey,
+    project_index: int,
+    session_index: int,
+    project_page: int,
+    session_page: int,
+    *,
+    search_page: int,
+) -> SelectorResponse:
+    """Attach a search result as the next-message target without touching main context."""
+    browser = await _load_codex_browser()
+    selected = _selected_session(browser, project_index, session_index)
+    if selected is None:
+        return await _build_codex_projects_page(page=0, note=t("sessions.unknown_action"))
+    _project, session = selected
+    if orch.codex_import_uses_docker():
+        return await _build_codex_detail_page(
+            project_index=project_index,
+            session_index=session_index,
+            project_page=project_page,
+            session_page=session_page,
+            back_callback=f"nsc:cxsr:{search_page}",
+            note=t("session.import_docker_unsupported"),
+        )
+    attached = orch.attach_codex_named_target(
+        key,
+        session_id=session.session_id,
+        working_dir=session.working_dir,
+        thread_name=session.thread_name,
+        prompt_preview=session.summary,
+    )
+    return await codex_search_page(
+        orch,
+        key,
+        page=search_page,
+        note=t("sessions.codex_search_attached", name=attached.display_title or attached.name),
     )
 
 

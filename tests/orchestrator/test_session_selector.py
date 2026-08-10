@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 from ductor_bot.cli.codex_history import (
     CodexHistoryBrowser,
@@ -10,6 +11,7 @@ from ductor_bot.cli.codex_history import (
     CodexHistorySession,
 )
 from ductor_bot.orchestrator.core import CodexSearchState, Orchestrator
+from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.orchestrator.selectors.session_selector import (
     handle_session_callback,
     session_selector_start,
@@ -171,7 +173,7 @@ async def test_codex_search_buttons_render_scoped_results_and_keep_callbacks_sho
     assert "`escaped`" not in escaped.text
 
 
-async def test_search_direct_use_confirms_and_returns_to_result_origin(
+async def test_search_one_tap_attaches_activates_and_reuses_named_thread(
     orch: Orchestrator,
     monkeypatch,
 ) -> None:
@@ -197,25 +199,46 @@ async def test_search_direct_use_confirms_and_returns_to_result_origin(
         button.callback_data
         for row in results.buttons.rows
         for button in row
-        if button.callback_data.startswith("nsc:cxsu:")
+        if button.callback_data.startswith("nsc:cxsn:")
     )
-    confirm = await handle_session_callback(orch, key, direct)
-    confirm_callbacks = [button.callback_data for row in confirm.buttons.rows for button in row]
+    attached = await handle_session_callback(orch, key, direct)
 
-    assert "Replace Current Codex Context" in confirm.text
-    assert "nsc:cxsr:0" in confirm_callbacks
-    assert any(callback.startswith("nsc:cxsuy:") for callback in confirm_callbacks)
-    cancelled = await handle_session_callback(orch, key, next(callback for callback in confirm_callbacks if callback == "nsc:cxsr:0"))
-    assert "🔎 Codex Search" in cancelled.text
+    assert "Using: Imported thread" in attached.text
+    active = await orch._sessions.get_active(key)
+    assert active is not None and active.session_id == "existing"
+    selected = orch.active_named_target(key)
+    assert selected is not None and selected.session_id == "sess-import-1"
+    assert len(orch.list_named_sessions(key.chat_id)) == 1
 
-    confirmed = await handle_session_callback(
+    again = await handle_session_callback(orch, key, direct)
+    assert "Using: Imported thread" in again.text
+    assert len(orch.list_named_sessions(key.chat_id)) == 1
+
+    route = AsyncMock(return_value=OrchestratorResult(text="named reply"))
+    monkeypatch.setattr("ductor_bot.orchestrator.core.named_session_flow", route)
+    monkeypatch.setattr(orch, "_ensure_docker", AsyncMock())
+    routed = await orch.handle_message(key, "continue this thread")
+    assert routed.text == "named reply"
+    route.assert_awaited_once_with(orch, key, selected.name, "continue this thread")
+
+    other_topic = SessionKey.telegram(1, topic_id=9)
+    assert orch.active_named_target(other_topic) is None
+    await handle_session_callback(orch, other_topic, direct)
+    assert orch.active_named_target(other_topic) is not None
+    assert orch.active_named_target(key) is not None
+
+    details = await handle_session_callback(
         orch,
         key,
-        next(callback for callback in confirm_callbacks if callback.startswith("nsc:cxsuy:")),
+        next(
+            button.callback_data
+            for row in results.buttons.rows
+            for button in row
+            if button.callback_data.startswith("nsc:cxsd:")
+        ),
     )
-    assert "Attached Codex session" in confirmed.text
-    active = await orch._sessions.get_active(key)
-    assert active is not None and active.session_id == "sess-import-1"
+    detail_callbacks = [button.callback_data for row in details.buttons.rows for button in row]
+    assert "nsc:cxu:0:0:0:0" in detail_callbacks
 
 
 async def test_project_search_again_preserves_scope_and_menu_labels(
