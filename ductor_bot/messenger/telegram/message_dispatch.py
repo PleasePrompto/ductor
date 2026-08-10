@@ -37,9 +37,11 @@ logger = logging.getLogger(__name__)
 _REACTION_THINKING = "\U0001f914"  # 🤔
 _REACTION_SYSTEM = "\U0001f4af"  # 💯
 _REACTION_DEFAULT = _REACTION_THINKING
-_LIFECYCLE_THINKING = "🧠"
-_LIFECYCLE_SUCCESS = "✅"
-_LIFECYCLE_WARNING = "⚠️"
+# aiogram's ``ReactionTypeEmoji`` documents each of these in Telegram's
+# supported reaction set (not merely as arbitrary Unicode): 🤔, 🎉 and 😨.
+_LIFECYCLE_THINKING = "\U0001f914"  # 🤔
+_LIFECYCLE_SUCCESS = "\U0001f389"  # 🎉
+_LIFECYCLE_WARNING = "\U0001f628"  # 😨
 
 # Tool-name prefix (lowercase) -> emoji. First matching prefix wins.
 _REACTION_TOOL_MAP: tuple[tuple[tuple[str, ...], str], ...] = (

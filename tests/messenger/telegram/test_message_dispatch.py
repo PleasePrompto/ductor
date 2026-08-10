@@ -113,7 +113,31 @@ async def test_lifecycle_reactions_replace_with_success_or_warning() -> None:
     await tracker.set_warning()
     await tracker.clear()
 
-    assert _emitted_emojis(bot) == ["🧠", "✅", "⚠️", None]
+    assert _emitted_emojis(bot) == ["🤔", "🎉", "😨", None]
+
+
+async def test_lifecycle_system_progression_keeps_the_original_message_reaction() -> None:
+    bot = _make_bot()
+    tracker = ReactionTracker(bot, chat_id=1, message_id=42, enabled=True, lifecycle=True)
+
+    # The Telegram app has already placed 👀 on this same user message.
+    await tracker.set_system()
+    await tracker.set_success()
+
+    assert _emitted_emojis(bot) == ["🤔", "🎉"]
+    assert {call.kwargs["message_id"] for call in bot.set_message_reaction.call_args_list} == {42}
+
+
+async def test_lifecycle_api_failure_does_not_block_later_valid_stage() -> None:
+    bot = _make_bot()
+    bot.set_message_reaction.side_effect = [RuntimeError("invalid reaction"), None]
+    tracker = ReactionTracker(bot, chat_id=1, message_id=42, enabled=True, lifecycle=True)
+
+    await tracker.set_thinking()
+    await tracker.set_warning()
+
+    assert _emitted_emojis(bot) == ["🤔", "😨"]
+    assert bot.set_message_reaction.await_count == 2
 
 
 async def test_non_streaming_reacts_on_trigger_message_not_reply_to() -> None:
@@ -186,7 +210,46 @@ async def test_non_streaming_lifecycle_marks_success_after_delivery() -> None:
     with patch("ductor_bot.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock, return_value=True):
         await run_non_streaming_message(dispatch)
 
-    assert _emitted_emojis(bot) == ["🧠", "✅"]
+    assert _emitted_emojis(bot) == ["🤔", "🎉"]
+
+
+async def test_streaming_lifecycle_marks_warning_when_fallback_delivery_has_no_content() -> None:
+    from ductor_bot.config import StreamingConfig
+
+    bot = _make_bot()
+    message = MagicMock(message_id=55)
+    editor = MagicMock(has_content=False)
+    editor.append_text = AsyncMock()
+    editor.append_tool = AsyncMock()
+    editor.append_system = AsyncMock()
+    editor.finalize = AsyncMock()
+    orch = MagicMock()
+    orch.handle_message_streaming = AsyncMock(return_value=OrchestratorResult(text="fallback"))
+    scene = MagicMock(status_reaction=False, seen_reaction=True, technical_footer=False)
+    dispatch = StreamingDispatch(
+        bot=bot,
+        orchestrator=orch,
+        message=message,
+        key=SessionKey(chat_id=1),
+        text="hello",
+        streaming_cfg=StreamingConfig(),
+        allowed_roots=None,
+        scene_config=scene,
+    )
+    with (
+        patch("ductor_bot.messenger.telegram.message_dispatch.create_stream_editor", return_value=editor),
+        patch(
+            "ductor_bot.messenger.telegram.message_dispatch.send_rich",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        patch("ductor_bot.messenger.telegram.message_dispatch.TypingContext") as typing_ctx,
+    ):
+        typing_ctx.return_value.__aenter__ = AsyncMock()
+        typing_ctx.return_value.__aexit__ = AsyncMock()
+        await run_streaming_message(dispatch)
+
+    assert _emitted_emojis(bot) == ["🤔", "😨"]
 
 
 if __name__ == "__main__":  # pragma: no cover
