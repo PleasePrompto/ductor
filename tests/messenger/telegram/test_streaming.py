@@ -91,7 +91,7 @@ class TestStreamEditor:
         bot.send_message.assert_called_once()
         call_text = bot.send_message.call_args.kwargs["text"]
         # Tool names are normalized for display (shared with matrix/api since #114).
-        assert "[TOOL: Search]" in call_text
+        assert "Using search" in call_text
 
     async def test_empty_text_not_sent(self) -> None:
         from ductor_bot.messenger.telegram.streaming import StreamEditor

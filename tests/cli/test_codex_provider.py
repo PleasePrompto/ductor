@@ -280,7 +280,10 @@ class TestBuildCommand:
             assert cmd[idx + 1] == f"model_reasoning_effort={effort}"
         else:
             assert "-c" not in cmd
-        assert cmd[-2:] == ["session-123", "continue"]
+        # Resume prompts are piped on stdin; keeping them out of argv avoids
+        # command-size limits and matches normal Codex execution.
+        assert cmd[-3:] == ["--", "session-123", "-"]
+        assert "continue" not in cmd
 
     def test_images_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, images=["img1.png", "img2.jpg"])

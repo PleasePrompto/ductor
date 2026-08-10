@@ -70,7 +70,12 @@ def _make_orchestrator(
         return_value=MagicMock(text=handle_message_text, buttons=None),
     )
     orch.handle_message_streaming = AsyncMock(
-        return_value=MagicMock(text=handle_streaming_text, stream_fallback=stream_fallback),
+        return_value=MagicMock(
+            text=handle_streaming_text,
+            stream_fallback=stream_fallback,
+            buttons=None,
+            is_error=False,
+        ),
     )
     orch.abort = AsyncMock(return_value=1)
     orch.shutdown = AsyncMock()

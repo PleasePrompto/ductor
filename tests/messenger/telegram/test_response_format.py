@@ -118,7 +118,8 @@ class TestActionLabels:
         assert tool_activity_summary("Write") == "editing files"
 
     def test_tool_activity_summary_falls_back_to_pretty_name(self) -> None:
-        assert tool_activity_summary("SearchTool") == "using search tool"
+        # Canonical tool aliases intentionally collapse SearchTool to Search.
+        assert tool_activity_summary("SearchTool") == "using search"
 
     def test_system_status_text_humanizes_recovering(self) -> None:
         assert system_status_text("recovering") == "Recovering session"

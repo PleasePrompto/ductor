@@ -43,6 +43,17 @@ def build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
 
     env = os.environ.copy()
 
+    # A Ductor process can itself be launched by another Ductor task. Runtime
+    # routing variables must describe this subprocess, never leak a parent
+    # task/chat into an unrelated main, named-session, or inter-agent turn.
+    for key in (
+        "DUCTOR_CHAT_ID",
+        "DUCTOR_TOPIC_ID",
+        "DUCTOR_PARENT_PROMPT",
+        "DUCTOR_TASK_ID",
+    ):
+        env.pop(key, None)
+
     # Merge user secrets (low priority — never override existing vars).
     working_dir = Path(config.working_dir)
     ductor_home = working_dir.parent if working_dir.name == "workspace" else working_dir
