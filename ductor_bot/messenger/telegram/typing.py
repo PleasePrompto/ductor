@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TYPING_INTERVAL = 4.0
+_RETRY_DELAY = 1.0
 
 
 class TypingContext:
@@ -29,14 +30,19 @@ class TypingContext:
     async def _loop(self) -> None:
         try:
             while True:
-                await self._bot.send_chat_action(
-                    chat_id=self._chat_id,
-                    action=ChatAction.TYPING,
-                    message_thread_id=self._thread_id,
-                )
+                try:
+                    await self._bot.send_chat_action(
+                        chat_id=self._chat_id,
+                        action=ChatAction.TYPING,
+                        message_thread_id=self._thread_id,
+                    )
+                except TelegramAPIError:
+                    logger.warning("Typing action failed; retrying", exc_info=True)
+                    await asyncio.sleep(_RETRY_DELAY)
+                    continue
                 await asyncio.sleep(_TYPING_INTERVAL)
-        except TelegramAPIError:
-            logger.debug("Typing loop stopped unexpectedly", exc_info=True)
+        except asyncio.CancelledError:
+            raise
 
     async def __aenter__(self) -> Self:
         self._task = asyncio.create_task(self._loop())

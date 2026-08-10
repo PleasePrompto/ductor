@@ -68,6 +68,12 @@ class MessageBus:
         self._locks = lock_pool if lock_pool is not None else LockPool()
         self._transports: list[TransportAdapter] = []
         self._injector: SessionInjector | None = None
+        self._inflight = 0
+
+    @property
+    def inflight_count(self) -> int:
+        """Envelopes admitted but not yet fully delivered."""
+        return self._inflight
 
     @property
     def lock_pool(self) -> LockPool:
@@ -96,12 +102,16 @@ class MessageBus:
             envelope.needs_injection,
         )
 
-        if envelope.lock_mode == LockMode.REQUIRED:
-            lock = self._locks.get(envelope.lock_key)
-            async with lock:
+        self._inflight += 1
+        try:
+            if envelope.lock_mode == LockMode.REQUIRED:
+                lock = self._locks.get(envelope.lock_key)
+                async with lock:
+                    await self._process(envelope)
+            else:
                 await self._process(envelope)
-        else:
-            await self._process(envelope)
+        finally:
+            self._inflight -= 1
 
     async def _process(self, envelope: Envelope) -> None:
         """Inject if needed, then deliver."""

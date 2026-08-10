@@ -1696,19 +1696,24 @@ class TelegramBot:
         and they are not foreground Telegram turns.
         """
         deadline = asyncio.get_running_loop().time() + _RESTART_DRAIN_TIMEOUT_SECONDS
-        last_reported: tuple[int, int] | None = None
+        last_reported: tuple[int, int, int, int] | None = None
         while True:
-            processes = self._orch.process_registry.foreground_active_count()
+            processes = self._orch.process_registry.active_count()
             lock_pool = self._orch.lock_pool
             locks = lock_pool.locked_count() if lock_pool is not None else 0
-            if not processes and not locks:
+            task_hub = self._orch.task_hub
+            tasks = task_hub.active_count() if task_hub is not None else 0
+            bus = self._bus.inflight_count
+            if not processes and not locks and not tasks and not bus:
                 return True
-            state = (processes, locks)
+            state = (processes, locks, tasks, bus)
             if state != last_reported:
                 logger.info(
-                    "Restart waiting for foreground work: %d process(es), %d dispatch lock(s)",
+                    "Restart waiting: %d process(es), %d dispatch lock(s), %d task(s), %d delivery(ies)",
                     processes,
                     locks,
+                    tasks,
+                    bus,
                 )
                 last_reported = state
             if asyncio.get_running_loop().time() >= deadline:

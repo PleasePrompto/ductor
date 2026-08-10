@@ -125,7 +125,6 @@ class ReactionTracker:
             return
         if emoji == self._current:
             return
-        self._current = emoji
         try:
             from aiogram.types import (
                 ReactionTypeCustomEmoji,
@@ -141,6 +140,7 @@ class ReactionTracker:
                 message_id=self._message_id,
                 reaction=payload,
             )
+            self._current = emoji
         except Exception:
             logger.debug("ReactionTracker: set_message_reaction failed", exc_info=True)
 

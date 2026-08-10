@@ -295,6 +295,13 @@ class TaskHub:
         atask.add_done_callback(lambda _: self._in_flight.pop(entry.task_id, None))
         self._in_flight[entry.task_id] = inflight
 
+    def active_count(self) -> int:
+        """Return workers still running, including result/question delivery."""
+        return sum(
+            item.asyncio_task is not None and not item.asyncio_task.done()
+            for item in self._in_flight.values()
+        )
+
     async def forward_question(self, task_id: str, question: str) -> str:
         """Forward a task agent's question to the parent. Returns immediately.
 
