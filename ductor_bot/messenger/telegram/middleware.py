@@ -21,6 +21,7 @@ from aiogram.types import (
 )
 
 from ductor_bot.bus.lock_pool import LockPool
+from ductor_bot.infra.admission import AdmissionClosed, RestartAdmissionCoordinator
 from ductor_bot.log_context import set_log_context
 from ductor_bot.messenger.telegram.abort import (
     is_abort_all_message,
@@ -149,6 +150,34 @@ class AuthMiddleware(BaseMiddleware):
             return None
 
         return await handler(event, data)
+
+
+class AdmissionMiddleware(BaseMiddleware):
+    """Acquire a root lease before Telegram dispatch begins.
+
+    The marker watcher closes this gate before stopping polling.  Thus every
+    update already handed to aiogram is either admitted for its whole handler
+    lifecycle or remains upstream for the next poller; no counter sample is
+    used to decide whether it is safe to exit.
+    """
+
+    def __init__(self, admission: RestartAdmissionCoordinator) -> None:
+        self._admission = admission
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        try:
+            async with self._admission.lease("telegram-update"):
+                return await handler(event, data)
+        except AdmissionClosed:
+            # Polling has been stopped as part of the same handover.  This
+            # update must not mutate a session in the closing generation.
+            logger.info("Telegram update deferred because restart admission is closed")
+            return None
 
 
 @dataclass(slots=True)

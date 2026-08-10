@@ -8,6 +8,7 @@ from typing import Protocol, runtime_checkable
 
 from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode
 from ductor_bot.bus.lock_pool import LockPool
+from ductor_bot.infra.admission import RestartAdmissionCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +65,26 @@ class MessageBus:
         await bus.submit(from_cron_result(title, text, status))
     """
 
-    def __init__(self, lock_pool: LockPool | None = None) -> None:
+    def __init__(
+        self,
+        lock_pool: LockPool | None = None,
+        *,
+        admission: RestartAdmissionCoordinator | None = None,
+    ) -> None:
         self._locks = lock_pool if lock_pool is not None else LockPool()
         self._transports: list[TransportAdapter] = []
         self._injector: SessionInjector | None = None
         self._inflight = 0
+        self._admission = admission or RestartAdmissionCoordinator()
+
+    def set_admission(self, admission: RestartAdmissionCoordinator) -> None:
+        """Use the process-wide coordinator owned by the orchestrator."""
+        self._admission = admission
+
+    @property
+    def admission(self) -> RestartAdmissionCoordinator:
+        """Shared generation coordinator (used by transport ingress)."""
+        return self._admission
 
     @property
     def inflight_count(self) -> int:
@@ -102,16 +118,17 @@ class MessageBus:
             envelope.needs_injection,
         )
 
-        self._inflight += 1
-        try:
-            if envelope.lock_mode == LockMode.REQUIRED:
-                lock = self._locks.get(envelope.lock_key)
-                async with lock:
+        async with self._admission.lease("message-bus"):
+            self._inflight += 1
+            try:
+                if envelope.lock_mode == LockMode.REQUIRED:
+                    lock = self._locks.get(envelope.lock_key)
+                    async with lock:
+                        await self._process(envelope)
+                else:
                     await self._process(envelope)
-            else:
-                await self._process(envelope)
-        finally:
-            self._inflight -= 1
+            finally:
+                self._inflight -= 1
 
     async def _process(self, envelope: Envelope) -> None:
         """Inject if needed, then deliver."""

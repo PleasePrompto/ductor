@@ -141,6 +141,18 @@ async def test_lifecycle_api_failure_does_not_block_later_valid_stage() -> None:
     assert bot.set_message_reaction.await_count == 2
 
 
+async def test_reaction_retries_identical_stage_after_failure() -> None:
+    bot = _make_bot()
+    bot.set_message_reaction.side_effect = [RuntimeError("temporary"), None]
+    tracker = ReactionTracker(bot, chat_id=1, message_id=42, enabled=True)
+
+    await tracker.set_thinking()
+    await tracker.set_thinking()
+
+    assert _emitted_emojis(bot) == [_REACTION_THINKING, _REACTION_THINKING]
+    assert tracker._current == _REACTION_THINKING
+
+
 async def test_non_streaming_reacts_on_trigger_message_not_reply_to() -> None:
     """MED #10: reaction anchors on the user's current trigger, not reply_to.
 

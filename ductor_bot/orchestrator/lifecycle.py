@@ -192,11 +192,12 @@ async def ensure_docker(orch: Orchestrator) -> None:
         orch._cli_service.update_docker_container("")
 
 
-async def shutdown(orch: Orchestrator) -> None:
+async def shutdown(orch: Orchestrator, *, emergency: bool = True) -> None:
     """Cleanup on bot shutdown."""
-    killed = await orch._process_registry.kill_all_active()
-    if killed:
-        logger.info("Shutdown terminated %d active CLI process(es)", killed)
+    if emergency:
+        killed = await orch._process_registry.kill_all_active()
+        if killed:
+            logger.info("Emergency shutdown terminated %d active CLI process(es)", killed)
     if orch._api_stop is not None:
         await orch._api_stop()
     await asyncio.to_thread(cleanup_ductor_links, orch._paths)

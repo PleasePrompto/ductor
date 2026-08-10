@@ -15,7 +15,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TYPING_INTERVAL = 4.0
-_RETRY_DELAY = 1.0
+_RETRY_BASE_SECONDS = 0.25
+_RETRY_MAX_SECONDS = 8.0
+_LOG_EVERY_FAILURES = 4
 
 
 class TypingContext:
@@ -28,6 +30,7 @@ class TypingContext:
         self._task: asyncio.Task[None] | None = None
 
     async def _loop(self) -> None:
+        failures = 0
         try:
             while True:
                 try:
@@ -36,10 +39,18 @@ class TypingContext:
                         action=ChatAction.TYPING,
                         message_thread_id=self._thread_id,
                     )
-                except TelegramAPIError:
-                    logger.warning("Typing action failed; retrying", exc_info=True)
-                    await asyncio.sleep(_RETRY_DELAY)
+                except (TelegramAPIError, OSError) as exc:
+                    failures += 1
+                    if failures == 1 or failures % _LOG_EVERY_FAILURES == 0:
+                        logger.warning(
+                            "Typing action failed (%d consecutive); retrying: %s",
+                            failures,
+                            type(exc).__name__,
+                        )
+                    delay = min(_RETRY_BASE_SECONDS * (2 ** (failures - 1)), _RETRY_MAX_SECONDS)
+                    await asyncio.sleep(delay)
                     continue
+                failures = 0
                 await asyncio.sleep(_TYPING_INTERVAL)
         except asyncio.CancelledError:
             raise

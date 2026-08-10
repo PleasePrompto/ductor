@@ -13,8 +13,8 @@ from ductor_bot.background import (
     BackgroundSubmit,
     BackgroundTask,
 )
-from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.codex_history import normalize_codex_search_query
+from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.cli.types import AgentRequest
@@ -28,6 +28,7 @@ from ductor_bot.errors import (
     WebhookError,
     WorkspaceError,
 )
+from ductor_bot.infra.admission import RestartAdmissionCoordinator
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
@@ -162,6 +163,7 @@ class Orchestrator:
         self._pending_codex_search: dict[str, CodexSearchState] = {}
         self._codex_searches: dict[str, CodexSearchState] = {}
         self._process_registry = ProcessRegistry()
+        self._admission = RestartAdmissionCoordinator()
         self._lock_pool: LockPool | None = None
         self._cli_service = CLIService(
             config=CLIServiceConfig(
@@ -292,6 +294,11 @@ class Orchestrator:
         return self._process_registry
 
     @property
+    def admission(self) -> RestartAdmissionCoordinator:
+        """Generation coordinator shared by every root work source."""
+        return self._admission
+
+    @property
     def lock_pool(self) -> LockPool | None:
         """Shared dispatch lock pool, when the transport has initialized it."""
         return self._lock_pool
@@ -313,7 +320,14 @@ class Orchestrator:
     def set_task_hub(self, hub: TaskHub) -> None:
         """Inject the task hub (called by supervisor or startup wiring)."""
         self._task_hub = hub
+        hub.set_admission(self._admission)
         hub.start_maintenance()
+
+    def set_admission(self, admission: RestartAdmissionCoordinator) -> None:
+        """Install the transport-owned coordinator before roots are accepted."""
+        self._admission = admission
+        if self._task_hub is not None:
+            self._task_hub.set_admission(admission)
 
     @classmethod
     async def create(
@@ -380,24 +394,25 @@ class Orchestrator:
         return await self._handle_message_impl(dispatch)
 
     async def _handle_message_impl(self, dispatch: _MessageDispatch) -> OrchestratorResult:
-        self._process_registry.clear_abort(dispatch.key.chat_id)
-        self._process_registry.clear_topic_abort(dispatch.key.chat_id, dispatch.key.topic_id)
-        logger.info("Message received text=%s", dispatch.cmd[:80])
+        async with self._admission.lease("orchestrator-message"):
+            self._process_registry.clear_abort(dispatch.key.chat_id)
+            self._process_registry.clear_topic_abort(dispatch.key.chat_id, dispatch.key.topic_id)
+            logger.info("Message received text=%s", dispatch.cmd[:80])
 
-        patterns = detect_suspicious_patterns(dispatch.text)
-        if patterns:
-            logger.warning("Suspicious input patterns: %s", ", ".join(patterns))
+            patterns = detect_suspicious_patterns(dispatch.text)
+            if patterns:
+                logger.warning("Suspicious input patterns: %s", ", ".join(patterns))
 
-        try:
-            return await self._route_message(dispatch)
-        except asyncio.CancelledError:
-            raise
-        except (CLIError, StreamError, SessionError, CronError, WebhookError, WorkspaceError):
-            logger.exception("Domain error in handle_message")
-            return OrchestratorResult(text="An internal error occurred. Please try again.")
-        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
-            logger.exception("Unexpected error in handle_message")
-            return OrchestratorResult(text="An internal error occurred. Please try again.")
+            try:
+                return await self._route_message(dispatch)
+            except asyncio.CancelledError:
+                raise
+            except (CLIError, StreamError, SessionError, CronError, WebhookError, WorkspaceError):
+                logger.exception("Domain error in handle_message")
+                return OrchestratorResult(text="An internal error occurred. Please try again.")
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                logger.exception("Unexpected error in handle_message")
+                return OrchestratorResult(text="An internal error occurred. Please try again.")
 
     async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:  # noqa: C901, PLR0911
         result = await self._command_registry.dispatch(
@@ -653,6 +668,7 @@ class Orchestrator:
     ) -> None:
         """Wire all observer result callbacks to the message bus."""
         self._observers.wire_to_bus(bus, wake_handler=wake_handler)
+        bus.set_admission(self._admission)
         bus.set_injector(self)
         self._lock_pool = bus.lock_pool
         # Share the bus lock pool with MemoryFlusher so silent flush / compact
@@ -1073,8 +1089,8 @@ class Orchestrator:
             self, prompt, chat_id, label, topic_id=topic_id, transport=transport
         )
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, *, emergency: bool = True) -> None:
         """Cleanup on bot shutdown."""
         from ductor_bot.orchestrator.lifecycle import shutdown
 
-        await shutdown(self)
+        await shutdown(self, emergency=emergency)

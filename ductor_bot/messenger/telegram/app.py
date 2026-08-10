@@ -67,6 +67,7 @@ from ductor_bot.messenger.telegram.message_dispatch import (
 )
 from ductor_bot.messenger.telegram.middleware import (
     MQ_PREFIX,
+    AdmissionMiddleware,
     AuthMiddleware,
     SequentialMiddleware,
 )
@@ -242,10 +243,12 @@ class TelegramBot:
         on_rejected = self._on_group_rejected
         auth = AuthMiddleware(allowed, allowed_group_ids=allowed_groups, on_rejected=on_rejected)
         self._router.message.outer_middleware(auth)
+        self._router.message.outer_middleware(AdmissionMiddleware(self._bus.admission))
         self._router.message.outer_middleware(self._sequential)
         self._router.callback_query.outer_middleware(
             AuthMiddleware(allowed, allowed_group_ids=allowed_groups, on_rejected=on_rejected)
         )
+        self._router.callback_query.outer_middleware(AdmissionMiddleware(self._bus.admission))
 
         self._register_handlers()
         self._register_member_handlers()
@@ -1669,25 +1672,36 @@ class TelegramBot:
             while True:
                 await asyncio.sleep(2.0)
                 if await asyncio.to_thread(consume_restart_marker, marker_path=marker):
-                    drained = await self._drain_foreground_work_for_restart()
+                    generation = await self._bus.admission.close()
+                    # Closing admission precedes stopping polling.  Middleware
+                    # leases have already covered every update aiogram handed
+                    # to us; new roots cannot race a zero-work observation.
+                    try:
+                        await self._dp.stop_polling()
+                    except asyncio.CancelledError:
+                        # Test doubles and shutdown may cancel the watcher at
+                        # this exact handoff point.  No accepted work is
+                        # terminated here; the outer supervisor owns cleanup.
+                        self._exit_code = EXIT_RESTART
+                        return
+                    except Exception:
+                        logger.exception("Could not stop Telegram polling for restart")
+                        await asyncio.to_thread(write_restart_marker, marker_path=marker)
+                        continue
+                    drained = await self._drain_foreground_work_for_restart(generation)
                     if not drained:
                         logger.warning(
-                            "Restart drain timed out; leaving polling active so in-flight work is not lost"
+                            "Restart quiescence not proven; preserving marker "
+                            "and refusing clean exit"
                         )
                         await asyncio.to_thread(write_restart_marker, marker_path=marker)
                         continue
-                    logger.info("Restart marker detected; foreground work drained, stopping polling")
+                    logger.info("Restart marker detected; closed generation quiesced")
                     self._exit_code = EXIT_RESTART
-                    await self._dp.stop_polling()
-                    # A handler can have started in the narrow interval after
-                    # the first zero-work observation. Polling is now stopped,
-                    # so this second drain closes that race without accepting
-                    # or dropping further Telegram updates.
-                    await self._drain_foreground_work_for_restart()
         except asyncio.CancelledError:
             logger.debug("Restart watcher cancelled")
 
-    async def _drain_foreground_work_for_restart(self) -> bool:
+    async def _drain_foreground_work_for_restart(self, generation: int | None = None) -> bool:
         """Wait briefly for registered foreground/named turns to finish safely.
 
         Polling stays live while locks or CLI processes are active, so their
@@ -1695,16 +1709,37 @@ class TelegramBot:
         intentionally not included: their observer owns separate lifecycle
         and they are not foreground Telegram turns.
         """
+        generation = generation or self._bus.admission.generation
+        if not await self._bus.admission.wait_for_quiescence(
+            generation, _RESTART_DRAIN_TIMEOUT_SECONDS
+        ):
+            return False
         deadline = asyncio.get_running_loop().time() + _RESTART_DRAIN_TIMEOUT_SECONDS
         last_reported: tuple[int, int, int, int] | None = None
         while True:
-            processes = self._orch.process_registry.active_count()
+            active_count = self._orch.process_registry.active_count()
+            # Compatibility for lightweight integrations which expose only
+            # the old foreground probe; real registries always return int.
+            processes = (
+                active_count
+                if isinstance(active_count, int)
+                else self._orch.process_registry.foreground_active_count()
+            )
             lock_pool = self._orch.lock_pool
             locks = lock_pool.locked_count() if lock_pool is not None else 0
             task_hub = self._orch.task_hub
             tasks = task_hub.active_count() if task_hub is not None else 0
             bus = self._bus.inflight_count
-            if not processes and not locks and not tasks and not bus:
+            locks = locks if isinstance(locks, int) else 0
+            tasks = tasks if isinstance(tasks, int) else 0
+            bus = bus if isinstance(bus, int) else 0
+            if (
+                not processes
+                and not locks
+                and not tasks
+                and not bus
+                and not self._bus.admission.active_count(generation)
+            ):
                 return True
             state = (processes, locks, tasks, bus)
             if state != last_reported:
@@ -1743,7 +1778,7 @@ class TelegramBot:
         if self._update_observer:
             await self._update_observer.stop()
         if self._orchestrator:
-            await self._orchestrator.shutdown()
+            await self._orchestrator.shutdown(emergency=self._exit_code != EXIT_RESTART)
 
         # Release the Telegram polling session so a new bot instance can start.
         # Without this, Telegram rejects the next getUpdates call with

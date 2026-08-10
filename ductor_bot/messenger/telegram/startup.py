@@ -86,6 +86,7 @@ async def _run_primary_startup(bot: TelegramBot) -> None:
         bot.config,
         agent_name=bot._agent_name,
     )
+    bot._orch.set_admission(bot._bus.admission)
 
     from ductor_bot.messenger.telegram.chat_tracker import ChatTracker
 
