@@ -18,6 +18,7 @@ from ductor_bot.messenger.telegram.message_dispatch import (
     run_streaming_message,
 )
 from ductor_bot.orchestrator.registry import OrchestratorResult
+from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
 from ductor_bot.session.key import SessionKey
 
 
@@ -211,6 +212,113 @@ async def test_non_streaming_lifecycle_marks_success_after_delivery() -> None:
         await run_non_streaming_message(dispatch)
 
     assert _emitted_emojis(bot) == ["🤔", "🎉"]
+
+
+async def test_non_streaming_immediate_selector_delivers_its_keyboard() -> None:
+    """Ordinary text routes must retain selector controls, not just commands."""
+    bot = _make_bot()
+    trigger = MagicMock(message_id=55)
+    orch = MagicMock()
+    orch.handle_message = AsyncMock(
+        return_value=OrchestratorResult(
+            text="search results",
+            buttons=ButtonGrid(rows=[[Button("📎 Attach & use #1", "nsc:cxsn:0:0:0:0:0")]]),
+        )
+    )
+    dispatch = NonStreamingDispatch(
+        bot=bot, orchestrator=orch, key=SessionKey(chat_id=1), text="PicoClaw",
+        allowed_roots=None, message=trigger,
+    )
+    with (
+        patch("ductor_bot.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock) as send,
+        patch("ductor_bot.messenger.telegram.message_dispatch.TypingContext") as typing_ctx,
+    ):
+        typing_ctx.return_value.__aenter__ = AsyncMock()
+        typing_ctx.return_value.__aexit__ = AsyncMock()
+        await run_non_streaming_message(dispatch)
+
+    send.assert_awaited_once()
+    markup = send.await_args.args[3].reply_markup
+    assert markup is not None
+    assert markup.inline_keyboard[0][0].callback_data == "nsc:cxsn:0:0:0:0:0"
+
+
+async def test_streaming_immediate_selector_fallback_delivers_keyboard_once() -> None:
+    """Streaming-enabled search has no deltas, so its fallback owns the keyboard."""
+    from ductor_bot.config import StreamingConfig
+
+    bot = _make_bot()
+    message = MagicMock(message_id=55)
+    editor = MagicMock(has_content=False)
+    editor.append_text = AsyncMock()
+    editor.append_tool = AsyncMock()
+    editor.append_system = AsyncMock()
+    editor.finalize = AsyncMock()
+    orch = MagicMock()
+    orch.handle_message_streaming = AsyncMock(
+        return_value=OrchestratorResult(
+            text="search results",
+            buttons=ButtonGrid(rows=[[Button("📎 Attach & use #1", "nsc:cxsn:0:0:0:0:0")]]),
+        )
+    )
+    dispatch = StreamingDispatch(
+        bot=bot, orchestrator=orch, message=message, key=SessionKey(chat_id=1), text="PicoClaw",
+        streaming_cfg=StreamingConfig(), allowed_roots=None,
+    )
+    with (
+        patch("ductor_bot.messenger.telegram.message_dispatch.create_stream_editor", return_value=editor),
+        patch("ductor_bot.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock) as send,
+        patch("ductor_bot.messenger.telegram.message_dispatch.TypingContext") as typing_ctx,
+    ):
+        typing_ctx.return_value.__aenter__ = AsyncMock()
+        typing_ctx.return_value.__aexit__ = AsyncMock()
+        await run_streaming_message(dispatch)
+
+    send.assert_awaited_once()
+    markup = send.await_args.args[3].reply_markup
+    assert markup is not None
+    assert markup.inline_keyboard[0][0].callback_data == "nsc:cxsn:0:0:0:0:0"
+
+
+async def test_streamed_provider_reply_does_not_send_selector_keyboard_or_duplicate() -> None:
+    """A real streamed reply remains editor-owned even if metadata has buttons."""
+    from ductor_bot.config import StreamingConfig
+
+    bot = _make_bot()
+    message = MagicMock(message_id=55)
+    editor = MagicMock(has_content=True)
+    editor.append_text = AsyncMock()
+    editor.append_tool = AsyncMock()
+    editor.append_system = AsyncMock()
+    editor.finalize = AsyncMock()
+    orch = MagicMock()
+
+    async def stream(*_args, **kwargs):
+        await kwargs["on_text_delta"]("provider reply")
+        return OrchestratorResult(
+            text="provider reply",
+            buttons=ButtonGrid(rows=[[Button("unexpected", "nsc:r")]]),
+        )
+
+    orch.handle_message_streaming = AsyncMock(side_effect=stream)
+    dispatch = StreamingDispatch(
+        bot=bot, orchestrator=orch, message=message, key=SessionKey(chat_id=1), text="hello",
+        streaming_cfg=StreamingConfig(min_chars=1), allowed_roots=None,
+    )
+    with (
+        patch("ductor_bot.messenger.telegram.message_dispatch.create_stream_editor", return_value=editor),
+        patch("ductor_bot.messenger.telegram.message_dispatch.send_rich", new_callable=AsyncMock) as send,
+        patch(
+            "ductor_bot.messenger.telegram.message_dispatch.send_files_from_text", new_callable=AsyncMock
+        ) as send_files,
+        patch("ductor_bot.messenger.telegram.message_dispatch.TypingContext") as typing_ctx,
+    ):
+        typing_ctx.return_value.__aenter__ = AsyncMock()
+        typing_ctx.return_value.__aexit__ = AsyncMock()
+        await run_streaming_message(dispatch)
+
+    send.assert_not_awaited()
+    send_files.assert_awaited_once()
 
 
 async def test_streaming_lifecycle_marks_warning_when_fallback_delivery_has_no_content() -> None:

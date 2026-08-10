@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.coalescer import CoalesceConfig, StreamCoalescer
+from ductor_bot.messenger.telegram.callbacks import button_grid_to_markup
 from ductor_bot.messenger.telegram.sender import (
     SendRichOpts,
     send_files_from_text,
@@ -248,6 +249,7 @@ async def run_non_streaming_message(
                 reply_to_message_id=reply_id,
                 allowed_roots=dispatch.allowed_roots,
                 thread_id=dispatch.thread_id,
+                reply_markup=button_grid_to_markup(result.buttons),
             ),
         )
         if result.is_error or not delivered:
@@ -414,6 +416,10 @@ async def run_streaming_message(  # noqa: C901, PLR0915
                     reply_to_message_id=dispatch.message.message_id,
                     allowed_roots=dispatch.allowed_roots,
                     thread_id=dispatch.thread_id,
+                    # Selector responses are immediate (no streamed deltas),
+                    # so their keyboard belongs on this fallback delivery.
+                    # Do not attach it to a streamed provider response.
+                    reply_markup=button_grid_to_markup(result.buttons),
                 ),
             )
         else:

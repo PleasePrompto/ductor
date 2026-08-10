@@ -902,13 +902,13 @@ async def codex_search_page(
         rows.append(
             [
                 Button(
-                    text=f"▶ {label}. {_codex_session_title(result.session)[:20]}",
+                    text=f"📎 Attach & use #{label}",
                     callback_data=(
                         f"nsc:cxsn:{result.project_index}:{result.session_index}:{project_page}:0:{page}"
                     ),
                 ),
                 Button(
-                    text=t("sessions.btn_details"),
+                    text=f"ℹ Details #{label}",  # noqa: RUF001 - requested Telegram label
                     callback_data=(
                         f"nsc:cxsd:{result.project_index}:{result.session_index}:{project_page}:0:{page}"
                     ),
@@ -1215,11 +1215,26 @@ async def _attach_codex_as_active_named(
         thread_name=session.thread_name,
         prompt_preview=session.summary,
     )
-    return await codex_search_page(
-        orch,
-        key,
-        page=search_page,
-        note=t("sessions.codex_search_attached", name=attached.display_title or attached.name),
+    return _build_codex_search_attached_page(
+        title=attached.display_title or attached.name,
+        search_page=search_page,
+    )
+
+
+def _build_codex_search_attached_page(*, title: str, search_page: int) -> SelectorResponse:
+    """Confirm the active named target while retaining the search state."""
+    return SelectorResponse(
+        text=(
+            f"✅ Attached and active: {title}\n"
+            "Send your next message normally—it will go to this session."
+        ),
+        buttons=ButtonGrid(
+            rows=[
+                [Button(text="↩️ Back to results", callback_data=f"nsc:cxsr:{search_page}")],
+                [Button(text="📂 Sessions", callback_data="nsc:r")],
+                [Button(text="↩️ Switch to Main", callback_data="nsc:swm")],
+            ]
+        ),
     )
 
 

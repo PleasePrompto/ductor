@@ -160,7 +160,8 @@ async def test_codex_search_buttons_render_scoped_results_and_keep_callbacks_sho
     callbacks = [button.callback_data for row in result.buttons.rows for button in row]
     assert all("Imported" not in callback and len(callback.encode()) <= 64 for callback in callbacks)
     labels = {button.text for row in result.buttons.rows for button in row}
-    assert {"🔎 Search again", "🧹 Clear", "Details"} <= labels
+    assert {"📎 Attach & use #1", "ℹ Details #1", "🔎 Search again", "🧹 Clear"} <= labels  # noqa: RUF001
+    assert not any(label.startswith("▶") for label in labels)
 
     detail_callback = next(callback for callback in callbacks if callback.startswith("nsc:cxsd:"))
     detail = await handle_session_callback(orch, key, detail_callback)
@@ -203,7 +204,11 @@ async def test_search_one_tap_attaches_activates_and_reuses_named_thread(
     )
     attached = await handle_session_callback(orch, key, direct)
 
-    assert "Using: Imported thread" in attached.text
+    assert "✅ Attached and active: Imported thread" in attached.text
+    assert "Send your next message normally—it will go to this session." in attached.text
+    attached_labels = [button.text for row in attached.buttons.rows for button in row]
+    assert {"↩️ Back to results", "📂 Sessions", "↩️ Switch to Main"} <= set(attached_labels)
+    assert "nsc:cxsr:0" in [button.callback_data for row in attached.buttons.rows for button in row]
     active = await orch._sessions.get_active(key)
     assert active is not None and active.session_id == "existing"
     selected = orch.active_named_target(key)
@@ -211,7 +216,7 @@ async def test_search_one_tap_attaches_activates_and_reuses_named_thread(
     assert len(orch.list_named_sessions(key.chat_id)) == 1
 
     again = await handle_session_callback(orch, key, direct)
-    assert "Using: Imported thread" in again.text
+    assert "✅ Attached and active: Imported thread" in again.text
     assert len(orch.list_named_sessions(key.chat_id)) == 1
 
     route = AsyncMock(return_value=OrchestratorResult(text="named reply"))
