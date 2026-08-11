@@ -141,15 +141,16 @@ async def test_codex_search_buttons_render_scoped_results_and_keep_callbacks_sho
 ) -> None:
     browser = _browser(str(orch.paths.workspace))
     monkeypatch.setattr(
-        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser", lambda: browser
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser",
+        lambda: browser,
     )
     key = SessionKey.telegram(1)
 
     prompt = await handle_session_callback(orch, key, "nsc:cxq")
     assert "Send the terms" in prompt.text
-    orch._codex_searches[key.storage_key] = orch._pending_codex_search.pop(key.storage_key).__class__(
-        query="Imported", back_callback="nsc:cxp:0"
-    )
+    orch._codex_searches[key.storage_key] = orch._pending_codex_search.pop(
+        key.storage_key
+    ).__class__(query="Imported", back_callback="nsc:cxp:0")
     result = await handle_session_callback(orch, key, "nsc:cxsr:0")
 
     assert "Imported thread" in result.text
@@ -158,7 +159,9 @@ async def test_codex_search_buttons_render_scoped_results_and_keep_callbacks_sho
     assert "Scope: all projects" in result.text
     assert "Results: 1" in result.text
     callbacks = [button.callback_data for row in result.buttons.rows for button in row]
-    assert all("Imported" not in callback and len(callback.encode()) <= 64 for callback in callbacks)
+    assert all(
+        "Imported" not in callback and len(callback.encode()) <= 64 for callback in callbacks
+    )
     labels = {button.text for row in result.buttons.rows for button in row}
     assert {"📎 Attach & use #1", "ℹ Details #1", "🔎 Search again", "🧹 Clear"} <= labels  # noqa: RUF001
     assert not any(label.startswith("▶") for label in labels)
@@ -180,7 +183,8 @@ async def test_search_one_tap_attaches_activates_and_reuses_named_thread(
 ) -> None:
     browser = _browser(str(orch.paths.workspace))
     monkeypatch.setattr(
-        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser", lambda: browser
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser",
+        lambda: browser,
     )
     key = SessionKey.telegram(1)
     await orch._sessions.set_provider_session_state(
@@ -252,7 +256,8 @@ async def test_project_search_again_preserves_scope_and_menu_labels(
 ) -> None:
     browser = _browser(str(orch.paths.workspace))
     monkeypatch.setattr(
-        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser", lambda: browser
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser",
+        lambda: browser,
     )
     key = SessionKey.telegram(1)
 
@@ -261,7 +266,9 @@ async def test_project_search_again_preserves_scope_and_menu_labels(
     assert {"🔎 Search this project", "🌐 Search all"} <= labels
     scoped = await handle_session_callback(orch, key, "nsc:cxqp:0:0")
     assert "this project" in scoped.text
-    orch._codex_searches[key.storage_key] = orch._pending_codex_search.pop(key.storage_key).__class__(
+    orch._codex_searches[key.storage_key] = orch._pending_codex_search.pop(
+        key.storage_key
+    ).__class__(
         query="Imported", working_dir=str(orch.paths.workspace), back_callback="nsc:cxs:0:0"
     )
     again = await handle_session_callback(orch, key, "nsc:cxqa")
@@ -280,7 +287,9 @@ async def test_root_page_shows_readable_active_target_and_switches_to_main(
         lambda: CodexHistoryBrowser(projects=()),
     )
     key = SessionKey(chat_id=1, topic_id=44)
-    ns = orch._named_sessions.create(1, "codex", "gpt-5.4", "Prepare the July release notes", key=key)
+    ns = orch._named_sessions.create(
+        1, "codex", "gpt-5.4", "Prepare the July release notes", key=key
+    )
     orch._named_sessions.update_after_response(1, ns.name, "sid")
 
     selected = await handle_session_callback(orch, key, f"nsc:sw:{ns.name}")
@@ -339,16 +348,16 @@ async def test_codex_sessions_page_surfaces_task_rows_when_hidden_by_human_sort(
 
     resp = await handle_session_callback(orch, SessionKey(chat_id=1), "nsc:cxs:0:0")
 
-    assert "H:6 T:2 A:0" in resp.text
-    assert "D=Ductor T=Task A=Agent" in resp.text
-    assert "Recent background tasks:" in resp.text
-    assert "Task 1. (Task) Review how kit bitmaps work" in resp.text
-    assert "Task 2. (Task) PM99 metadata335 isolated apply runner smoke" in resp.text
+    assert "PC:6 D:0 (2 tasks hidden)" in resp.text
+    assert "(PC)=Personal Codex (D)=Ductor" in resp.text
+    assert "Recent background tasks:" not in resp.text
+    assert "(Task) Review how kit bitmaps work" not in resp.text
+    assert "(Task) PM99 metadata335 isolated apply runner smoke" not in resp.text
     assert "first prompt for Review how kit bitmaps work" not in resp.text
     assert resp.buttons is not None
     labels = [button.text for row in resp.buttons.rows for button in row]
-    assert any(label.startswith("Task 1. (Task)") for label in labels)
-    assert any(label.startswith("Task 2. (Task)") for label in labels)
+    assert not any("Review how kit bitmaps work" in label for label in labels)
+    assert not any("PM99 metadata335" in label for label in labels)
 
 
 async def test_codex_sessions_page_marks_ductor_touched_sessions(
@@ -383,8 +392,26 @@ async def test_codex_sessions_page_marks_task_sessions_separately(
 
     resp = await handle_session_callback(orch, SessionKey(chat_id=1), "nsc:cxs:0:0")
 
-    assert "(Task) Imported thread" in resp.text
+    assert "(Task) Imported thread" not in resp.text
     assert "(D) Imported thread" not in resp.text
+    assert "1 task hidden" in resp.text
+
+
+async def test_codex_sessions_page_marks_personal_codex_sessions(
+    orch: Orchestrator,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "ductor_bot.orchestrator.selectors.session_selector.load_codex_history_browser",
+        lambda: _browser(str(orch.paths.workspace)),
+    )
+
+    resp = await handle_session_callback(orch, SessionKey(chat_id=1), "nsc:cxs:0:0")
+
+    assert "(PC) Imported thread" in resp.text
+    assert resp.buttons is not None
+    labels = [button.text for row in resp.buttons.rows for button in row]
+    assert any("(PC) Imported thread" in label for label in labels)
 
 
 async def test_attach_codex_import_updates_current_chat_provider_bucket(
@@ -729,6 +756,6 @@ async def test_browser_desktop_resume_page_shows_exact_command(
 
     resp = await handle_session_callback(orch, SessionKey(chat_id=1), "nsc:cxdc:0:0:0:0")
 
-    assert "Target: Imported thread" in resp.text
+    assert "Target: (PC) Imported thread" in resp.text
     assert "codex resume --include-non-interactive --all --cd" in resp.text
     assert "sess-import-1" in resp.text

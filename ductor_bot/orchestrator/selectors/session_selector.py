@@ -334,7 +334,11 @@ def _format_current_block(session: SessionData | None) -> str:
     """Build the current-chat main session section."""
     if session is None or session.topic_id is not None:
         return ""
-    msgs = f"{session.message_count} msg" if session.message_count == 1 else f"{session.message_count} msgs"
+    msgs = (
+        f"{session.message_count} msg"
+        if session.message_count == 1
+        else f"{session.message_count} msgs"
+    )
     cost = f"${session.total_cost_usd:.2f}"
     lines = [t("sessions.current_header")]
     lines.append(f"  1. {session.provider}/{session.model} · {msgs}, {cost}")
@@ -429,7 +433,9 @@ def _parse_ints(raw: str, *, expected: int) -> tuple[int, ...] | None:
     return tuple(values)
 
 
-def _project_page_slice(browser: CodexHistoryBrowser, page: int) -> tuple[int, tuple[CodexHistoryProject, ...]]:
+def _project_page_slice(
+    browser: CodexHistoryBrowser, page: int
+) -> tuple[int, tuple[CodexHistoryProject, ...]]:
     start = max(0, page) * _PROJECTS_PER_PAGE
     stop = start + _PROJECTS_PER_PAGE
     return start, browser.projects[start:stop]
@@ -438,10 +444,22 @@ def _project_page_slice(browser: CodexHistoryBrowser, page: int) -> tuple[int, t
 def _session_page_slice(
     project: CodexHistoryProject,
     page: int,
-) -> tuple[int, tuple[CodexHistorySession, ...]]:
+) -> tuple[tuple[int, CodexHistorySession], ...]:
+    browseable = tuple(
+        (session_index, session)
+        for session_index, session in enumerate(project.sessions)
+        if not session.is_ductor_task and not session.is_subagent
+    )
     start = max(0, page) * _SESSIONS_PER_PAGE
     stop = start + _SESSIONS_PER_PAGE
-    return start, project.sessions[start:stop]
+    return browseable[start:stop]
+
+
+def _browseable_session_count(project: CodexHistoryProject) -> int:
+    """Return the number of normal Codex sessions shown in Browse Codex."""
+    return sum(
+        1 for session in project.sessions if not session.is_ductor_task and not session.is_subagent
+    )
 
 
 def _selected_project(
@@ -491,14 +509,25 @@ def _codex_session_title(session: CodexHistorySession) -> str:
         return f"(Task) {title}"
     if session.is_subagent:
         return f"(Agent) {title}"
-    return f"(D) {title}" if session.is_ductor_touched else title
+    return f"(D) {title}" if session.is_ductor_touched else f"(PC) {title}"
 
 
 def _codex_session_mix(project: CodexHistoryProject) -> str:
     task_count = sum(1 for session in project.sessions if session.is_ductor_task)
     agent_count = sum(1 for session in project.sessions if session.is_subagent)
-    human_count = max(0, len(project.sessions) - task_count - agent_count)
-    return f"H:{human_count} T:{task_count} A:{agent_count}"
+    ductor_count = sum(
+        1
+        for session in project.sessions
+        if session.is_ductor_touched and not session.is_ductor_task and not session.is_subagent
+    )
+    pc_count = max(0, len(project.sessions) - task_count - agent_count - ductor_count)
+    hidden: list[str] = []
+    if task_count:
+        hidden.append(f"{task_count} task{'s' if task_count != 1 else ''} hidden")
+    if agent_count:
+        hidden.append(f"{agent_count} agent{'s' if agent_count != 1 else ''} hidden")
+    visible = f"PC:{pc_count} D:{ductor_count}"
+    return f"{visible} ({', '.join(hidden)})" if hidden else visible
 
 
 def _codex_session_snippet_line(session: CodexHistorySession) -> str:
@@ -534,22 +563,6 @@ def _codex_session_entry_button(
         text=f"{label}. {_codex_session_title(session)[:22]}",
         callback_data=callback_data,
     )
-
-
-def _recent_background_task_entries(
-    project: CodexHistoryProject,
-    visible_indexes: set[int],
-    *,
-    limit: int = 3,
-) -> tuple[tuple[int, CodexHistorySession], ...]:
-    entries: list[tuple[int, CodexHistorySession]] = []
-    for session_index, session in enumerate(project.sessions):
-        if session_index in visible_indexes or not session.is_ductor_task:
-            continue
-        entries.append((session_index, session))
-        if len(entries) >= limit:
-            break
-    return tuple(entries)
 
 
 async def _build_root_page(  # noqa: C901, PLR0912, PLR0915
@@ -611,7 +624,9 @@ async def _build_root_page(  # noqa: C901, PLR0912, PLR0915
         lines.append(t("sessions.named_header"))
         for idx, ns in enumerate(sessions, 1):
             age = format_age(max(0.0, now - ns.created_at))
-            msgs = f"{ns.message_count} msg" if ns.message_count == 1 else f"{ns.message_count} msgs"
+            msgs = (
+                f"{ns.message_count} msg" if ns.message_count == 1 else f"{ns.message_count} msgs"
+            )
             lines.append(
                 f"  {idx}. **{_named_title(ns)}** | {ns.provider}/{ns.model}"
                 f" | {ns.status} ({msgs}, {age})"
@@ -624,9 +639,7 @@ async def _build_root_page(  # noqa: C901, PLR0912, PLR0915
             if markers:
                 lines.append(f"     {markers}")
             lines.append(f"     > _{ns.prompt_preview}_")
-            rows.append(
-                _named_session_buttons(ns)
-            )
+            rows.append(_named_session_buttons(ns))
     elif topic_block:
         lines.append(f"{t('sessions.named_header')}\n  {t('sessions.named_empty')}")
 
@@ -680,7 +693,7 @@ async def _build_codex_projects_page(
         project_index = start + offset
         lines.append(
             f"  {project_index + 1}. **{project.label}**"
-            f" | {len(project.sessions)} | {_codex_session_mix(project)}"
+            f" | {_browseable_session_count(project)} | {_codex_session_mix(project)}"
             f" | {_format_updated_age(project.updated_ts)}"
         )
         lines.append(f"     `{_clip_text(project.working_dir, _PROJECT_PATH_LIMIT)}`")
@@ -693,7 +706,13 @@ async def _build_codex_projects_page(
             ]
         )
 
-    footer_lines = [t("sessions.codex_page", current=page + 1, total=_total_pages(len(browser.projects), _PROJECTS_PER_PAGE))]
+    footer_lines = [
+        t(
+            "sessions.codex_page",
+            current=page + 1,
+            total=_total_pages(len(browser.projects), _PROJECTS_PER_PAGE),
+        )
+    ]
     skipped = _browser_footer(browser)
     if skipped:
         footer_lines.append(skipped)
@@ -772,12 +791,13 @@ async def _build_codex_sessions_page(
     if project is None:
         return await _build_codex_projects_page(page=0, note=t("sessions.unknown_action"))
 
-    start, sessions = _session_page_slice(project, page)
+    session_entries = _session_page_slice(project, page)
+    browseable_count = _browseable_session_count(project)
     project_page = project_index // _PROJECTS_PER_PAGE
     lines = [
         f"**{project.label}**",
         f"`{_clip_text(project.working_dir, _PROJECT_PATH_LIMIT)}`",
-        f"{_codex_session_mix(project)} | D=Ductor T=Task A=Agent",
+        f"{_codex_session_mix(project)} | (PC)=Personal Codex (D)=Ductor",
     ]
     rows: list[list[Button]] = [
         [
@@ -796,11 +816,8 @@ async def _build_codex_sessions_page(
             Button(text=t("sessions.btn_search_all"), callback_data="nsc:cxq"),
         ]
     )
-    visible_session_indexes: set[int] = set()
-    for offset, session in enumerate(sessions):
-        session_index = start + offset
-        visible_session_indexes.add(session_index)
-        label = str(session_index + 1)
+    for display_index, (session_index, session) in enumerate(session_entries, 1):
+        label = str((page * _SESSIONS_PER_PAGE) + display_index)
         lines.extend(_codex_session_entry_lines(session, label=label))
         rows.append(
             [
@@ -813,33 +830,11 @@ async def _build_codex_sessions_page(
                 )
             ]
         )
-
-
-    if page == 0:
-        recent_tasks = _recent_background_task_entries(project, visible_session_indexes)
-        if recent_tasks:
-            lines.append("")
-            lines.append("Recent background tasks:")
-            for task_number, (session_index, session) in enumerate(recent_tasks, 1):
-                label = f"Task {task_number}"
-                lines.extend(_codex_session_entry_lines(session, label=label))
-                rows.append(
-                    [
-                        _codex_session_entry_button(
-                            session,
-                            label=label,
-                            callback_data=(
-                                f"nsc:cxd:{project_index}:{session_index}:{project_page}:{page}"
-                            ),
-                        )
-                    ]
-                )
-
     footer_lines = [
         t(
             "sessions.codex_page",
             current=page + 1,
-            total=_total_pages(len(project.sessions), _SESSIONS_PER_PAGE),
+            total=_total_pages(browseable_count, _SESSIONS_PER_PAGE),
         )
     ]
     if note:
@@ -853,13 +848,13 @@ async def _build_codex_sessions_page(
         Button(
             text=t("sessions.btn_refresh"),
             callback_data=f"nsc:cxs:{project_index}:{page}",
-        )
+        ),
     ]
     if page > 0:
         nav_row.append(
             Button(text=t("sessions.btn_prev"), callback_data=f"nsc:cxs:{project_index}:{page - 1}")
         )
-    if (page + 1) * _SESSIONS_PER_PAGE < len(project.sessions):
+    if (page + 1) * _SESSIONS_PER_PAGE < browseable_count:
         nav_row.append(
             Button(text=t("sessions.btn_next"), callback_data=f"nsc:cxs:{project_index}:{page + 1}")
         )
@@ -886,7 +881,11 @@ async def codex_search_page(
     matches = search_codex_history(browser, state.query, working_dir=state.working_dir)
     start = max(0, page) * _SEARCH_RESULTS_PER_PAGE
     visible = matches[start : start + _SEARCH_RESULTS_PER_PAGE]
-    scope = t("sessions.codex_search_scope_project") if state.working_dir else t("sessions.codex_search_scope_all")
+    scope = (
+        t("sessions.codex_search_scope_project")
+        if state.working_dir
+        else t("sessions.codex_search_scope_all")
+    )
     safe_query = _clip_text(state.query, 80).replace("`", "'")
     lines = [
         t("sessions.codex_search_tap_hint"),
@@ -933,7 +932,10 @@ async def codex_search_page(
     rows.append(nav_row)
     return SelectorResponse(
         text=fmt(
-            t("sessions.codex_search_header"), SEP, "\n".join(lines), SEP,
+            t("sessions.codex_search_header"),
+            SEP,
+            "\n".join(lines),
+            SEP,
             t("sessions.codex_page", current=page + 1, total=total),
         ),
         buttons=ButtonGrid(rows=rows),
@@ -949,7 +951,9 @@ async def _response_for_callback(
 ) -> SelectorResponse:
     """Use normal callback routing for the stored scope without exposing query text."""
     if callback_data.startswith("nsc:cxp:"):
-        return await _build_codex_projects_page(page=_parse_int(callback_data[7:], default=0), note=note)
+        return await _build_codex_projects_page(
+            page=_parse_int(callback_data[7:], default=0), note=note
+        )
     if callback_data.startswith("nsc:cxs:"):
         parsed = _parse_ints(callback_data[8:], expected=2)
         if parsed is not None:
@@ -1019,7 +1023,9 @@ async def _build_codex_detail_page(
         lines.append(f"{t('sessions.codex_model_label')} `{session.model}`")
     if session.first_prompt:
         prompt_label = (
-            "Worker instruction:" if session.is_ductor_task else t("sessions.codex_first_prompt_label")
+            "Worker instruction:"
+            if session.is_ductor_task
+            else t("sessions.codex_first_prompt_label")
         )
         lines.append(f"{prompt_label} {session.first_prompt}")
     if session.preview and session.preview != session.first_prompt:
@@ -1175,7 +1181,9 @@ async def _attach_codex_import(  # noqa: PLR0913
                 else ""
             ),
         )
-    await orch.attach_codex_import(key, session_id=session.session_id, working_dir=session.working_dir)
+    await orch.attach_codex_import(
+        key, session_id=session.session_id, working_dir=session.working_dir
+    )
     return await _build_root_page(
         orch,
         key,
