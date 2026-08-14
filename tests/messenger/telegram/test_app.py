@@ -12,6 +12,13 @@ from aiogram.types import CallbackQuery, Chat, Message, User
 
 from ductor_bot.config import AgentConfig, StreamingConfig
 
+
+def test_fast_commands_are_routed_to_the_orchestrator() -> None:
+    """Menu-visible Fast commands must not be dropped by Telegram routing."""
+    from ductor_bot.messenger.telegram.app import _ORCHESTRATOR_COMMANDS
+
+    assert {"fast", "faston"} <= set(_ORCHESTRATOR_COMMANDS)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
