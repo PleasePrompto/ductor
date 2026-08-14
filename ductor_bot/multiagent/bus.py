@@ -142,10 +142,16 @@ class InterAgentBus:
     by calling the target agent's Orchestrator.handle_interagent_message().
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, enabled: bool = True) -> None:
+        self._enabled = enabled
         self._agents: dict[str, AgentStack] = {}
         self._async_tasks: dict[str, AsyncInterAgentTask] = {}
         self._async_result_handlers: dict[str, AsyncResultCallback] = {}
+
+    @property
+    def enabled(self) -> bool:
+        """Whether cross-agent messages may be submitted."""
+        return self._enabled
 
     def register(self, name: str, stack: AgentStack) -> None:
         """Register an agent on the bus."""
@@ -177,6 +183,13 @@ class InterAgentBus:
         The target agent's Orchestrator runs a one-shot CLI turn to process
         the message. Returns the response text or an error.
         """
+        if not self._enabled:
+            return InterAgentResponse(
+                sender=recipient,
+                text="",
+                success=False,
+                error="Inter-agent communication is disabled",
+            )
         if recipient not in self._agents:
             available = ", ".join(self._agents.keys()) or "(none)"
             return InterAgentResponse(
@@ -269,6 +282,9 @@ class InterAgentBus:
         Optional *opts* controls session handling and Telegram routing.
         See :class:`AsyncSendOptions` for details.
         """
+        if not self._enabled:
+            logger.info("Bus async rejected while inter-agent communication is disabled")
+            return None
         if recipient not in self._agents:
             return None
 
