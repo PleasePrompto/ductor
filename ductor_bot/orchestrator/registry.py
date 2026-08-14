@@ -33,6 +33,7 @@ class OrchestratorResult(BaseModel):
     input_tokens: int = 0
     cost_usd: float = 0.0
     duration_ms: float | None = None
+    is_error: bool = False
 
 
 @dataclass(frozen=True, slots=True)

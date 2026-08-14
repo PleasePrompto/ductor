@@ -80,7 +80,7 @@ async def route_callback(
         return CallbackResult(text=resp.text, buttons=resp.buttons)
 
     if is_session_selector_callback(callback_data):
-        resp = await handle_session_callback(orch, key.chat_id, callback_data)
+        resp = await handle_session_callback(orch, key, callback_data)
         return CallbackResult(text=resp.text, buttons=resp.buttons)
 
     if is_task_selector_callback(callback_data):

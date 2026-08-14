@@ -108,6 +108,8 @@ class CLIConfig:
     reasoning_effort: str = "medium"
     # Codex-specific fields (ignored by Claude provider):
     sandbox_mode: str = "read-only"
+    # Fast mode is an opt-in, per-request Codex service tier.
+    fast_mode: bool = False
     images: list[str] = field(default_factory=list)
     instructions: str | None = None
     # Process tracking (shared across providers):
@@ -115,6 +117,7 @@ class CLIConfig:
     chat_id: int = 0
     topic_id: int | None = None
     process_label: str = "main"
+    parent_prompt: str = ""
     # Gemini-specific auth fallback:
     gemini_api_key: str | None = None
     # Extra CLI parameters (provider-specific):
@@ -225,6 +228,7 @@ def docker_wrap(
         extra_env = merged_extra or None
 
         env_flags = _docker_env_flags(config, container_home, container_shared)
+        env_flags += ["-e", f"DUCTOR_PARENT_PROMPT={config.parent_prompt}"]
         if extra_env:
             for key, value in extra_env.items():
                 env_flags += ["-e", f"{key}={value}"]

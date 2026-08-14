@@ -21,6 +21,7 @@ from aiogram.types import (
 )
 
 from ductor_bot.bus.lock_pool import LockPool
+from ductor_bot.infra.admission import AdmissionClosed, RestartAdmissionCoordinator
 from ductor_bot.log_context import set_log_context
 from ductor_bot.messenger.telegram.abort import (
     is_abort_all_message,
@@ -64,6 +65,8 @@ QUICK_COMMANDS: frozenset[str] = frozenset(
     }
 )
 
+BARE_QUICK_COMMANDS: frozenset[str] = frozenset({"sessions", "tasks"})
+
 MQ_PREFIX = "mq:"
 """Callback data prefix for message queue cancel buttons."""
 
@@ -75,13 +78,18 @@ def is_quick_command(text: str, bot_username: str | None = None) -> bool:
     (``/status@my_bot``), and commands with arguments (``/model sonnet``).
     Commands addressed to a different bot (``/status@other_bot``) are rejected.
     """
-    cmd_part = text.strip().lower().split(None, 1)[0] if text.strip() else ""
+    stripped = text.strip()
+    if not stripped:
+        return False
+    cmd_part = stripped.lower().split(None, 1)[0]
     if "@" in cmd_part:
         cmd, mention = cmd_part.split("@", 1)
         if bot_username and mention != bot_username.lower():
             return False
         return cmd in QUICK_COMMANDS
-    return cmd_part in QUICK_COMMANDS
+    if cmd_part in QUICK_COMMANDS:
+        return True
+    return stripped.lower() in BARE_QUICK_COMMANDS
 
 
 RejectedCallback = Callable[[int, str, str], None]
@@ -142,6 +150,34 @@ class AuthMiddleware(BaseMiddleware):
             return None
 
         return await handler(event, data)
+
+
+class AdmissionMiddleware(BaseMiddleware):
+    """Acquire a root lease before Telegram dispatch begins.
+
+    The marker watcher closes this gate before stopping polling.  Thus every
+    update already handed to aiogram is either admitted for its whole handler
+    lifecycle or remains upstream for the next poller; no counter sample is
+    used to decide whether it is safe to exit.
+    """
+
+    def __init__(self, admission: RestartAdmissionCoordinator) -> None:
+        self._admission = admission
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        try:
+            async with self._admission.lease("telegram-update"):
+                return await handler(event, data)
+        except AdmissionClosed:
+            # Polling has been stopped as part of the same handover.  This
+            # update must not mutate a session in the closing generation.
+            logger.info("Telegram update deferred because restart admission is closed")
+            return None
 
 
 @dataclass(slots=True)

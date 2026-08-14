@@ -13,6 +13,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.base import CLIConfig
+from ductor_bot.cli.codex_thread_lock import codex_thread_lease
 from ductor_bot.cli.factory import create_cli
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
@@ -197,13 +198,18 @@ class CLIService:
         )
 
         t0 = time.monotonic()
-        response = await cli.send(
-            prompt=request.prompt,
-            resume_session=request.resume_session,
-            continue_session=request.continue_session,
-            timeout_seconds=request.timeout_seconds,
-            timeout_controller=request.timeout_controller,
-        )
+        provider, _ = self.resolve_provider(request)
+        async with codex_thread_lease(
+            request.resume_session if provider == "codex" else None,
+            owner=request.process_label,
+        ):
+            response = await cli.send(
+                prompt=request.prompt,
+                resume_session=request.resume_session,
+                continue_session=request.continue_session,
+                timeout_seconds=request.timeout_seconds,
+                timeout_controller=request.timeout_controller,
+            )
         elapsed_ms = (time.monotonic() - t0) * 1000
 
         agent_resp = _cli_response_to_agent_response(response)
@@ -241,31 +247,38 @@ class CLIService:
             on_compact_boundary,
         )
 
-        try:
-            async for event in cli.send_streaming(
-                prompt=request.prompt,
-                resume_session=request.resume_session,
-                continue_session=request.continue_session,
-                timeout_seconds=request.timeout_seconds,
-                timeout_controller=request.timeout_controller,
-            ):
-                if self._process_registry.was_aborted(
-                    request.chat_id
-                ) or self._process_registry.was_aborted_topic(request.chat_id, request.topic_id):
-                    logger.info("Streaming aborted mid-stream chat=%d", request.chat_id)
-                    break
-                text, result = await callbacks.dispatch(event)
-                accumulated_text += text
-                if result is not None:
-                    result_event = result
-        except asyncio.CancelledError:
-            raise
-        except (OSError, RuntimeError, ValueError, UnicodeDecodeError):
-            logger.exception(
-                "Stream error label=%s, falling back",
-                request.process_label,
-            )
-            stream_error = True
+        provider, _ = self.resolve_provider(request)
+        async with codex_thread_lease(
+            request.resume_session if provider == "codex" else None,
+            owner=request.process_label,
+        ):
+            try:
+                async for event in cli.send_streaming(
+                    prompt=request.prompt,
+                    resume_session=request.resume_session,
+                    continue_session=request.continue_session,
+                    timeout_seconds=request.timeout_seconds,
+                    timeout_controller=request.timeout_controller,
+                ):
+                    if self._process_registry.was_aborted(
+                        request.chat_id
+                    ) or self._process_registry.was_aborted_topic(
+                        request.chat_id, request.topic_id
+                    ):
+                        logger.info("Streaming aborted mid-stream chat=%d", request.chat_id)
+                        break
+                    text, result = await callbacks.dispatch(event)
+                    accumulated_text += text
+                    if result is not None:
+                        result_event = result
+            except asyncio.CancelledError:
+                raise
+            except (OSError, RuntimeError, ValueError, UnicodeDecodeError):
+                logger.exception(
+                    "Stream error label=%s, falling back",
+                    request.process_label,
+                )
+                stream_error = True
 
         if stream_error or result_event is None:
             return await self._handle_stream_fallback(
@@ -371,7 +384,9 @@ class CLIService:
         # would fail on a path outside the workspace.
         working_dir = self._config.working_dir
         append_prompt = request.append_system_prompt
-        if self._working_dir_resolver is not None and not self._config.docker_container:
+        if request.working_dir_override and not self._config.docker_container:
+            working_dir = request.working_dir_override
+        elif self._working_dir_resolver is not None and not self._config.docker_container:
             override = self._working_dir_resolver(request)
             if override is not None:
                 working_dir = override
@@ -399,6 +414,7 @@ class CLIService:
                 max_budget_usd=self._config.max_budget_usd,
                 permission_mode=self._config.permission_mode,
                 reasoning_effort=effort,
+                fast_mode=request.fast_mode,
                 gemini_api_key=self._config.gemini_api_key,
                 docker_container=self._config.docker_container,
                 process_registry=self._process_registry,
@@ -406,6 +422,7 @@ class CLIService:
                 topic_id=request.topic_id,
                 transport=request.transport,
                 process_label=request.process_label,
+                parent_prompt=request.prompt,
                 cli_parameters=self._config.cli_parameters_for_provider(provider),
                 agent_name=self._config.agent_name,
                 interagent_port=self._config.interagent_port,

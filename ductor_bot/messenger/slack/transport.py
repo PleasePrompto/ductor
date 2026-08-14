@@ -141,6 +141,9 @@ class SlackTransport:
         channel_id, _thread_ts = self._resolve_target(env)
         if not channel_id:
             return
+        opts = self._opts(env)
+        if env.status in {"failed", "timeout", "cancelled"}:
+            opts.parse_file_tags = False
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
         note = ""
         if env.status == "done":
@@ -154,9 +157,9 @@ class SlackTransport:
             note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
 
         if note:
-            await slack_send_rich(self._bot.client, channel_id, note, self._opts(env))
+            await slack_send_rich(self._bot.client, channel_id, note, opts)
         if env.needs_injection and env.result_text:
-            await slack_send_rich(self._bot.client, channel_id, env.result_text, self._opts(env))
+            await slack_send_rich(self._bot.client, channel_id, env.result_text, opts)
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         channel_id, _thread_ts = self._resolve_target(env)

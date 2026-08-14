@@ -79,12 +79,15 @@ class AgentRequest:
     model_override: str | None = None
     provider_override: str | None = None
     effort_override: str | None = None
+    fast_mode: bool = False
     chat_id: int = 0
     topic_id: int | None = None
     transport: str = "tg"
     process_label: str = "main"
     resume_session: str | None = None
     continue_session: bool = False
+    working_dir_override: str | None = None
+    allow_invalid_session_recovery: bool = True
     timeout_seconds: float | None = None
     timeout_controller: TimeoutController | None = None
 

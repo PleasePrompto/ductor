@@ -48,8 +48,8 @@ async def send_rich(
     opts = opts or MatrixSendOpts()
 
     # 1. Extract file tags
-    files: list[str] = _FILE_TAG_RE.findall(text)
-    cleaned = _FILE_TAG_RE.sub("", text).strip()
+    files: list[str] = _FILE_TAG_RE.findall(text) if opts.parse_file_tags else []
+    cleaned = _FILE_TAG_RE.sub("", text).strip() if opts.parse_file_tags else text.strip()
 
     # 2. Convert markdown → (plain, html)
     plain, html_body = markdown_to_matrix_html(cleaned)

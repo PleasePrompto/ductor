@@ -167,6 +167,20 @@ class TestHandleCommand:
         await handle_command(orchestrator, bot, msg)
         orchestrator.handle_message.assert_called_once()
 
+    async def test_command_normalizes_bare_sessions_alias(self) -> None:
+        from ductor_bot.messenger.telegram.handlers import handle_command
+        from ductor_bot.orchestrator.registry import OrchestratorResult
+
+        orchestrator = MagicMock()
+        orchestrator.handle_message = AsyncMock(return_value=OrchestratorResult(text="Sessions"))
+        bot = MagicMock()
+        bot.send_message = AsyncMock()
+
+        msg = _make_message(text="sessions")
+        await handle_command(orchestrator, bot, msg)
+        assert orchestrator.handle_message.call_args is not None
+        assert orchestrator.handle_message.call_args.args[1] == "/sessions"
+
 
 class TestHandleNewSession:
     """Test /new handler logic."""

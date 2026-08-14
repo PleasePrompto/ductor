@@ -6,6 +6,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 from aiogram.enums import ChatAction
+from aiogram.exceptions import TelegramNetworkError
 
 
 class TestTypingContext:
@@ -75,3 +76,26 @@ class TestTypingContext:
             await asyncio.sleep(0.05)
 
         assert bot.send_chat_action.call_args.kwargs.get("message_thread_id") is None
+
+    async def test_recovers_after_transient_telegram_failure(self, monkeypatch) -> None:
+        from ductor_bot.messenger.telegram import typing as typing_module
+        from ductor_bot.messenger.telegram.typing import TypingContext
+
+        monkeypatch.setattr(typing_module, "_RETRY_BASE_SECONDS", 0.001)
+        bot = MagicMock()
+        bot.send_chat_action = AsyncMock(side_effect=[TelegramNetworkError(method=MagicMock(), message="x"), None])
+        async with TypingContext(bot, chat_id=42):
+            await asyncio.sleep(0.02)
+        assert bot.send_chat_action.await_count >= 2
+
+    async def test_cancellation_during_retry_is_prompt(self, monkeypatch) -> None:
+        from ductor_bot.messenger.telegram import typing as typing_module
+        from ductor_bot.messenger.telegram.typing import TypingContext
+
+        monkeypatch.setattr(typing_module, "_RETRY_BASE_SECONDS", 30.0)
+        bot = MagicMock()
+        bot.send_chat_action = AsyncMock(side_effect=OSError("offline"))
+        ctx = TypingContext(bot, chat_id=42)
+        await ctx.__aenter__()
+        await asyncio.sleep(0)
+        await asyncio.wait_for(ctx.__aexit__(), timeout=0.1)

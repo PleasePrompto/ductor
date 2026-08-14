@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -12,6 +13,7 @@ from ductor_bot.background import (
     BackgroundSubmit,
     BackgroundTask,
 )
+from ductor_bot.cli.codex_history import normalize_codex_search_query
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
@@ -26,14 +28,19 @@ from ductor_bot.errors import (
     WebhookError,
     WorkspaceError,
 )
+from ductor_bot.infra.admission import RestartAdmissionCoordinator
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_fast,
+    cmd_fast_on,
+    cmd_implement,
     cmd_memory,
     cmd_model,
+    cmd_plan,
     cmd_reset,
     cmd_reset_current,
     cmd_sessions,
@@ -64,7 +71,12 @@ from ductor_bot.orchestrator.registry import CommandRegistry, OrchestratorResult
 from ductor_bot.security import detect_suspicious_patterns
 from ductor_bot.session import SessionKey, SessionManager
 from ductor_bot.session.manager import SessionData
-from ductor_bot.session.named import NamedSessionRegistry
+from ductor_bot.session.named import (
+    NamedSession,
+    NamedSessionRegistry,
+    suggest_display_title,
+    suggest_name,
+)
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
 from ductor_bot.workspace.project_roots import resolve_project_root
@@ -75,7 +87,6 @@ if TYPE_CHECKING:
     from ductor_bot.bus.lock_pool import LockPool
     from ductor_bot.config import ModelRegistry
     from ductor_bot.multiagent.supervisor import AgentSupervisor
-    from ductor_bot.session.named import NamedSession
     from ductor_bot.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
@@ -124,6 +135,15 @@ class _MessageDispatch:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CodexSearchState:
+    """Ephemeral selector state, isolated by the full transport/topic key."""
+
+    query: str
+    working_dir: str | None = None
+    back_callback: str = "nsc:cxp:0"
+
+
 class Orchestrator:
     """Routes messages through command dispatch and conversation flows."""
 
@@ -142,7 +162,10 @@ class Orchestrator:
         self._providers = ProviderManager(config)
         self._sessions = SessionManager(paths.sessions_path, config)
         self._named_sessions = NamedSessionRegistry(paths.named_sessions_path)
+        self._pending_codex_search: dict[str, CodexSearchState] = {}
+        self._codex_searches: dict[str, CodexSearchState] = {}
         self._process_registry = ProcessRegistry()
+        self._admission = RestartAdmissionCoordinator()
         self._lock_pool: LockPool | None = None
         self._cli_service = CLIService(
             config=CLIServiceConfig(
@@ -273,6 +296,16 @@ class Orchestrator:
         return self._process_registry
 
     @property
+    def admission(self) -> RestartAdmissionCoordinator:
+        """Generation coordinator shared by every root work source."""
+        return self._admission
+
+    @property
+    def lock_pool(self) -> LockPool | None:
+        """Shared dispatch lock pool, when the transport has initialized it."""
+        return self._lock_pool
+
+    @property
     def bg_observer(self) -> BackgroundObserver | None:
         """Public access to the background observer."""
         return self._observers.background
@@ -289,7 +322,14 @@ class Orchestrator:
     def set_task_hub(self, hub: TaskHub) -> None:
         """Inject the task hub (called by supervisor or startup wiring)."""
         self._task_hub = hub
+        hub.set_admission(self._admission)
         hub.start_maintenance()
+
+    def set_admission(self, admission: RestartAdmissionCoordinator) -> None:
+        """Install the transport-owned coordinator before roots are accepted."""
+        self._admission = admission
+        if self._task_hub is not None:
+            self._task_hub.set_admission(admission)
 
     @classmethod
     async def create(
@@ -356,26 +396,27 @@ class Orchestrator:
         return await self._handle_message_impl(dispatch)
 
     async def _handle_message_impl(self, dispatch: _MessageDispatch) -> OrchestratorResult:
-        self._process_registry.clear_abort(dispatch.key.chat_id)
-        self._process_registry.clear_topic_abort(dispatch.key.chat_id, dispatch.key.topic_id)
-        logger.info("Message received text=%s", dispatch.cmd[:80])
+        async with self._admission.lease("orchestrator-message"):
+            self._process_registry.clear_abort(dispatch.key.chat_id)
+            self._process_registry.clear_topic_abort(dispatch.key.chat_id, dispatch.key.topic_id)
+            logger.info("Message received text=%s", dispatch.cmd[:80])
 
-        patterns = detect_suspicious_patterns(dispatch.text)
-        if patterns:
-            logger.warning("Suspicious input patterns: %s", ", ".join(patterns))
+            patterns = detect_suspicious_patterns(dispatch.text)
+            if patterns:
+                logger.warning("Suspicious input patterns: %s", ", ".join(patterns))
 
-        try:
-            return await self._route_message(dispatch)
-        except asyncio.CancelledError:
-            raise
-        except (CLIError, StreamError, SessionError, CronError, WebhookError, WorkspaceError):
-            logger.exception("Domain error in handle_message")
-            return OrchestratorResult(text="An internal error occurred. Please try again.")
-        except (OSError, RuntimeError, ValueError, TypeError, KeyError):
-            logger.exception("Unexpected error in handle_message")
-            return OrchestratorResult(text="An internal error occurred. Please try again.")
+            try:
+                return await self._route_message(dispatch)
+            except asyncio.CancelledError:
+                raise
+            except (CLIError, StreamError, SessionError, CronError, WebhookError, WorkspaceError):
+                logger.exception("Domain error in handle_message")
+                return OrchestratorResult(text="An internal error occurred. Please try again.")
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                logger.exception("Unexpected error in handle_message")
+                return OrchestratorResult(text="An internal error occurred. Please try again.")
 
-    async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:
+    async def _route_message(self, dispatch: _MessageDispatch) -> OrchestratorResult:  # noqa: C901, PLR0911
         result = await self._command_registry.dispatch(
             dispatch.cmd,
             self,
@@ -384,6 +425,34 @@ class Orchestrator:
         )
         if result is not None:
             return result
+
+        if dispatch.cmd in {"session", "sessions"}:
+            return await cmd_sessions(self, dispatch.key, dispatch.text)
+
+        pending_rename = self._named_sessions.pending_rename(dispatch.key)
+        if pending_rename is not None:
+            try:
+                session = self._named_sessions.complete_rename(dispatch.key, dispatch.text)
+            except ValueError as exc:
+                return OrchestratorResult(text=f"Rename not saved: {exc}")
+            assert session is not None
+            return OrchestratorResult(text=f"Renamed session to: {session.display_title}")
+
+        pending_search = self._pending_codex_search.pop(dispatch.key.storage_key, None)
+        if pending_search is not None:
+            query = normalize_codex_search_query(dispatch.text)
+            if not query:
+                self._pending_codex_search[dispatch.key.storage_key] = pending_search
+                return OrchestratorResult(text="Search terms cannot be empty.")
+            self._codex_searches[dispatch.key.storage_key] = CodexSearchState(
+                query=query,
+                working_dir=pending_search.working_dir,
+                back_callback=pending_search.back_callback,
+            )
+            from ductor_bot.orchestrator.selectors.session_selector import codex_search_page
+
+            response = await codex_search_page(self, dispatch.key, page=0)
+            return OrchestratorResult(text=response.text, buttons=response.buttons)
 
         await self._ensure_docker()
 
@@ -413,6 +482,28 @@ class Orchestrator:
                     )
                 return await named_session_flow(self, dispatch.key, first_key, session_prompt)
 
+        active_target = self._named_sessions.active_target(dispatch.key)
+        if active_target is not None:
+            if dispatch.streaming:
+                return await named_session_streaming(
+                    self,
+                    dispatch.key,
+                    active_target,
+                    dispatch.text,
+                    cbs=dispatch.streaming_callbacks(),
+                )
+            return await named_session_flow(self, dispatch.key, active_target, dispatch.text)
+
+        search_prefix = "search codex "
+        if dispatch.text.casefold().startswith(search_prefix):
+            query = normalize_codex_search_query(dispatch.text[len(search_prefix) :])
+            if query:
+                self._codex_searches[dispatch.key.storage_key] = CodexSearchState(query=query)
+                from ductor_bot.orchestrator.selectors.session_selector import codex_search_page
+
+                response = await codex_search_page(self, dispatch.key, page=0)
+                return OrchestratorResult(text=response.text, buttons=response.buttons)
+
         if directives.is_directive_only and directives.has_model:
             return OrchestratorResult(
                 text=f"Next message will use: {directives.model}\n"
@@ -437,6 +528,25 @@ class Orchestrator:
             model_override=directives.model,
         )
 
+    def begin_codex_search(
+        self,
+        key: SessionKey,
+        *,
+        working_dir: str | None = None,
+        back_callback: str = "nsc:cxp:0",
+    ) -> None:
+        """Make the next ordinary message a scoped Codex history query."""
+        self._pending_codex_search[key.storage_key] = CodexSearchState(
+            query="", working_dir=working_dir, back_callback=back_callback
+        )
+
+    def codex_search_state(self, key: SessionKey) -> CodexSearchState | None:
+        return self._codex_searches.get(key.storage_key)
+
+    def clear_codex_search(self, key: SessionKey) -> CodexSearchState | None:
+        self._pending_codex_search.pop(key.storage_key, None)
+        return self._codex_searches.pop(key.storage_key, None)
+
     def _register_commands(self) -> None:
         reg = self._command_registry
         reg.register_async("/new", cmd_reset)
@@ -448,6 +558,13 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/fast", cmd_fast)
+        reg.register_async("/fast ", cmd_fast)
+        reg.register_async("/faston", cmd_fast_on)
+        reg.register_async("/plan", cmd_plan)
+        reg.register_async("/plan ", cmd_plan)
+        reg.register_async("/implement", cmd_implement)
+        reg.register_async("/implement ", cmd_implement)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
@@ -556,6 +673,7 @@ class Orchestrator:
     ) -> None:
         """Wire all observer result callbacks to the message bus."""
         self._observers.wire_to_bus(bus, wake_handler=wake_handler)
+        bus.set_admission(self._admission)
         bus.set_injector(self)
         self._lock_pool = bus.lock_pool
         # Share the bus lock pool with MemoryFlusher so silent flush / compact
@@ -617,6 +735,15 @@ class Orchestrator:
             reasoning_effort=effort,
             key=SessionKey.for_transport(request.transport, chat_id, request.thread_id),
         )
+        if provider_name == "codex":
+            ns.working_dir = str(self._paths.workspace)
+            ns.source_kind = "ductor"
+            self._named_sessions.set_handoff_context(
+                chat_id,
+                ns.name,
+                working_dir=ns.working_dir,
+                source_kind=ns.source_kind,
+            )
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
         sub = BackgroundSubmit(
             chat_id=chat_id,
@@ -628,6 +755,9 @@ class Orchestrator:
             provider_override=provider_name,
             model_override=model_name,
             reasoning_effort_override=effort,
+            working_dir=ns.working_dir,
+            source_kind=ns.source_kind,
+            planner_mode=ns.planner_mode,
         )
         task_id = self._observers.background.submit(sub, exec_config)
         return task_id, ns.name
@@ -688,6 +818,9 @@ class Orchestrator:
             provider_override=ns.provider,
             model_override=ns.model,
             reasoning_effort_override=followup_effort,
+            working_dir=ns.working_dir,
+            source_kind=ns.source_kind,
+            planner_mode=ns.planner_mode,
         )
         return self._observers.background.submit(sub, exec_config)
 
@@ -719,6 +852,121 @@ class Orchestrator:
     def list_named_sessions(self, chat_id: int) -> list[NamedSession]:
         """List active named sessions for a chat."""
         return self._named_sessions.list_active(chat_id)
+
+    def active_named_target(self, key: SessionKey) -> NamedSession | None:
+        name = self._named_sessions.active_target(key)
+        return self._named_sessions.get(key.chat_id, name) if name else None
+
+    def switch_named_target(self, key: SessionKey, name: str | None) -> bool:
+        return self._named_sessions.set_active_target(key, name)
+
+    async def set_main_planner_state(
+        self, key: SessionKey, *, provider: str, model: str,
+        enabled: bool | None = None, waiting: bool | None = None,
+    ) -> SessionData:
+        """Persist planner state on the active foreground provider bucket."""
+        return await self._sessions.set_planner_state(
+            key, provider=provider, model=model, enabled=enabled, waiting=waiting
+        )
+
+    async def set_main_fast_mode(
+        self, key: SessionKey, *, provider: str, model: str, enabled: bool
+    ) -> SessionData:
+        """Persist the Fast-mode preference for the active foreground provider."""
+        return await self._sessions.set_fast_mode(
+            key, provider=provider, model=model, enabled=enabled
+        )
+
+    def codex_import_uses_docker(self) -> bool:
+        return self._config.docker.enabled
+
+    def codex_import_model(self) -> str:
+        model = self.default_model_for_provider("codex")
+        if model:
+            return model
+        current_model, current_provider = self.resolve_runtime_target(self._config.model)
+        return current_model if current_provider == "codex" else "codex"
+
+    async def attach_codex_import(self, key: SessionKey, *, session_id: str, working_dir: str) -> SessionData:
+        return await self._sessions.set_provider_session_state(
+            key, provider="codex", model=self.codex_import_model(), session_id=session_id,
+            working_dir=working_dir, source_kind="codex_import",
+        )
+
+    async def start_fresh_codex_session(self, key: SessionKey, *, working_dir: str) -> SessionData:
+        return await self._sessions.set_provider_session_state(
+            key, provider="codex", model=self.codex_import_model(), session_id="",
+            working_dir=working_dir, source_kind="ductor",
+        )
+
+    async def mark_codex_import_unavailable(self, key: SessionKey) -> SessionData:
+        active = await self._sessions.get_active(key)
+        model_name, working_dir = self.codex_import_model(), ""
+        if active is not None and "codex" in active.provider_sessions:
+            bucket = active.provider_sessions["codex"]
+            if active.provider == "codex":
+                model_name = active.model
+            working_dir = bucket.working_dir
+        return await self._sessions.set_provider_session_state(
+            key, provider="codex", model=model_name, session_id="", working_dir=working_dir,
+            source_kind="codex_import",
+        )
+
+    def import_codex_named_session(
+        self,
+        chat_id: int,
+        *,
+        session_id: str,
+        working_dir: str,
+        thread_name: str,
+        prompt_preview: str,
+        key: SessionKey | None = None,
+    ) -> NamedSession:
+        name = suggest_name(
+            thread_name.strip() or prompt_preview.strip() or "codex",
+            self._named_sessions.active_names(chat_id),
+        )
+        session = NamedSession(
+            name=name, chat_id=chat_id, provider="codex", model=self.codex_import_model(),
+            session_id=session_id, prompt_preview=prompt_preview[:60], status="idle", created_at=time.time(),
+            transport=key.transport if key is not None else "tg",
+            topic_id=key.topic_id if key is not None else None,
+            working_dir=working_dir, source_kind="codex_import",
+            display_title=suggest_display_title(thread_name or prompt_preview),
+        )
+        self._named_sessions.add(session)
+        return session
+
+    def attach_codex_named_target(
+        self,
+        key: SessionKey,
+        *,
+        session_id: str,
+        working_dir: str,
+        thread_name: str,
+        prompt_preview: str,
+    ) -> NamedSession:
+        """Reuse or attach a Codex thread, then activate it only for ``key``."""
+        existing = next(
+            (
+                session
+                for session in self.list_named_sessions(key.chat_id)
+                if session.provider == "codex"
+                and session.source_kind == "codex_import"
+                and session.session_id == session_id
+            ),
+            None,
+        )
+        attached = existing or self.import_codex_named_session(
+            key.chat_id,
+            session_id=session_id,
+            working_dir=working_dir,
+            thread_name=thread_name,
+            prompt_preview=prompt_preview,
+            key=key,
+        )
+        self.switch_named_target(key, attached.name)
+        return attached
 
     async def list_topic_sessions(self, chat_id: int) -> list[SessionData]:
         """Return fresh topic sessions for *chat_id*."""
@@ -854,8 +1102,8 @@ class Orchestrator:
             self, prompt, chat_id, label, topic_id=topic_id, transport=transport
         )
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, *, emergency: bool = True) -> None:
         """Cleanup on bot shutdown."""
         from ductor_bot.orchestrator.lifecycle import shutdown
 
-        await shutdown(self)
+        await shutdown(self, emergency=emergency)

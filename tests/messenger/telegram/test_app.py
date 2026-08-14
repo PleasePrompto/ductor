@@ -12,6 +12,13 @@ from aiogram.types import CallbackQuery, Chat, Message, User
 
 from ductor_bot.config import AgentConfig, StreamingConfig
 
+
+def test_fast_commands_are_routed_to_the_orchestrator() -> None:
+    """Menu-visible Fast commands must not be dropped by Telegram routing."""
+    from ductor_bot.messenger.telegram.app import _ORCHESTRATOR_COMMANDS
+
+    assert {"fast", "faston"} <= set(_ORCHESTRATOR_COMMANDS)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -70,7 +77,12 @@ def _make_orchestrator(
         return_value=MagicMock(text=handle_message_text, buttons=None),
     )
     orch.handle_message_streaming = AsyncMock(
-        return_value=MagicMock(text=handle_streaming_text, stream_fallback=stream_fallback),
+        return_value=MagicMock(
+            text=handle_streaming_text,
+            stream_fallback=stream_fallback,
+            buttons=None,
+            is_error=False,
+        ),
     )
     orch.abort = AsyncMock(return_value=1)
     orch.shutdown = AsyncMock()
@@ -80,6 +92,8 @@ def _make_orchestrator(
     paths.ductor_home = Path("/tmp/test-ductor")
     paths.telegram_files_dir = Path("/tmp/test-workspace/telegram_files")
     orch.paths = paths
+    orch.process_registry.foreground_active_count.return_value = 0
+    orch.lock_pool.locked_count.return_value = 0
     return orch
 
 
@@ -91,6 +105,7 @@ def _make_message(
     user_id: int = 100,
     *,
     topic_thread_id: int | None = None,
+    entities: list[object] | None = None,
 ) -> MagicMock:
     msg = MagicMock(spec=Message)
     msg.chat = MagicMock(spec=Chat)
@@ -99,6 +114,7 @@ def _make_message(
     type(msg).message_id = PropertyMock(return_value=message_id)
     msg.text = text
     msg.answer = AsyncMock(return_value=msg)
+    msg.entities = entities or []
 
     user = MagicMock(spec=User)
     user.id = user_id
@@ -189,7 +205,7 @@ class TestTelegramBotRun:
         tg_bot._dp.resolve_used_update_types = MagicMock(return_value=["message", "callback_query"])
         tg_bot._dp.start_polling = AsyncMock()
         code = await tg_bot.run()
-        bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=True)
+        bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
         tg_bot._dp.start_polling.assert_called_once_with(
             bot_instance,
             allowed_updates=["message", "callback_query"],
@@ -519,6 +535,20 @@ class TestOnMessage:
             msg, SessionKey(chat_id=1), "clean text", thread_id=None
         )
 
+    async def test_ignores_bot_command_messages(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        orch = _make_orchestrator()
+        tg_bot._orchestrator = orch
+        entity = MagicMock()
+        entity.type = "bot_command"
+        entity.offset = 0
+        msg = _make_message(text="/session what's the current stats", entities=[entity])
+
+        with patch.object(tg_bot, "_handle_streaming", new_callable=AsyncMock) as mock_stream:
+            await tg_bot._on_message(msg)
+
+        mock_stream.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # _resolve_text
@@ -540,6 +570,25 @@ class TestResolveText:
         msg = _make_message(text=None)
         result = await tg_bot._resolve_text(msg)
         assert result is None
+
+    async def test_ignores_bot_command_text(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._orchestrator = _make_orchestrator()
+        entity = MagicMock()
+        entity.type = "bot_command"
+        entity.offset = 0
+        msg = _make_message(text="/sessions", entities=[entity])
+
+        result = await tg_bot._resolve_text(msg)
+        assert result is None
+
+    async def test_does_not_treat_paths_as_bot_commands(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._orchestrator = _make_orchestrator()
+        msg = _make_message(text="/home/joe/proboards-scraper")
+
+        result = await tg_bot._resolve_text(msg)
+        assert result == "/home/joe/proboards-scraper"
 
     @patch("ductor_bot.messenger.telegram.app.resolve_media_text", new_callable=AsyncMock)
     @patch("ductor_bot.messenger.telegram.app.has_media", return_value=True)
@@ -713,12 +762,16 @@ class TestCallbackQueryHandler:
             chat_id=1, message_id=60, reply_markup=None
         )
 
-    async def test_callback_sends_button_text_to_orchestrator(self) -> None:
+    async def test_callback_sends_button_context_to_orchestrator(self) -> None:
         tg_bot, _ = _make_tg_bot()
         orch = _make_orchestrator()
         tg_bot._orchestrator = orch
 
-        cb = _make_callback_query(data="Approve")
+        cb = _make_callback_query(
+            data="Approve",
+            msg_text="Which slice should I expand next?\n\n[USER ANSWER] older",
+            msg_html_text="Which slice should I expand next?\n\n<i>[USER ANSWER] older</i>",
+        )
         await tg_bot._on_callback_query(cb)
 
         from ductor_bot.session.key import SessionKey
@@ -726,7 +779,9 @@ class TestCallbackQueryHandler:
         orch.handle_message_streaming.assert_called_once()
         call_args = orch.handle_message_streaming.call_args
         assert call_args[0][0] == SessionKey(chat_id=1)
-        assert call_args[0][1] == "Approve"
+        prompt = call_args[0][1]
+        assert "Which slice should I expand next?" in prompt
+        assert "User selected this button: Approve" in prompt
 
     async def test_callback_ignores_empty_data(self) -> None:
         tg_bot, _ = _make_tg_bot()
@@ -830,7 +885,7 @@ class TestCallbackQueryHandler:
         orch = _make_orchestrator(handle_message_text="Non-streamed")
         tg_bot._orchestrator = orch
 
-        cb = _make_callback_query(data="Approve")
+        cb = _make_callback_query(data="Approve", msg_text="Which option do you want?")
 
         with patch(
             "ductor_bot.messenger.telegram.app.run_non_streaming_message", new_callable=AsyncMock
@@ -841,7 +896,34 @@ class TestCallbackQueryHandler:
         mock_run.assert_awaited_once()
         dispatch = mock_run.call_args.args[0]
         assert dispatch.key.chat_id == 1
-        assert dispatch.text == "Approve"
+        assert "Which option do you want?" in dispatch.text
+        assert "User selected this button: Approve" in dispatch.text
+
+    async def test_named_session_button_routes_to_background_followup(self) -> None:
+        tg_bot, bot_instance = _make_tg_bot()
+        orch = _make_orchestrator()
+        orch.submit_named_followup_bg = MagicMock(return_value="task-1")
+        tg_bot._orchestrator = orch
+
+        cb = _make_callback_query(
+            data="ns:planner:Approve",
+            message_id=77,
+            msg_text="Which planner artifact should I expand next?",
+        )
+        await tg_bot._on_callback_query(cb)
+
+        orch.submit_named_followup_bg.assert_called_once()
+        call = orch.submit_named_followup_bg.call_args
+        assert call.args[0] == 1
+        assert call.args[1] == "planner"
+        assert "Which planner artifact should I expand next?" in call.args[2]
+        assert "User selected this button: Approve" in call.args[2]
+        assert call.args[3] == 77
+        assert call.args[4] is None
+        orch.handle_message_streaming.assert_not_called()
+        bot_instance.send_message.assert_called_once()
+        sent_text = bot_instance.send_message.call_args.kwargs["text"]
+        assert "[planner] Follow-up sent" in sent_text
 
     async def test_welcome_callback_resolves_to_prompt(self) -> None:
         tg_bot, _ = _make_tg_bot()
@@ -1187,6 +1269,32 @@ class TestWatchRestartMarker:
 
         # CancelledError is caught internally, exit code stays 0
         assert tg_bot._exit_code == 0
+
+    async def test_drain_waits_for_registered_foreground_work(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        orch = _make_orchestrator()
+        orch.process_registry.foreground_active_count.side_effect = [1, 0]
+        orch.lock_pool.locked_count.side_effect = [1, 0]
+        tg_bot._orchestrator = orch
+
+        assert await tg_bot._drain_foreground_work_for_restart() is True
+        assert orch.process_registry.foreground_active_count.call_count == 2
+
+    async def test_named_reply_routes_without_user_entering_internal_name(self) -> None:
+        tg_bot, _ = _make_tg_bot()
+        orch = _make_orchestrator()
+        named = MagicMock(status="idle")
+        orch.get_named_session.return_value = named
+        tg_bot._orchestrator = orch
+        message = _make_message()
+        reply = MagicMock()
+        reply.text = "**[redowl | codex]**\nResult"
+        reply.caption = None
+        message.reply_to_message = reply
+
+        from ductor_bot.session.key import SessionKey
+
+        assert tg_bot._named_reply_target(message, SessionKey.telegram(1)) == "redowl"
 
 
 # ---------------------------------------------------------------------------

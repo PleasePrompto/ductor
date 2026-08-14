@@ -136,6 +136,11 @@ class InternalAgentAPI:
         Expects JSON body: ``{"from": "agent_name", "to": "agent_name", "message": "..."}``
         Returns JSON: ``{"sender": "...", "text": "...", "success": true/false, "error": "..."}``
         """
+        if self._bus is not None and not self._bus.enabled:
+            return web.json_response(
+                {"success": False, "error": "Inter-agent communication is disabled"},
+                status=403,
+            )
         try:
             data = await request.json()
         except Exception:
@@ -173,6 +178,11 @@ class InternalAgentAPI:
         Expects JSON body: ``{"from": "agent_name", "to": "agent_name", "message": "..."}``
         Returns immediately: ``{"success": true/false, "task_id": "...", "error": "..."}``
         """
+        if self._bus is not None and not self._bus.enabled:
+            return web.json_response(
+                {"success": False, "error": "Inter-agent communication is disabled"},
+                status=403,
+            )
         try:
             data = await request.json()
         except Exception:
@@ -292,6 +302,7 @@ class InternalAgentAPI:
             model_override=data.get("model") or "",
             thinking_override=data.get("thinking") or "",
             priority=normalise_priority(data.get("priority")),
+            parent_prompt=data.get("parent_prompt") or "",
         )
 
         try:

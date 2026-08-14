@@ -53,6 +53,53 @@ class TestLastPrompt:
         reg = _make_registry(tmp_path)
         reg.mark_running(1, "nonexistent", "prompt")  # should not raise
 
+    def test_mark_running_sets_planner_waiting_when_mode_enabled(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="codex", model="gpt-5.2-codex", prompt_preview="hi")
+        reg.set_planner_mode(1, ns.name, True)
+
+        reg.mark_running(1, ns.name, "plan this")
+
+        updated = reg.get(1, ns.name)
+        assert updated is not None
+        assert updated.planner_waiting is True
+
+    def test_update_after_response_clears_planner_waiting(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(chat_id=1, provider="codex", model="gpt-5.2-codex", prompt_preview="hi")
+        reg.set_planner_mode(1, ns.name, True)
+        reg.mark_running(1, ns.name, "plan this")
+
+        reg.update_after_response(1, ns.name, "sid-1")
+
+        updated = reg.get(1, ns.name)
+        assert updated is not None
+        assert updated.planner_mode is True
+        assert updated.planner_waiting is False
+
+    def test_rename_round_trips_and_is_scoped_to_session_key(self, tmp_path: Path) -> None:
+        path = tmp_path / "named_sessions.json"
+        reg = NamedSessionRegistry(path)
+        key = SessionKey.telegram(1, 42)
+        ns = reg.create(1, "codex", "gpt", "original title", key=key)
+
+        assert reg.begin_rename(key, ns.name)
+        renamed = reg.complete_rename(key, "  Better   title ")
+        assert renamed is not None
+        assert renamed.display_title == "Better title"
+        assert NamedSessionRegistry(path).get(1, ns.name).display_title == "Better title"  # type: ignore[union-attr]
+
+    def test_rename_rejects_empty_or_overlong_title(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        ns = reg.create(1, "codex", "gpt", "original")
+        key = SessionKey.telegram(1)
+        assert reg.begin_rename(key, ns.name)
+        with pytest.raises(ValueError, match="cannot be empty"):
+            reg.complete_rename(key, "   ")
+        assert reg.pending_rename(key) == ns.name
+        with pytest.raises(ValueError, match="72 characters"):
+            reg.complete_rename(key, "x" * 73)
+
 
 class TestRecoveredRunning:
     def _persist_running_session(
@@ -170,6 +217,30 @@ class TestReasoningEffort:
         reg2 = _make_registry(tmp_path)  # reload from disk
         loaded = next(iter(reg2._sessions.values()))
         assert loaded.reasoning_effort == "high"
+
+
+class TestDisplayTitleAndActiveTarget:
+    def test_prompt_title_and_scoped_target_survive_reload(self, tmp_path: Path) -> None:
+        reg = _make_registry(tmp_path)
+        key = SessionKey.for_transport("tg", 9, 42)
+        ns = reg.create(
+            chat_id=9,
+            provider="codex",
+            model="gpt-5.4",
+            prompt_preview="Review the payment retry flow and propose a safe rollout",
+            key=key,
+        )
+        reg.update_after_response(9, ns.name, "sid")
+        assert ns.display_title == "Review the payment retry flow and propose a safe rollout"
+        assert reg.set_active_target(key, ns.name)
+        assert reg.active_target(key) == ns.name
+        assert reg.active_target(SessionKey.telegram(9)) is None
+
+        reloaded = _make_registry(tmp_path)
+        loaded = reloaded.get(9, ns.name)
+        assert loaded is not None
+        assert loaded.display_title == ns.display_title
+        assert reloaded.active_target(key) == ns.name
 
 
 class TestInteragentQuotaIsolation:

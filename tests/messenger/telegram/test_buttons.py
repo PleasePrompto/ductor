@@ -204,6 +204,13 @@ class TestExtractButtons:
         texts = {b.text for b in all_buttons}
         assert texts == {"A", "B", "C"}
 
+    def test_named_session_buttons_are_prefixed_for_routing(self) -> None:
+        from ductor_bot.messenger.telegram.buttons import extract_buttons_for_session
+
+        _clean, markup = extract_buttons_for_session("Choose:\n\n[button:Yes]", "planner")
+        assert markup is not None
+        assert markup.inline_keyboard[0][0].callback_data == "ns:planner:Yes"
+
 
 class TestStripButtonSyntax:
     """Test the strip function used by the formatting pipeline."""

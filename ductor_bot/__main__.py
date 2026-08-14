@@ -16,6 +16,7 @@ from rich.console import Console
 # tests that patch ductor_bot.__main__.<name>.
 from ductor_bot.cli_commands.agents import cmd_agents as _cmd_agents
 from ductor_bot.cli_commands.api_cmd import cmd_api as _cmd_api
+from ductor_bot.cli_commands.codex import cmd_codex as _cmd_codex
 from ductor_bot.cli_commands.docker import cmd_docker as _cmd_docker
 from ductor_bot.cli_commands.install import cmd_install as _cmd_install
 from ductor_bot.cli_commands.lifecycle import (
@@ -368,6 +369,7 @@ _COMMANDS: dict[str, str] = {
     "reset": "setup",
     "service": "service",
     "docker": "docker",
+    "codex": "codex",
     "api": "api",
     "agents": "agents",
     "install": "install",
@@ -404,6 +406,7 @@ def main() -> None:
         "setup": lambda: _cmd_setup(verbose),
         "service": lambda: _cmd_service(args),
         "docker": lambda: _cmd_docker(args),
+        "codex": lambda: _cmd_codex(args),
         "api": lambda: _cmd_api(args),
         "agents": lambda: _cmd_agents(args),
         "install": lambda: _cmd_install(args),

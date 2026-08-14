@@ -117,6 +117,7 @@ class TaskRegistry:
             parent_agent=submit.parent_agent,
             name=submit.name or task_id,
             prompt_preview=submit.prompt[:_PROMPT_PREVIEW_LEN],
+            parent_prompt_preview=submit.parent_prompt[:_PROMPT_PREVIEW_LEN],
             provider=provider,
             model=model,
             status="running",

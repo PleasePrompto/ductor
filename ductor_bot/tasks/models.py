@@ -37,6 +37,7 @@ class TaskSubmit:
     thinking_override: str = ""
     reasoning_effort_override: str = ""
     priority: str = _DEFAULT_PRIORITY
+    parent_prompt: str = ""
 
 
 @dataclass(slots=True)
@@ -51,6 +52,7 @@ class TaskEntry:
     provider: str
     model: str
     status: str  # "running" | "done" | "failed" | "cancelled" | "waiting"
+    parent_prompt_preview: str = ""
     session_id: str = ""
     created_at: float = field(default_factory=time.time)
     completed_at: float = 0.0
@@ -79,6 +81,7 @@ class TaskEntry:
             # agent's "Original task: <prompt>" injection. prompt_preview
             # (80 chars) alone is too short.
             "original_prompt": self.original_prompt,
+            "parent_prompt_preview": self.parent_prompt_preview,
             "provider": self.provider,
             "model": self.model,
             "status": self.status,
@@ -108,6 +111,7 @@ class TaskEntry:
             parent_agent=d.get("parent_agent", "main"),
             name=d.get("name", ""),
             prompt_preview=d.get("prompt_preview", ""),
+            parent_prompt_preview=d.get("parent_prompt_preview", ""),
             provider=d.get("provider", ""),
             model=d.get("model", ""),
             status=d.get("status", "running"),

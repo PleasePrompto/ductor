@@ -83,6 +83,7 @@ def _generate_service_unit(binary_path: str) -> str:
     home = Path.home()
     path_dirs = [
         str(home / ".local" / "bin"),
+        str(home / ".npm-global" / "bin"),
         "/usr/local/bin",
         "/usr/bin",
         "/bin",

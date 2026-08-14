@@ -115,6 +115,12 @@ class TestEnableLinger:
         mock_run.return_value = make_completed(1, stderr="boom")
         assert _enable_linger("root") is False
 
+    def test_includes_npm_global_bin(self, tmp_path: Path) -> None:
+        with patch("ductor_bot.infra.service_linux.Path.home", return_value=tmp_path):
+            unit = _generate_service_unit("ductor")
+
+        assert f"{tmp_path}/.npm-global/bin" in unit
+
 
 class TestIsServiceAvailable:
     @patch("ductor_bot.infra.service_linux.shutil.which", return_value="/usr/bin/systemctl")

@@ -319,6 +319,7 @@ def test_check_gemini_auth_installed(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(_auth_mod, "find_gemini_cli", lambda: "/usr/bin/gemini")
+    monkeypatch.delenv("DUCTOR_HOME", raising=False)
     monkeypatch.delenv("GEMINI_CLI_HOME", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -465,6 +466,7 @@ def test_check_gemini_auth_ductor_config_key(
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(_auth_mod, "find_gemini_cli", lambda: "/usr/bin/gemini")
+    monkeypatch.delenv("DUCTOR_HOME", raising=False)
     monkeypatch.delenv("GEMINI_CLI_HOME", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -486,6 +488,7 @@ def test_check_gemini_auth_ductor_config_null_string_ignored(
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(_auth_mod, "find_gemini_cli", lambda: "/usr/bin/gemini")
+    monkeypatch.delenv("DUCTOR_HOME", raising=False)
     monkeypatch.delenv("GEMINI_CLI_HOME", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)

@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.types import AgentRequest
+from ductor_bot.infra.admission import AdmissionLease
 from ductor_bot.tasks.models import (
     TaskEntry,
     TaskInFlight,
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from ductor_bot.cli.process_registry import ProcessRegistry
     from ductor_bot.cli.service import CLIService
     from ductor_bot.config import TasksConfig
+    from ductor_bot.infra.admission import RestartAdmissionCoordinator
     from ductor_bot.tasks.registry import TaskRegistry
     from ductor_bot.workspace.paths import DuctorPaths
 
@@ -104,6 +106,11 @@ class TaskHub:
         self._process_registry = process_registry
         self._agent_process_registries: dict[str, ProcessRegistry] = {}
         self._pending_deliveries: set[asyncio.Task[None]] = set()
+        self._admission: RestartAdmissionCoordinator | None = None
+
+    def set_admission(self, admission: RestartAdmissionCoordinator) -> None:
+        """Share the parent orchestrator's generation lease with task work."""
+        self._admission = admission
 
     def start_maintenance(self) -> None:
         """Start periodic orphan cleanup (call once after bot startup)."""
@@ -287,13 +294,21 @@ class TaskHub:
     ) -> None:
         """Create the asyncio task and register it in-flight."""
         inflight = TaskInFlight(entry=entry)
+        lease = self._admission.reserve() if self._admission is not None else None
         atask = asyncio.create_task(
-            self._run(entry, prompt, thinking, resume_session=resume_session),
+            self._run(entry, prompt, thinking, resume_session=resume_session, lease=lease),
             name=f"task:{entry.task_id}",
         )
         inflight.asyncio_task = atask
         atask.add_done_callback(lambda _: self._in_flight.pop(entry.task_id, None))
         self._in_flight[entry.task_id] = inflight
+
+    def active_count(self) -> int:
+        """Return workers still running, including result/question delivery."""
+        return sum(
+            item.asyncio_task is not None and not item.asyncio_task.done()
+            for item in self._in_flight.values()
+        )
 
     async def forward_question(self, task_id: str, question: str) -> str:
         """Forward a task agent's question to the parent. Returns immediately.
@@ -329,8 +344,9 @@ class TaskHub:
             inflight.has_pending_question = True
 
         # Fire-and-forget: deliver to parent's Telegram chat
+        question_lease = self._admission.reserve() if self._admission is not None else None
         task = asyncio.create_task(
-            self._deliver_question(handler, entry, question),
+            self._deliver_question_admitted(handler, entry, question, question_lease),
             name=f"task-question:{task_id}",
         )
         task.add_done_callback(lambda _: None)  # prevent GC of fire-and-forget task
@@ -339,6 +355,19 @@ class TaskHub:
             "Question forwarded to parent agent. "
             "Finish your current work — you will be resumed with the answer."
         )
+
+    async def _deliver_question_admitted(
+        self,
+        handler: QuestionHandler,
+        entry: TaskEntry,
+        question: str,
+        lease: AdmissionLease | None,
+    ) -> None:
+        if self._admission is not None and lease is not None:
+            async with self._admission.adopt(lease):
+                await self._deliver_question(handler, entry, question)
+            return
+        await self._deliver_question(handler, entry, question)
 
     async def _deliver_question(
         self,
@@ -501,8 +530,28 @@ class TaskHub:
         thinking: str,
         *,
         resume_session: str | None = None,
+        lease: AdmissionLease | None = None,
     ) -> None:
         """Execute task as CLI subprocess."""
+        if self._admission is not None and lease is not None:
+            async with self._admission.adopt(lease):
+                await self._run_admitted(entry, prompt, thinking, resume_session=resume_session)
+            return
+        if self._admission is not None:
+            async with self._admission.lease("task"):
+                await self._run_admitted(entry, prompt, thinking, resume_session=resume_session)
+            return
+        await self._run_admitted(entry, prompt, thinking, resume_session=resume_session)
+
+    async def _run_admitted(
+        self,
+        entry: TaskEntry,
+        prompt: str,
+        thinking: str,
+        *,
+        resume_session: str | None = None,
+    ) -> None:
+        """Execute an already-admitted task, including its final callback."""
         cli = self._cli_services.get(entry.parent_agent) or self._cli_service
         assert cli is not None
 

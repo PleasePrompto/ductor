@@ -138,7 +138,8 @@ class AgentSupervisor:
         from ductor_bot.multiagent.bus import InterAgentBus
         from ductor_bot.multiagent.internal_api import InternalAgentAPI
 
-        self._bus = InterAgentBus()
+        messaging_enabled = bool(getattr(self._main_config, "interagent_enabled", False))
+        self._bus = InterAgentBus(enabled=messaging_enabled)
         self._internal_api = InternalAgentAPI(
             self._bus,
             port=self._main_config.interagent_port,
@@ -149,7 +150,10 @@ class AgentSupervisor:
         if not started:
             msg = "Internal agent API failed to start"
             raise RuntimeError(msg)
-        logger.info("InterAgentBus and internal API started")
+        logger.info(
+            "InterAgentBus and internal API started (messaging_enabled=%s)",
+            messaging_enabled,
+        )
 
         # Initialize task hub (background task delegation)
         if self._main_config.tasks.enabled:

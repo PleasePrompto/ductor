@@ -68,12 +68,23 @@ class MatrixTransport:
 
     # -- Origin handlers (unicast) -----------------------------------------
 
-    async def _deliver_background(self, env: Envelope) -> None:
+    async def _deliver_background(self, env: Envelope) -> None:  # noqa: PLR0912
         room_id = self._resolve_room(env)
         if not room_id:
             return
         elapsed = f"{env.elapsed_seconds:.0f}s"
         if env.session_name:
+            orch = self._bot.orchestrator
+            if orch is not None:
+                session_update = str(env.metadata.get("session_update", "") or "")
+                if session_update == "end":
+                    orch.named_sessions.end_session(env.chat_id, env.session_name)
+                elif env.is_error or env.status == "aborted":
+                    orch.named_sessions.set_status(env.chat_id, env.session_name, "idle")
+                else:
+                    orch.named_sessions.update_after_response(
+                        env.chat_id, env.session_name, env.session_id
+                    )
             if env.status == "aborted":
                 text = fmt(f"**[{env.session_name}] Cancelled**", SEP, f"_{env.prompt_preview}_")
             elif env.is_error:
@@ -142,6 +153,9 @@ class MatrixTransport:
         room_id = self._resolve_room(env)
         if not room_id:
             return
+        opts = self._opts(env)
+        if env.status in {"failed", "timeout", "cancelled"}:
+            opts.parse_file_tags = False
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
 
         note = ""
@@ -156,9 +170,9 @@ class MatrixTransport:
             note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
 
         if note:
-            await matrix_send_rich(self._bot.client, room_id, note)
+            await matrix_send_rich(self._bot.client, room_id, note, opts)
         if env.needs_injection and env.result_text:
-            await matrix_send_rich(self._bot.client, room_id, env.result_text)
+            await matrix_send_rich(self._bot.client, room_id, env.result_text, opts)
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         room_id = self._resolve_room(env)

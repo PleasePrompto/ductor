@@ -99,6 +99,9 @@ def main() -> None:
         body["thinking"] = thinking
     if priority:
         body["priority"] = priority
+    parent_prompt = os.environ.get("DUCTOR_PARENT_PROMPT", "")
+    if parent_prompt:
+        body["parent_prompt"] = parent_prompt
 
     # Propagate sender context so task results route back to the originating chat/topic
     chat_id = os.environ.get("DUCTOR_CHAT_ID", "")

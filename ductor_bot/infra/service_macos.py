@@ -70,6 +70,7 @@ def _generate_plist_data(binary_path: str) -> dict[str, Any]:
 
     path_dirs = [
         str(home / ".local" / "bin"),
+        str(home / ".npm-global" / "bin"),
         "/opt/homebrew/bin",
         "/usr/local/bin",
         "/usr/bin",

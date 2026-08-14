@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,12 +24,13 @@ from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.i18n import t
-from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
+from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker, write_restart_marker
 from ductor_bot.infra.updater import UpdateObserver
 from ductor_bot.infra.version import VersionInfo, get_current_version
 from ductor_bot.log_context import set_log_context
 from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.messenger.telegram.callbacks import (
+    build_button_followup_prompt,
     edit_selector_response,
     mark_button_choice,
     parse_ns_callback,
@@ -65,6 +67,7 @@ from ductor_bot.messenger.telegram.message_dispatch import (
 )
 from ductor_bot.messenger.telegram.middleware import (
     MQ_PREFIX,
+    AdmissionMiddleware,
     AuthMiddleware,
     SequentialMiddleware,
 )
@@ -100,6 +103,9 @@ logger = logging.getLogger(__name__)
 
 _WELCOME_IMAGE = Path(__file__).resolve().parent / "ductor_images" / "welcome.png"
 _CAPTION_LIMIT = 1024
+_RESTART_DRAIN_TIMEOUT_SECONDS = 45.0
+_RESTART_DRAIN_POLL_SECONDS = 0.25
+_NAMED_RESULT_TAG = re.compile(r"^\*\*\[([a-z0-9]+) \| [^\]]+\]\*\*", re.IGNORECASE)
 
 # Backward-compatible patch points used by tests.
 TypingContext = _TypingContext
@@ -110,6 +116,23 @@ _BOT_COMMANDS: list[BotCommand] = [
 ]
 
 _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}
+
+# Commands routed through the orchestrator rather than handled directly by
+# TelegramBot-specific methods.
+_ORCHESTRATOR_COMMANDS = (
+    "status",
+    "memory",
+    "model",
+    "effort",
+    "fast",
+    "faston",
+    "cron",
+    "diagnose",
+    "upgrade",
+    "reset",
+    "plan",
+    "implement",
+)
 
 
 def _rebuild_commands() -> None:
@@ -136,7 +159,8 @@ def _build_help_text() -> str:
         SEP,
         f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('reset')}\n{_help_line('stop')}\n"
         f"{_help_line('interrupt')}\n{_help_line('stop_all')}\n"
-        f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('status')}\n{_help_line('memory')}",
+        f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('fast')}\n{_help_line('faston')}\n"
+        f"{_help_line('status')}\n{_help_line('memory')}",
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
@@ -237,10 +261,12 @@ class TelegramBot:
         on_rejected = self._on_group_rejected
         auth = AuthMiddleware(allowed, allowed_group_ids=allowed_groups, on_rejected=on_rejected)
         self._router.message.outer_middleware(auth)
+        self._router.message.outer_middleware(AdmissionMiddleware(self._bus.admission))
         self._router.message.outer_middleware(self._sequential)
         self._router.callback_query.outer_middleware(
             AuthMiddleware(allowed, allowed_group_ids=allowed_groups, on_rejected=on_rejected)
         )
+        self._router.callback_query.outer_middleware(AdmissionMiddleware(self._bus.admission))
 
         self._register_handlers()
         self._register_member_handlers()
@@ -308,6 +334,11 @@ class TelegramBot:
         if message.chat.type not in ("group", "supergroup"):
             return False
         return is_command_for_others(message, self._bot_username)
+
+    def _is_bot_command_message(self, message: Message) -> bool:
+        """Keep command messages out of the generic conversation handler."""
+        entities = message.entities or []
+        return any(entity.type == "bot_command" and entity.offset == 0 for entity in entities)
 
     def file_roots(self, paths: DuctorPaths) -> list[Path] | None:
         """Allowed root directories for ``<file:...>`` tag sends."""
@@ -405,7 +436,7 @@ class TelegramBot:
         r.message(Command("tasks", ignore_case=True))(self._on_tasks)
         r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
-        base_cmds = ["status", "memory", "model", "effort", "cron", "diagnose", "upgrade", "reset"]
+        base_cmds = list(_ORCHESTRATOR_COMMANDS)
         if self._agent_name == "main":
             base_cmds += ["agents", "agent_start", "agent_stop", "agent_restart"]
         for cmd in base_cmds:
@@ -1189,51 +1220,58 @@ class TelegramBot:
 
         # Resolve display label before data gets rewritten
         display_label: str = data
+        use_resolved_prompt = False
         if is_welcome_callback(data):
             display_label = get_welcome_button_label(data) or data
             resolved = resolve_welcome_callback(data)
             if not resolved:
                 return
             data = resolved
+            use_resolved_prompt = True
 
-        if await self._route_special_callback(key, msg.message_id, data, thread_id=thread_id):
+        if await self._route_special_callback(key, msg, data, thread_id=thread_id):
             return
 
         await self._mark_button_choice(chat_id, msg, display_label)
+        prompt = (
+            data
+            if use_resolved_prompt
+            else build_button_followup_prompt(self._message_text_for_callback(msg), display_label)
+        )
 
         async with self._sequential.get_lock(key.lock_key):
             if self._config.streaming.enabled:
-                await self._handle_streaming(msg, key, data, thread_id=thread_id)
+                await self._handle_streaming(msg, key, prompt, thread_id=thread_id)
             else:
-                await self._handle_non_streaming(msg, key, data, thread_id=thread_id)
+                await self._handle_non_streaming(msg, key, prompt, thread_id=thread_id)
 
     async def _route_special_callback(
-        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+        self, key: SessionKey, msg: Message, data: str, *, thread_id: int | None = None
     ) -> bool:
         """Handle known callback namespaces. Returns True when handled."""
-        if await self._route_prefix_callback(key, message_id, data, thread_id=thread_id):
+        if await self._route_prefix_callback(key, msg, data, thread_id=thread_id):
             return True
 
         from ductor_bot.orchestrator.selectors.model_selector import is_model_selector_callback
 
         if is_model_selector_callback(data):
-            await self._handle_model_selector(key, message_id, data)
+            await self._handle_model_selector(key, msg.message_id, data)
             return True
 
         from ductor_bot.orchestrator.selectors.cron_selector import is_cron_selector_callback
 
         if is_cron_selector_callback(data):
-            await self._handle_cron_selector(key.chat_id, message_id, data)
+            await self._handle_cron_selector(key.chat_id, msg.message_id, data)
             return True
 
         if is_file_browser_callback(data):
-            await self._handle_file_browser(key, message_id, data, thread_id=thread_id)
+            await self._handle_file_browser(key, msg.message_id, data, thread_id=thread_id)
             return True
 
         return False
 
     async def _route_prefix_callback(
-        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+        self, key: SessionKey, msg: Message, data: str, *, thread_id: int | None = None
     ) -> bool:
         """Handle prefix-based callback namespaces. Returns True when handled."""
         chat_id = key.chat_id
@@ -1242,22 +1280,22 @@ class TelegramBot:
             return True
 
         if data.startswith("upg:"):
-            await self._handle_upgrade_callback(chat_id, message_id, data, thread_id=thread_id)
+            await self._handle_upgrade_callback(chat_id, msg.message_id, data, thread_id=thread_id)
             return True
 
         from ductor_bot.orchestrator.selectors.session_selector import is_session_selector_callback
         from ductor_bot.orchestrator.selectors.task_selector import is_task_selector_callback
 
         if is_session_selector_callback(data):
-            await self._handle_session_selector(chat_id, message_id, data)
+            await self._handle_session_selector(key, msg.message_id, data)
             return True
 
         if is_task_selector_callback(data):
-            await self._handle_task_selector(chat_id, message_id, data)
+            await self._handle_task_selector(chat_id, msg.message_id, data)
             return True
 
         if data.startswith("ns:"):
-            await self._handle_ns_callback(key, data, thread_id=thread_id)
+            await self._handle_ns_callback(key, msg, data, thread_id=thread_id)
             return True
 
         return False
@@ -1278,13 +1316,13 @@ class TelegramBot:
             resp = await handle_cron_callback(self._orch, data)
         await edit_selector_response(self._bot, chat_id, message_id, resp)
 
-    async def _handle_session_selector(self, chat_id: int, message_id: int, data: str) -> None:
+    async def _handle_session_selector(self, key: SessionKey, message_id: int, data: str) -> None:
         """Handle session selector wizard by editing the message in-place."""
         from ductor_bot.orchestrator.selectors.session_selector import handle_session_callback
 
-        async with self._sequential.get_lock(chat_id):
-            resp = await handle_session_callback(self._orch, chat_id, data)
-        await edit_selector_response(self._bot, chat_id, message_id, resp)
+        async with self._sequential.get_lock(key.lock_key):
+            resp = await handle_session_callback(self._orch, key, data)
+        await edit_selector_response(self._bot, key.chat_id, message_id, resp)
 
     async def _handle_task_selector(self, chat_id: int, message_id: int, data: str) -> None:
         """Handle task selector wizard by editing the message in-place."""
@@ -1297,34 +1335,38 @@ class TelegramBot:
         await edit_selector_response(self._bot, chat_id, message_id, resp)
 
     async def _handle_ns_callback(
-        self, key: SessionKey, data: str, *, thread_id: int | None = None
+        self, key: SessionKey, msg: Message, data: str, *, thread_id: int | None = None
     ) -> None:
         """Handle ``ns:<session_name>:<label>`` button callbacks from session results."""
         parsed = parse_ns_callback(data)
         if parsed is None:
             return
         session_name, label = parsed
+        prompt = build_button_followup_prompt(self._message_text_for_callback(msg), label)
 
         async with self._sequential.get_lock(key.lock_key):
             if self._config.streaming.enabled:
-                from ductor_bot.orchestrator.flows import named_session_streaming
-
-                result = await named_session_streaming(self._orch, key, session_name, label)
-            else:
-                from ductor_bot.orchestrator.flows import named_session_flow
-
-                result = await named_session_flow(self._orch, key, session_name, label)
-
-            if result.text:
-                await send_rich(
-                    self._bot,
-                    key.chat_id,
-                    result.text,
-                    SendRichOpts(
-                        allowed_roots=self.file_roots(self._orch.paths),
-                        thread_id=thread_id,
-                    ),
+                task_id = self._orch.submit_named_followup_bg(
+                    key.chat_id, session_name, prompt, msg.message_id, thread_id
                 )
+            else:
+                task_id = self._orch.submit_named_followup_bg(
+                    key.chat_id, session_name, prompt, msg.message_id, thread_id
+                )
+            await send_rich(
+                self._bot,
+                key.chat_id,
+                fmt(f"**[{session_name}] Follow-up sent**", SEP, f"Task `{task_id}` queued."),
+                SendRichOpts(allowed_roots=self.file_roots(self._orch.paths), thread_id=thread_id),
+            )
+
+    def _message_text_for_callback(self, msg: Message) -> str | None:
+        return (
+            getattr(msg, "text", None)
+            or getattr(msg, "caption", None)
+            or getattr(msg, "html_text", None)
+            or getattr(msg, "html_caption", None)
+        )
 
     async def _handle_file_browser(
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
@@ -1383,17 +1425,34 @@ class TelegramBot:
 
         key = get_session_key(message)
         thread_id = get_thread_id(message)
+        if name := self._named_reply_target(message, key):
+            # Keep the stable name internal: a direct reply is turned into the
+            # existing named-session directive before it reaches the router.
+            text = f"@{name} {text}"
         logger.debug("Message text=%s", text[:80])
 
-        # #63: status_reaction (stage-based) wins over seen_reaction (one-shot).
-        # Both enabled would fight over the same Telegram emoji slot.
-        if self._config.scene.seen_reaction and not self._config.scene.status_reaction:
+        # Lifecycle reactions start with an accepted marker; foreground
+        # dispatch replaces it with processing/final state.
+        if self._config.scene.seen_reaction and text.strip().lower() not in {"session", "sessions"}:
             await self._set_seen_reaction(message)
 
         if self._config.streaming.enabled:
             await self._handle_streaming(message, key, text, thread_id=thread_id)
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
+
+    def _named_reply_target(self, message: Message, key: SessionKey) -> str | None:
+        """Resolve a reply to one of our named-session result headers."""
+        replied = getattr(message, "reply_to_message", None)
+        if replied is None:
+            return None
+        source_text = getattr(replied, "text", None) or getattr(replied, "caption", None) or ""
+        match = _NAMED_RESULT_TAG.match(source_text)
+        if match is None:
+            return None
+        name = match.group(1)
+        session = self._orch.get_named_session(key.chat_id, name)
+        return name if session is not None and session.status != "ended" else None
 
     async def _set_seen_reaction(self, message: Message) -> None:
         """Set a seen reaction on the user message. Graceful degradation on failure."""
@@ -1427,6 +1486,9 @@ class TelegramBot:
                 return None
             return prepend_reply_to_media(message, media_prompt)
         if not message.text:
+            return None
+        if self._is_bot_command_message(message):
+            logger.debug("Ignoring bot command in generic message handler text=%s", message.text[:80])
             return None
         text = strip_mention(message.text, self._bot_username)
         return build_reply_prompt(message, text)
@@ -1628,24 +1690,96 @@ class TelegramBot:
             while True:
                 await asyncio.sleep(2.0)
                 if await asyncio.to_thread(consume_restart_marker, marker_path=marker):
-                    logger.info("Restart marker detected, stopping polling")
+                    generation = await self._bus.admission.close()
+                    # Closing admission precedes stopping polling.  Middleware
+                    # leases have already covered every update aiogram handed
+                    # to us; new roots cannot race a zero-work observation.
+                    try:
+                        await self._dp.stop_polling()
+                    except asyncio.CancelledError:
+                        # Test doubles and shutdown may cancel the watcher at
+                        # this exact handoff point.  No accepted work is
+                        # terminated here; the outer supervisor owns cleanup.
+                        self._exit_code = EXIT_RESTART
+                        return
+                    except Exception:
+                        logger.exception("Could not stop Telegram polling for restart")
+                        await asyncio.to_thread(write_restart_marker, marker_path=marker)
+                        continue
+                    drained = await self._drain_foreground_work_for_restart(generation)
+                    if not drained:
+                        logger.warning(
+                            "Restart quiescence not proven; preserving marker "
+                            "and refusing clean exit"
+                        )
+                        await asyncio.to_thread(write_restart_marker, marker_path=marker)
+                        continue
+                    logger.info("Restart marker detected; closed generation quiesced")
                     self._exit_code = EXIT_RESTART
-                    await self._dp.stop_polling()
         except asyncio.CancelledError:
             logger.debug("Restart watcher cancelled")
+
+    async def _drain_foreground_work_for_restart(self, generation: int | None = None) -> bool:
+        """Wait briefly for registered foreground/named turns to finish safely.
+
+        Polling stays live while locks or CLI processes are active, so their
+        completion and result delivery are not cut off.  Background jobs are
+        intentionally not included: their observer owns separate lifecycle
+        and they are not foreground Telegram turns.
+        """
+        generation = generation or self._bus.admission.generation
+        if not await self._bus.admission.wait_for_quiescence(
+            generation, _RESTART_DRAIN_TIMEOUT_SECONDS
+        ):
+            return False
+        deadline = asyncio.get_running_loop().time() + _RESTART_DRAIN_TIMEOUT_SECONDS
+        last_reported: tuple[int, int, int, int] | None = None
+        while True:
+            active_count = self._orch.process_registry.active_count()
+            # Compatibility for lightweight integrations which expose only
+            # the old foreground probe; real registries always return int.
+            processes = (
+                active_count
+                if isinstance(active_count, int)
+                else self._orch.process_registry.foreground_active_count()
+            )
+            lock_pool = self._orch.lock_pool
+            locks = lock_pool.locked_count() if lock_pool is not None else 0
+            task_hub = self._orch.task_hub
+            tasks = task_hub.active_count() if task_hub is not None else 0
+            bus = self._bus.inflight_count
+            locks = locks if isinstance(locks, int) else 0
+            tasks = tasks if isinstance(tasks, int) else 0
+            bus = bus if isinstance(bus, int) else 0
+            if (
+                not processes
+                and not locks
+                and not tasks
+                and not bus
+                and not self._bus.admission.active_count(generation)
+            ):
+                return True
+            state = (processes, locks, tasks, bus)
+            if state != last_reported:
+                logger.info(
+                    "Restart waiting: %d process(es), %d dispatch lock(s), %d task(s), %d delivery(ies)",
+                    processes,
+                    locks,
+                    tasks,
+                    bus,
+                )
+                last_reported = state
+            if asyncio.get_running_loop().time() >= deadline:
+                return False
+            await asyncio.sleep(_RESTART_DRAIN_POLL_SECONDS)
 
     async def run(self) -> int:
         """Start polling. Returns exit code (0 = normal, 42 = restart)."""
         logger.info("Starting Telegram bot (aiogram, long-polling)...")
-        await self._bot.delete_webhook(drop_pending_updates=True)
-        # Flush any lingering polling session from a previous instance (e.g.
-        # after /agent_restart).  offset=-1 confirms all pending updates and
-        # immediately takes over the polling slot on Telegram's servers,
-        # preventing TelegramConflictError on the first real getUpdates call.
-        with contextlib.suppress(Exception):
-            from aiogram.methods import GetUpdates
-
-            await self._bot(GetUpdates(offset=-1, timeout=0))
+        # Remove a webhook if one was configured, but never acknowledge queued
+        # updates here.  A marker restart must resume polling from Telegram's
+        # retained offset, otherwise messages received during handoff vanish.
+        await self._bot.delete_webhook(drop_pending_updates=False)
         allowed_updates = self._dp.resolve_used_update_types()
         logger.info("Polling allowed_updates=%s", ",".join(allowed_updates))
         await self._dp.start_polling(
@@ -1662,7 +1796,7 @@ class TelegramBot:
         if self._update_observer:
             await self._update_observer.stop()
         if self._orchestrator:
-            await self._orchestrator.shutdown()
+            await self._orchestrator.shutdown(emergency=self._exit_code != EXIT_RESTART)
 
         # Release the Telegram polling session so a new bot instance can start.
         # Without this, Telegram rejects the next getUpdates call with

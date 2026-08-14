@@ -108,6 +108,12 @@ class CodexCLI(BaseCLI):
             return ["--full-auto"]
         return ["--sandbox", cfg.sandbox_mode]
 
+    def _fast_mode_flags(self) -> list[str]:
+        """Return the documented config overrides for one Fast-mode turn."""
+        if not self._config.fast_mode:
+            return []
+        return ["-c", "features.fast_mode=true", "-c", "service_tier=fast"]
+
     def _build_resume_command(self, session_id: str, *, json_output: bool) -> list[str]:
         """Build command to resume an existing Codex session."""
         cfg = self._config
@@ -122,6 +128,7 @@ class CodexCLI(BaseCLI):
             cmd += ["--model", cfg.model]
         if cfg.reasoning_effort and cfg.reasoning_effort != "default":
             cmd += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
+        cmd += self._fast_mode_flags()
         cmd += ["--", session_id]
         cmd.append("-")
         return cmd
@@ -149,6 +156,7 @@ class CodexCLI(BaseCLI):
             cmd += ["--model", cfg.model]
         if cfg.reasoning_effort and cfg.reasoning_effort != "default":
             cmd += ["-c", f"model_reasoning_effort={cfg.reasoning_effort}"]
+        cmd += self._fast_mode_flags()
         if cfg.instructions:
             cmd += ["--instructions", cfg.instructions]
         for img in cfg.images:

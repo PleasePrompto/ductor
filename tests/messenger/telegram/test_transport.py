@@ -231,6 +231,27 @@ class TestBackgroundDelivery:
         assert "[debug] Failed" in text
         assert "CLI crash" in text
 
+
+class TestTaskResultDiagnostics:
+    async def test_failed_task_diagnostic_disables_file_tag_uploads(self) -> None:
+        transport, _, _ = _make_transport()
+        env = _env(
+            origin=Origin.TASK_RESULT,
+            status="failed",
+            result_text="delivery interrupted: <file:/missing/error.log>",
+            needs_injection=True,
+            metadata={"name": "research", "error": "<file:/missing/error.log>"},
+        )
+
+        with patch(
+            "ductor_bot.messenger.telegram.transport.send_rich", new_callable=AsyncMock
+        ) as mock_send:
+            await transport.deliver(env)
+
+        assert mock_send.await_count == 2
+        assert all(call.args[3].parse_file_tags is False for call in mock_send.await_args_list)
+        assert "<file:/missing/error.log>" in mock_send.await_args_list[0].args[2]
+
     async def test_named_session_aborted(self) -> None:
         transport, _, _ = _make_transport()
         env = _env(

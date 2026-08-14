@@ -9,6 +9,7 @@ import signal
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.stream_events import ToolUseEvent
@@ -20,6 +21,7 @@ from ductor_bot.i18n import t
 from ductor_bot.infra.inflight import InflightTurn
 from ductor_bot.log_context import set_log_context
 from ductor_bot.orchestrator.hooks import HookContext
+from ductor_bot.orchestrator.planner import planner_append_prompt
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.session import SessionData, SessionKey
 from ductor_bot.text.response_format import session_error_text, timeout_error_text
@@ -116,6 +118,7 @@ async def _prepare_normal(
     )
     if session.session_id:
         set_log_context(session_id=session.session_id)
+    _ensure_codex_working_dir(orch, session)
     logger.info(
         "Session resolved sid=%s new=%s msgs=%d",
         session.session_id[:8] if session.session_id else "<new>",
@@ -138,6 +141,9 @@ async def _prepare_normal(
     )
     if files_block:
         append_prompt = f"{append_prompt}\n\n{files_block}" if append_prompt else files_block
+    planner_prompt = planner_append_prompt(req_provider) if session.planner_mode else None
+    if planner_prompt:
+        append_prompt = f"{append_prompt}\n\n{planner_prompt}" if append_prompt else planner_prompt
 
     hook_ctx = HookContext(
         chat_id=key.chat_id,
@@ -155,14 +161,31 @@ async def _prepare_normal(
         model_override=req_model,
         provider_override=req_provider,
         effort_override=req_effort,
+        fast_mode=session.fast_mode,
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,
         resume_session=None if is_new else session.session_id,
+        working_dir_override=session.working_dir or None,
+        allow_invalid_session_recovery=session.source_kind != "codex_import",
         timeout_seconds=timeout_secs,
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
     return request, session
+
+
+def _ensure_codex_working_dir(orch: Orchestrator, session: SessionData) -> None:
+    """Persist a useful cwd for Ductor-created Codex sessions."""
+    if session.provider != "codex" or session.source_kind != "ductor":
+        return
+    if session.working_dir and not _is_low_value_ductor_working_dir(session.working_dir):
+        return
+    session.working_dir = str(orch.paths.workspace)
+
+
+def _is_low_value_ductor_working_dir(raw: str) -> bool:
+    path = Path(raw).expanduser()
+    return path.name == "Agents"
 
 
 async def _update_session(
@@ -176,9 +199,18 @@ async def _update_session(
             response.session_id[:8],
         )
         session.session_id = response.session_id
+    session.planner_waiting = False
     await orch._sessions.update_session(
         session, cost_usd=response.cost_usd, tokens=response.total_tokens
     )
+
+
+async def _clear_planner_waiting(orch: Orchestrator, key: SessionKey, session: SessionData) -> None:
+    """Clear the transient planner waiting marker after a foreground turn."""
+    if session.planner_mode or session.planner_waiting:
+        await orch.set_main_planner_state(
+            key, provider=session.provider, model=session.model, waiting=False
+        )
 
 
 async def _preserve_session_from_response(
@@ -290,9 +322,9 @@ def _is_invalid_session(response: AgentResponse) -> bool:
     return any(marker in lower for marker in _INVALID_SESSION_MARKERS)
 
 
-def _needs_session_recovery(response: AgentResponse) -> bool:
+def _needs_session_recovery(response: AgentResponse, *, allow_invalid_session_recovery: bool = True) -> bool:
     """Return True when the response warrants an automatic session reset + retry."""
-    return _is_sigkill(response) or _is_invalid_session(response)
+    return _is_sigkill(response) or (allow_invalid_session_recovery and _is_invalid_session(response))
 
 
 @dataclass(slots=True)
@@ -348,7 +380,9 @@ async def _maybe_recover_session(  # noqa: PLR0913
         _reg.was_aborted(key.chat_id)
         or _reg.was_aborted_topic(key.chat_id, key.topic_id)
         or _reg.was_interrupted(key.chat_id)
-        or not _needs_session_recovery(response)
+        or not _needs_session_recovery(
+            response, allow_invalid_session_recovery=request.allow_invalid_session_recovery
+        )
     ):
         return _RecoveryOutcome(
             request=request,
@@ -413,6 +447,7 @@ async def _recover_session(
             on_thinking_delta=cb.on_thinking_delta,
             on_tool_activity=cb.on_tool_activity,
             on_system_status=cb.on_system_status,
+            on_reasoning_delta=cb.on_reasoning_delta,
         )
     else:
         response = await orch._cli_service.execute(request)
@@ -502,13 +537,16 @@ async def _finalize_turn(  # noqa: PLR0913
         _reg.clear_interrupt(key.chat_id)
         await _preserve_session_from_response(orch, session, response, reason="abort")
         logger.info("%s flow aborted/interrupted by user", flow_label)
-        return OrchestratorResult(text="")
+        return OrchestratorResult(text="", is_error=True)
     if response.timed_out:
         return await _handle_timeout(orch, key, session, response, request)
+    if _is_invalid_session(response) and not request.allow_invalid_session_recovery:
+        await orch.mark_codex_import_unavailable(key)
+        return OrchestratorResult(text=t("session.import_unavailable"))
     if response.is_error:
         if _is_sigkill(response):
             logger.warning("recovery.sigkill chat=%s action=user-retry", key.chat_id)
-            return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True)
+            return OrchestratorResult(text=_sigkill_user_msg(), stream_fallback=True, is_error=True)
         model_name, provider_name = _request_target(orch, request)
         await _preserve_session_from_response(orch, session, response, reason="error")
         return await _reset_on_error(
@@ -542,10 +580,17 @@ async def normal(
     """Handle normal conversation with session resume."""
     logger.info("Normal flow starting")
     request, session = await _prepare_normal(orch, key, text, model_override=model_override)
+    if session.source_kind == "codex_import" and not session.session_id:
+        return OrchestratorResult(text=t("session.import_unavailable"))
     warning = await _gemini_missing_config_key_warning(orch, request)
     if warning is not None:
         logger.warning("Gemini API-key mode without configured ductor key")
         return warning
+
+    if session.planner_mode:
+        session = await orch.set_main_planner_state(
+            key, provider=session.provider, model=session.model, waiting=True
+        )
 
     _begin_inflight(orch, request, session, is_recovery=is_recovery)
     try:
@@ -565,6 +610,7 @@ async def normal(
             session_recovered=outcome.session_recovered,
         )
     finally:
+        await _clear_planner_waiting(orch, key, session)
         orch._inflight_tracker.complete(key.chat_id)
 
 
@@ -579,10 +625,17 @@ async def normal_streaming(
     """Handle normal conversation with streaming output."""
     logger.info("Streaming flow starting")
     request, session = await _prepare_normal(orch, key, text, model_override=model_override)
+    if session.source_kind == "codex_import" and not session.session_id:
+        return OrchestratorResult(text=t("session.import_unavailable"))
     warning = await _gemini_missing_config_key_warning(orch, request)
     if warning is not None:
         logger.warning("Gemini API-key mode without configured ductor key")
         return warning
+
+    if session.planner_mode:
+        session = await orch.set_main_planner_state(
+            key, provider=session.provider, model=session.model, waiting=True
+        )
 
     _begin_inflight(orch, request, session, is_recovery=False)
     try:
@@ -624,6 +677,7 @@ async def normal_streaming(
             schedule_memory_flush=True,
         )
     finally:
+        await _clear_planner_waiting(orch, key, session)
         orch._inflight_tracker.complete(key.chat_id)
 
 
@@ -655,10 +709,10 @@ def _finish_normal(
     """Post-processing for normal() and normal_streaming()."""
     if response.is_error:
         if response.timed_out:
-            return OrchestratorResult(text=t("timeout.generic"))
+            return OrchestratorResult(text=t("timeout.generic"), is_error=True)
         if response.result.strip():
-            return OrchestratorResult(text=t("error.generic", detail=response.result[:500]))
-        return OrchestratorResult(text=t("error.check_logs"))
+            return OrchestratorResult(text=t("error.generic", detail=response.result[:500]), is_error=True)
+        return OrchestratorResult(text=t("error.check_logs"), is_error=True)
 
     # #84: tool-only turns (agent silently updates memory/files without
     # generating text) used to return an empty string here -- Telegram's
@@ -760,7 +814,9 @@ async def named_session_flow(
     )
     request = AgentRequest(
         prompt=text,
-        append_system_prompt=files_block,
+        append_system_prompt="\n\n".join(
+            part for part in (files_block, planner_append_prompt(ns.provider) if ns.planner_mode else None) if part
+        ) or None,
         model_override=ns.model,
         provider_override=ns.provider,
         effort_override=ns.reasoning_effort or None,
@@ -769,6 +825,8 @@ async def named_session_flow(
         transport=key.transport,
         process_label=f"ns:{session_name}",
         resume_session=ns.session_id or None,
+        working_dir_override=ns.working_dir or None,
+        allow_invalid_session_recovery=ns.source_kind != "codex_import",
         timeout_seconds=resolve_timeout(orch._config, "normal"),
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
@@ -781,11 +839,14 @@ async def named_session_flow(
         or _reg.was_interrupted(key.chat_id)
     ):
         _reg.clear_interrupt(key.chat_id)
-        ns.status = "idle"
-        return OrchestratorResult(text="")
+        orch._named_sessions.set_status(key.chat_id, session_name, "idle")
+        return OrchestratorResult(text="", is_error=True)
+    if _is_invalid_session(response) and ns.source_kind == "codex_import":
+        orch._named_sessions.end_session(key.chat_id, session_name)
+        return OrchestratorResult(text=f"{tag}{t('session.import_unavailable')}")
     if response.is_error:
-        ns.status = "idle"
-        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}")
+        orch._named_sessions.set_status(key.chat_id, session_name, "idle")
+        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}", is_error=True)
 
     orch._named_sessions.update_after_response(key.chat_id, session_name, response.session_id or "")
     return OrchestratorResult(text=f"{tag}{response.result}")
@@ -822,7 +883,9 @@ async def named_session_streaming(
     )
     request = AgentRequest(
         prompt=text,
-        append_system_prompt=files_block,
+        append_system_prompt="\n\n".join(
+            part for part in (files_block, planner_append_prompt(ns.provider) if ns.planner_mode else None) if part
+        ) or None,
         model_override=ns.model,
         provider_override=ns.provider,
         effort_override=ns.reasoning_effort or None,
@@ -831,6 +894,8 @@ async def named_session_streaming(
         transport=key.transport,
         process_label=f"ns:{session_name}",
         resume_session=ns.session_id or None,
+        working_dir_override=ns.working_dir or None,
+        allow_invalid_session_recovery=ns.source_kind != "codex_import",
         timeout_seconds=resolve_timeout(orch._config, "normal"),
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
@@ -861,11 +926,14 @@ async def named_session_streaming(
         or _reg2.was_interrupted(key.chat_id)
     ):
         _reg2.clear_interrupt(key.chat_id)
-        ns.status = "idle"
-        return OrchestratorResult(text="")
+        orch._named_sessions.set_status(key.chat_id, session_name, "idle")
+        return OrchestratorResult(text="", is_error=True)
+    if _is_invalid_session(response) and ns.source_kind == "codex_import":
+        orch._named_sessions.end_session(key.chat_id, session_name)
+        return OrchestratorResult(text=f"{tag}{t('session.import_unavailable')}")
     if response.is_error:
-        ns.status = "idle"
-        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}")
+        orch._named_sessions.set_status(key.chat_id, session_name, "idle")
+        return OrchestratorResult(text=f"{tag}{t('error.generic', detail=response.result[:500])}", is_error=True)
 
     orch._named_sessions.update_after_response(key.chat_id, session_name, response.session_id or "")
     return OrchestratorResult(text=f"{tag}{response.result}")
@@ -931,6 +999,7 @@ async def heartbeat_flow(
         model_override=req_model,
         provider_override=req_provider,
         effort_override=session.reasoning_effort or None,
+        fast_mode=session.fast_mode,
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,

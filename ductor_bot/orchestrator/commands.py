@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.auth import check_all_auth
 from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
+from ductor_bot.orchestrator.flows import normal
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.orchestrator.selectors.cron_selector import cron_selector_start
 from ductor_bot.orchestrator.selectors.model_selector import (
@@ -28,6 +30,187 @@ if TYPE_CHECKING:
     from ductor_bot.session.key import SessionKey
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _PlannerCommand:
+    target_name: str | None
+    prompt: str
+    turn_off: bool
+
+
+def _parse_planner_command(text: str) -> _PlannerCommand:
+    """Parse `/plan` and `/implement` into a target, prompt, and off-toggle."""
+    parts = text.strip().split(None, 1)
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    if not rest:
+        return _PlannerCommand(target_name=None, prompt="", turn_off=False)
+
+    head, sep, tail = rest.partition(" ")
+    if head == "off":
+        return _PlannerCommand(target_name=None, prompt="", turn_off=True)
+    if head.startswith("@"):
+        target = head[1:].lower()
+        remainder = tail.strip() if sep else ""
+        if remainder == "off":
+            return _PlannerCommand(target_name=target, prompt="", turn_off=True)
+        return _PlannerCommand(target_name=target, prompt=remainder, turn_off=False)
+    return _PlannerCommand(target_name=None, prompt=rest, turn_off=False)
+
+
+def _planner_status_text(target: str, *, enabled: bool, waiting: bool) -> str:
+    state = "on" if enabled else "off"
+    suffix = " (awaiting reply)" if waiting else ""
+    return f"Planner mode for {target}: {state}{suffix}"
+
+
+async def _resolve_main_planner_target(orch: Orchestrator, key: SessionKey) -> tuple[str, str, bool, bool]:
+    session = await orch._sessions.get_active(key)
+    if session is not None:
+        return session.provider, session.model, session.planner_mode, session.planner_waiting
+    model_name, provider_name = orch.resolve_runtime_target(orch.config.model)
+    return provider_name, model_name, False, False
+
+
+async def cmd_plan(  # noqa: C901, PLR0911
+    orch: Orchestrator, key: SessionKey, text: str
+) -> OrchestratorResult:
+    """Handle `/plan` for the main target or `/plan @name` for a named target."""
+    logger.info("Plan requested")
+    parsed = _parse_planner_command(text)
+
+    if parsed.target_name:
+        ns = orch.get_named_session(key.chat_id, parsed.target_name)
+        if ns is None:
+            return OrchestratorResult(text=t("session.not_found", name=parsed.target_name))
+        if ns.status == "ended":
+            return OrchestratorResult(text=t("session.ended", name=parsed.target_name))
+        if ns.provider != "codex":
+            return OrchestratorResult(
+                text=f"Planner mode is only available for Codex sessions. `{parsed.target_name}` uses {ns.provider}."
+            )
+        if parsed.turn_off:
+            orch.named_sessions.set_planner_mode(
+                key.chat_id, parsed.target_name, enabled=False
+            )
+            return OrchestratorResult(
+                text=_planner_status_text(f"@{parsed.target_name}", enabled=False, waiting=False)
+            )
+        if ns.planner_mode:
+            return OrchestratorResult(
+                text=_planner_status_text(
+                    f"@{parsed.target_name}",
+                    enabled=True,
+                    waiting=ns.planner_waiting,
+                )
+            )
+        orch.named_sessions.set_planner_mode(key.chat_id, parsed.target_name, enabled=True)
+        if not parsed.prompt:
+            return OrchestratorResult(
+                text=_planner_status_text(f"@{parsed.target_name}", enabled=True, waiting=False)
+            )
+        try:
+            task_id = orch.submit_named_followup_bg(
+                key.chat_id,
+                parsed.target_name,
+                f"/implement {parsed.prompt}",
+                0,
+                key.topic_id,
+            )
+        except ValueError as exc:
+            return OrchestratorResult(text=str(exc))
+        return OrchestratorResult(
+            text=(
+                f"{_planner_status_text(f'@{parsed.target_name}', enabled=True, waiting=True)}\n"
+                f"Task `{task_id}` queued."
+            )
+        )
+
+    provider_name, model_name, enabled, waiting = await _resolve_main_planner_target(orch, key)
+    if provider_name != "codex":
+        return OrchestratorResult(
+            text=f"Planner mode is only available for Codex. Current main target is {provider_name}/{model_name}."
+        )
+    if parsed.turn_off:
+        await orch.set_main_planner_state(
+            key,
+            provider=provider_name,
+            model=model_name,
+            enabled=False,
+            waiting=False,
+        )
+        return OrchestratorResult(text=_planner_status_text("this chat", enabled=False, waiting=False))
+    if enabled:
+        return OrchestratorResult(text=_planner_status_text("this chat", enabled=True, waiting=waiting))
+    await orch.set_main_planner_state(
+        key,
+        provider=provider_name,
+        model=model_name,
+        enabled=True,
+        waiting=bool(parsed.prompt),
+    )
+    if not parsed.prompt:
+        return OrchestratorResult(text=_planner_status_text("this chat", enabled=True, waiting=False))
+    return await normal(orch, key, parsed.prompt)
+
+
+async def cmd_implement(  # noqa: PLR0911
+    orch: Orchestrator, key: SessionKey, text: str
+) -> OrchestratorResult:
+    """Handle `/implement` for the main target or `/implement @name` for a named target."""
+    logger.info("Implement requested")
+    parsed = _parse_planner_command(text)
+
+    if parsed.target_name:
+        ns = orch.get_named_session(key.chat_id, parsed.target_name)
+        if ns is None:
+            return OrchestratorResult(text=t("session.not_found", name=parsed.target_name))
+        if ns.status == "ended":
+            return OrchestratorResult(text=t("session.ended", name=parsed.target_name))
+        if ns.provider != "codex":
+            return OrchestratorResult(
+                text=f"Planner mode is only available for Codex sessions. `{parsed.target_name}` uses {ns.provider}."
+            )
+        orch.named_sessions.set_planner_mode(key.chat_id, parsed.target_name, enabled=False)
+        if not parsed.prompt:
+            return OrchestratorResult(
+                text=_planner_status_text(f"@{parsed.target_name}", enabled=False, waiting=False)
+            )
+        try:
+            task_id = orch.submit_named_followup_bg(
+                key.chat_id,
+                parsed.target_name,
+                parsed.prompt,
+                0,
+                key.topic_id,
+            )
+        except ValueError as exc:
+            return OrchestratorResult(text=str(exc))
+        return OrchestratorResult(
+            text=(
+                f"{_planner_status_text(f'@{parsed.target_name}', enabled=False, waiting=False)}\n"
+                f"Task `{task_id}` queued."
+            )
+        )
+
+    provider_name, model_name, _enabled, _waiting = await _resolve_main_planner_target(orch, key)
+    if provider_name != "codex":
+        return OrchestratorResult(
+            text=f"Planner mode is only available for Codex. Current main target is {provider_name}/{model_name}."
+        )
+    await orch.set_main_planner_state(
+        key,
+        provider=provider_name,
+        model=model_name,
+        enabled=False,
+        waiting=False,
+    )
+    if not parsed.prompt:
+        return OrchestratorResult(text=_planner_status_text("this chat", enabled=False, waiting=False))
+    # Keep the explicit implementation token in the provider prompt. The
+    # Ductor command parser consumes `/implement`; without forwarding it,
+    # Codex's planner overlay asks for the command again.
+    return await normal(orch, key, f"/implement {parsed.prompt}")
 
 
 # -- Command wrappers (registered by Orchestrator._register_commands) --
@@ -74,6 +257,52 @@ async def cmd_effort(orch: Orchestrator, key: SessionKey, _text: str) -> Orchest
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
+_FAST_MODELS = ("gpt-5.6", "gpt-5.5", "gpt-5.4")
+
+
+def _fast_status_text(enabled: bool) -> str:
+    state = "ON" if enabled else "OFF"
+    return (
+        f"Fast mode: {state}\n"
+        "Applies only to this conversation's Codex turns. GPT-5.6 Fast mode uses credits at 2.5x the Standard rate."
+    )
+
+
+async def cmd_fast(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle `/fast on`, `/fast off`, and `/fast status` per conversation."""
+    logger.info("Fast mode requested")
+    parts = text.strip().split()
+    action = parts[1].lower() if len(parts) == 2 else "status" if len(parts) == 1 else ""
+    if action not in {"on", "off", "status"}:
+        return OrchestratorResult(text="Usage: /fast on, /fast off, or /fast status")
+
+    session = await orch._sessions.get_active(key)
+    if session is None:
+        model, provider = orch.resolve_runtime_target(orch._config.model)
+        enabled = False
+    else:
+        model, provider, enabled = session.model, session.provider, session.fast_mode
+
+    if provider != "codex" or not model.startswith(_FAST_MODELS):
+        return OrchestratorResult(
+            text=(
+                "Fast mode is available only for Codex GPT-5.6, GPT-5.5, and GPT-5.4 sessions. "
+                f"This conversation uses {provider}/{model}."
+            )
+        )
+    if action == "status":
+        return OrchestratorResult(text=_fast_status_text(enabled))
+
+    enabled = action == "on"
+    await orch.set_main_fast_mode(key, provider=provider, model=model, enabled=enabled)
+    return OrchestratorResult(text=_fast_status_text(enabled))
+
+
+async def cmd_fast_on(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Enable Fast mode from Telegram's argument-free command menu."""
+    return await cmd_fast(orch, key, "/fast on")
+
+
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /memory."""
     logger.info("Memory requested")
@@ -102,7 +331,7 @@ async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> Orches
 async def cmd_sessions(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /sessions."""
     logger.info("Sessions requested")
-    resp = await session_selector_start(orch, key.chat_id)
+    resp = await session_selector_start(orch, key)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 

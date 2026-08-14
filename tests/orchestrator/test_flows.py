@@ -73,6 +73,56 @@ async def test_normal_new_session_injects_mainmemory(orch: Orchestrator) -> None
     assert request.resume_session is None  # New session
 
 
+async def test_normal_ductor_codex_session_records_workspace_for_handoff(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey(chat_id=1)
+    await orch._sessions.set_provider_session_state(
+        key,
+        provider="codex",
+        model="gpt-5.2-codex",
+        session_id="",
+        working_dir="",
+        source_kind="ductor",
+    )
+    mock_execute = AsyncMock(return_value=_mock_response(session_id="codex-sid"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await normal(orch, key, "Hello")
+
+    request = mock_execute.call_args[0][0]
+    assert request.working_dir_override == str(orch.paths.workspace)
+    active = await orch._sessions.get_active(key)
+    assert active is not None
+    assert active.provider_sessions["codex"].session_id == "codex-sid"
+    assert active.provider_sessions["codex"].working_dir == str(orch.paths.workspace)
+
+
+async def test_normal_ductor_codex_session_replaces_agents_workbench_cwd(
+    orch: Orchestrator,
+) -> None:
+    key = SessionKey(chat_id=1)
+    agents_dir = orch.paths.framework_root.parent / "Agents"
+    await orch._sessions.set_provider_session_state(
+        key,
+        provider="codex",
+        model="gpt-5.2-codex",
+        session_id="existing-codex",
+        working_dir=str(agents_dir),
+        source_kind="ductor",
+    )
+    mock_execute = AsyncMock(return_value=_mock_response(session_id="existing-codex"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    await normal(orch, key, "Hello")
+
+    request = mock_execute.call_args[0][0]
+    assert request.working_dir_override == str(orch.paths.workspace)
+    active = await orch._sessions.get_active(key)
+    assert active is not None
+    assert active.provider_sessions["codex"].working_dir == str(orch.paths.workspace)
+
+
 async def test_normal_resume_session_no_append(orch: Orchestrator) -> None:
     mock_execute = AsyncMock(return_value=_mock_response())
     object.__setattr__(orch._cli_service, "execute", mock_execute)
