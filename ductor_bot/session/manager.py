@@ -86,6 +86,7 @@ class ProviderSessionData:
     source_kind: str = "ductor"
     planner_mode: bool = False
     planner_waiting: bool = False
+    fast_mode: bool = False
 
 
 @dataclass(init=False)
@@ -242,6 +243,16 @@ class SessionData:
     def planner_waiting(self, value: bool) -> None:
         self._current_provider_data().planner_waiting = value
 
+    @property
+    def fast_mode(self) -> bool:
+        """Whether the current provider bucket requests Codex Fast mode."""
+        current = self.provider_sessions.get(self.provider)
+        return current.fast_mode if current is not None else False
+
+    @fast_mode.setter
+    def fast_mode(self, value: bool) -> None:
+        self._current_provider_data().fast_mode = value
+
     def _current_provider_data(self) -> ProviderSessionData:
         """Get/create provider-local state for the active provider."""
         current = self.provider_sessions.get(self.provider)
@@ -277,6 +288,7 @@ class SessionData:
                 source_kind=str(value.get("source_kind", "ductor") or "ductor"),
                 planner_mode=bool(value.get("planner_mode", False)),
                 planner_waiting=bool(value.get("planner_waiting", False)),
+                fast_mode=bool(value.get("fast_mode", False)),
             )
         return out
 
@@ -665,6 +677,47 @@ class SessionManager:
             await self._save(sessions)
             return current
 
+    async def set_fast_mode(
+        self,
+        key: SessionKey,
+        *,
+        provider: str,
+        model: str,
+        enabled: bool,
+    ) -> SessionData:
+        """Persist the Fast-mode preference for one provider bucket."""
+        async with self._lock:
+            sessions = await self._load()
+            skey = key.storage_key
+            current = sessions.get(skey)
+            if current is None:
+                topic_name: str | None = None
+                if key.topic_id is not None and self._topic_name_resolver is not None:
+                    topic_name = self._topic_name_resolver(key.chat_id, key.topic_id)
+                current = SessionData(
+                    chat_id=key.chat_id,
+                    transport=key.transport,
+                    topic_id=key.topic_id,
+                    topic_name=topic_name,
+                    provider=provider,
+                    model=model,
+                    provider_sessions={},
+                )
+            else:
+                current.provider = provider
+                current.model = model
+                self._apply_topic_name(current)
+
+            bucket = current.provider_sessions.get(provider)
+            if bucket is None:
+                bucket = ProviderSessionData()
+                current.provider_sessions[provider] = bucket
+            bucket.fast_mode = enabled
+            current.last_active = datetime.now(UTC).isoformat()
+            sessions[skey] = current
+            await self._save(sessions)
+            return current
+
     async def update_session(
         self,
         session: SessionData,
@@ -746,6 +799,7 @@ class SessionManager:
                 source_kind=data.source_kind,
                 planner_mode=data.planner_mode,
                 planner_waiting=data.planner_waiting,
+                fast_mode=data.fast_mode,
             )
             for provider, data in provider_sessions.items()
         }
@@ -765,6 +819,7 @@ class SessionManager:
                     source_kind=data.source_kind,
                     planner_mode=data.planner_mode,
                     planner_waiting=data.planner_waiting,
+                    fast_mode=data.fast_mode,
                 )
                 continue
             if data.session_id:
@@ -780,6 +835,8 @@ class SessionManager:
                 existing.planner_mode = True
             if data.planner_waiting or not existing.planner_mode:
                 existing.planner_waiting = data.planner_waiting
+            if data.fast_mode:
+                existing.fast_mode = True
 
     async def sync_session_target(
         self,

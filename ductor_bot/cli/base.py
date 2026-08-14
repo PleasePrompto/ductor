@@ -108,6 +108,8 @@ class CLIConfig:
     reasoning_effort: str = "medium"
     # Codex-specific fields (ignored by Claude provider):
     sandbox_mode: str = "read-only"
+    # Fast mode is an opt-in, per-request Codex service tier.
+    fast_mode: bool = False
     images: list[str] = field(default_factory=list)
     instructions: str | None = None
     # Process tracking (shared across providers):

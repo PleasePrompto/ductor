@@ -171,3 +171,21 @@ def test_planner_setters_write_to_current_provider() -> None:
 
     assert session.provider_sessions["codex"].planner_mode is True
     assert session.provider_sessions["codex"].planner_waiting is True
+
+
+def test_fast_mode_is_provider_scoped() -> None:
+    session = SessionData(
+        chat_id=1,
+        provider="claude",
+        provider_sessions={
+            "claude": ProviderSessionData(fast_mode=False),
+            "codex": ProviderSessionData(fast_mode=True),
+        },
+    )
+
+    assert session.fast_mode is False
+    session.provider = "codex"
+    assert session.fast_mode is True
+
+    session.fast_mode = False
+    assert session.provider_sessions["codex"].fast_mode is False

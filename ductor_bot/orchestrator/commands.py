@@ -113,7 +113,7 @@ async def cmd_plan(  # noqa: C901, PLR0911
             task_id = orch.submit_named_followup_bg(
                 key.chat_id,
                 parsed.target_name,
-                parsed.prompt,
+                f"/implement {parsed.prompt}",
                 0,
                 key.topic_id,
             )
@@ -207,7 +207,10 @@ async def cmd_implement(  # noqa: PLR0911
     )
     if not parsed.prompt:
         return OrchestratorResult(text=_planner_status_text("this chat", enabled=False, waiting=False))
-    return await normal(orch, key, parsed.prompt)
+    # Keep the explicit implementation token in the provider prompt. The
+    # Ductor command parser consumes `/implement`; without forwarding it,
+    # Codex's planner overlay asks for the command again.
+    return await normal(orch, key, f"/implement {parsed.prompt}")
 
 
 # -- Command wrappers (registered by Orchestrator._register_commands) --
@@ -252,6 +255,47 @@ async def cmd_effort(orch: Orchestrator, key: SessionKey, _text: str) -> Orchest
     logger.info("Effort requested")
     resp = await effort_selector_start(orch, key)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+_FAST_MODELS = ("gpt-5.6", "gpt-5.5", "gpt-5.4")
+
+
+def _fast_status_text(enabled: bool) -> str:
+    state = "ON" if enabled else "OFF"
+    return (
+        f"Fast mode: {state}\n"
+        "Applies only to this conversation's Codex turns. GPT-5.6 Fast mode uses credits at 2.5x the Standard rate."
+    )
+
+
+async def cmd_fast(orch: Orchestrator, key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle `/fast on`, `/fast off`, and `/fast status` per conversation."""
+    logger.info("Fast mode requested")
+    parts = text.strip().split()
+    action = parts[1].lower() if len(parts) == 2 else "status" if len(parts) == 1 else ""
+    if action not in {"on", "off", "status"}:
+        return OrchestratorResult(text="Usage: /fast on, /fast off, or /fast status")
+
+    session = await orch._sessions.get_active(key)
+    if session is None:
+        model, provider = orch.resolve_runtime_target(orch._config.model)
+        enabled = False
+    else:
+        model, provider, enabled = session.model, session.provider, session.fast_mode
+
+    if provider != "codex" or not model.startswith(_FAST_MODELS):
+        return OrchestratorResult(
+            text=(
+                "Fast mode is available only for Codex GPT-5.6, GPT-5.5, and GPT-5.4 sessions. "
+                f"This conversation uses {provider}/{model}."
+            )
+        )
+    if action == "status":
+        return OrchestratorResult(text=_fast_status_text(enabled))
+
+    enabled = action == "on"
+    await orch.set_main_fast_mode(key, provider=provider, model=model, enabled=enabled)
+    return OrchestratorResult(text=_fast_status_text(enabled))
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:

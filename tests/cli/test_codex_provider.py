@@ -285,6 +285,32 @@ class TestBuildCommand:
         assert cmd[-3:] == ["--", "session-123", "-"]
         assert "continue" not in cmd
 
+    def test_fast_mode_adds_service_tier_overrides(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, fast_mode=True)
+
+        cmd = cli._build_command("hello")
+
+        features_index = cmd.index("features.fast_mode=true")
+        tier_index = cmd.index("service_tier=fast")
+        assert cmd[features_index - 1 : features_index + 1] == ["-c", "features.fast_mode=true"]
+        assert cmd[tier_index - 1 : tier_index + 1] == ["-c", "service_tier=fast"]
+
+    def test_fast_mode_applies_to_resumed_turns(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, fast_mode=True)
+
+        cmd = cli._build_command("hello", resume_session="thread-abc")
+
+        assert "features.fast_mode=true" in cmd
+        assert "service_tier=fast" in cmd
+
+    def test_standard_mode_omits_fast_overrides(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        cli = _make_cli(monkeypatch, fast_mode=False)
+
+        cmd = cli._build_command("hello")
+
+        assert "features.fast_mode=true" not in cmd
+        assert "service_tier=fast" not in cmd
+
     def test_images_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch, images=["img1.png", "img2.jpg"])
         cmd = cli._build_command("hello")

@@ -79,6 +79,7 @@ class AgentRequest:
     model_override: str | None = None
     provider_override: str | None = None
     effort_override: str | None = None
+    fast_mode: bool = False
     chat_id: int = 0
     topic_id: int | None = None
     transport: str = "tg"

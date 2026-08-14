@@ -35,6 +35,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_fast,
     cmd_implement,
     cmd_memory,
     cmd_model,
@@ -556,6 +557,8 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/fast", cmd_fast)
+        reg.register_async("/fast ", cmd_fast)
         reg.register_async("/plan", cmd_plan)
         reg.register_async("/plan ", cmd_plan)
         reg.register_async("/implement", cmd_implement)
@@ -862,6 +865,14 @@ class Orchestrator:
         """Persist planner state on the active foreground provider bucket."""
         return await self._sessions.set_planner_state(
             key, provider=provider, model=model, enabled=enabled, waiting=waiting
+        )
+
+    async def set_main_fast_mode(
+        self, key: SessionKey, *, provider: str, model: str, enabled: bool
+    ) -> SessionData:
+        """Persist the Fast-mode preference for the active foreground provider."""
+        return await self._sessions.set_fast_mode(
+            key, provider=provider, model=model, enabled=enabled
         )
 
     def codex_import_uses_docker(self) -> bool:
