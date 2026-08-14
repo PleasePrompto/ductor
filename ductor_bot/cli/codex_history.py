@@ -186,98 +186,163 @@ def codex_home() -> Path:
 
 def load_codex_history_browser(home: Path | None = None) -> CodexHistoryBrowser:
     """Load recent Codex sessions grouped by recorded working directory."""
-    codex_dir = home or codex_home()
-    index_path = codex_dir / "session_index.jsonl"
-    history_path = codex_dir / "history.jsonl"
-    sessions_dir = codex_dir / "sessions"
-    state_path = codex_dir / "state_5.sqlite"
-    history_available = index_path.exists() or history_path.exists() or sessions_dir.exists()
-    if not sessions_dir.exists():
+    codex_dirs = _codex_history_dirs(home)
+    history_available = _history_available(codex_dirs)
+    if not any((codex_dir / "sessions").exists() for codex_dir in codex_dirs):
         return CodexHistoryBrowser(projects=(), skipped_count=0, history_available=history_available)
 
-    index_rows = _read_session_index(index_path) if index_path.exists() else {}
-    history = _read_history_summaries(history_path) if history_path.exists() else {}
-    thread_state = _read_thread_state(state_path) if state_path.exists() else {}
+    index_rows, history, thread_state, meta = _load_history_sources(codex_dirs)
+    grouped, skipped_count = _collect_history_sessions(index_rows, history, thread_state, meta)
+    return CodexHistoryBrowser(
+        projects=_build_history_projects(grouped),
+        skipped_count=skipped_count,
+        history_available=history_available,
+    )
+
+
+def _history_available(codex_dirs: tuple[Path, ...]) -> bool:
+    return any(
+        (codex_dir / name).exists()
+        for codex_dir in codex_dirs
+        for name in ("session_index.jsonl", "history.jsonl", "sessions")
+    )
+
+
+def _load_history_sources(
+    codex_dirs: tuple[Path, ...],
+) -> tuple[
+    dict[str, tuple[str, str, float]],
+    dict[str, _HistorySummary],
+    dict[str, _ThreadState],
+    dict[str, _SessionMeta],
+]:
+    index_rows: dict[str, tuple[str, str, float]] = {}
+    history: dict[str, _HistorySummary] = {}
+    thread_state: dict[str, _ThreadState] = {}
+    meta: dict[str, _SessionMeta] = {}
+    for codex_dir in codex_dirs:
+        index_path = codex_dir / "session_index.jsonl"
+        history_path = codex_dir / "history.jsonl"
+        state_path = codex_dir / "state_5.sqlite"
+        if index_path.exists():
+            index_rows.update(_read_session_index(index_path))
+        if history_path.exists():
+            history.update(_read_history_summaries(history_path))
+        if state_path.exists():
+            thread_state.update(_read_thread_state(state_path))
+        sessions_dir = codex_dir / "sessions"
+        if sessions_dir.exists():
+            for session_id, candidate in _read_session_meta(sessions_dir).items():
+                current = meta.get(session_id)
+                if current is None or candidate.updated_ts >= current.updated_ts:
+                    meta[session_id] = candidate
+    return index_rows, history, thread_state, meta
+
+
+def _collect_history_sessions(
+    index_rows: dict[str, tuple[str, str, float]],
+    history: dict[str, _HistorySummary],
+    thread_state: dict[str, _ThreadState],
+    meta: dict[str, _SessionMeta],
+) -> tuple[dict[str, list[CodexHistorySession]], int]:
     ductor_tasks = _read_ductor_task_state()
     ductor_touches = _read_ductor_session_touches()
-    meta = _read_session_meta(sessions_dir)
-
     grouped: dict[str, list[CodexHistorySession]] = {}
     skipped_count = 0
     for session_id, meta_row in meta.items():
-        index_row = index_rows.get(session_id)
-        history_row = history.get(session_id)
-        state_row = thread_state.get(session_id)
-        task_row = ductor_tasks.get(session_id)
-        preview = history_row.latest_prompt if history_row is not None else meta_row.latest_prompt
-        first_prompt = history_row.first_prompt if history_row is not None else ""
-        turn_count = history_row.prompt_count if history_row is not None else 0
-        state_title = state_row.title if state_row is not None else ""
-        state_first_prompt = state_row.first_user_message if state_row is not None else ""
-        working_dir = _semantic_working_dir(
-            meta_row.working_dir,
-            state_row.raw_title if state_row is not None else "",
-            state_row.raw_first_user_message if state_row is not None else "",
+        session = _build_history_session(
+            session_id,
+            meta_row,
+            index_rows.get(session_id),
+            history.get(session_id),
+            thread_state.get(session_id),
+            ductor_tasks.get(session_id),
+            ductor_touches,
+        )
+        if session is None:
+            skipped_count += 1
+            continue
+        grouped.setdefault(session.working_dir, []).append(session)
+    return grouped, skipped_count
+
+
+def _build_history_session(
+    session_id: str,
+    meta_row: _SessionMeta,
+    index_row: tuple[str, str, float] | None,
+    history_row: _HistorySummary | None,
+    state_row: _ThreadState | None,
+    task_row: _DuctorTaskState | None,
+    ductor_touches: _DuctorSessionTouches,
+) -> CodexHistorySession | None:
+    preview = history_row.latest_prompt if history_row is not None else meta_row.latest_prompt
+    first_prompt = history_row.first_prompt if history_row is not None else ""
+    turn_count = history_row.prompt_count if history_row is not None else 0
+    state_title = state_row.title if state_row is not None else ""
+    state_first_prompt = state_row.first_user_message if state_row is not None else ""
+    working_dir = _semantic_working_dir(
+        meta_row.working_dir,
+        state_row.raw_title if state_row is not None else "",
+        state_row.raw_first_user_message if state_row is not None else "",
+        state_title,
+        state_first_prompt,
+        first_prompt,
+        preview,
+        task_row.prompt_preview if task_row is not None else "",
+        task_row.result_preview if task_row is not None else "",
+        meta_row.last_reply,
+    )
+    if not _is_attachable_cwd(working_dir):
+        return None
+    thread_name = _choose_thread_name(
+        session_id=session_id,
+        candidates=(
+            _task_display_title(task_row) if task_row is not None else "",
+            index_row[0] if index_row is not None else "",
             state_title,
             state_first_prompt,
             first_prompt,
             preview,
-            task_row.prompt_preview if task_row is not None else "",
-            task_row.result_preview if task_row is not None else "",
-            meta_row.last_reply,
-        )
-        thread_name = _choose_thread_name(
-            session_id=session_id,
-            candidates=(
-                _task_display_title(task_row) if task_row is not None else "",
-                index_row[0] if index_row is not None else "",
-                state_title,
-                state_first_prompt,
-                first_prompt,
-                preview,
-            ),
-        )
-        updated_at, updated_ts = _preferred_updated(index_row, meta_row, history_row, state_row)
-        latest_prompt_ts = history_row.latest_ts if history_row is not None else 0.0
-        session_source = (
-            f"task:{task_row.task_id}"
-            if task_row is not None
-            else meta_row.source or (state_row.source if state_row is not None else "")
-        )
-        is_ductor_touched = _is_ductor_touched_session(
+        ),
+    )
+    updated_at, updated_ts = _preferred_updated(index_row, meta_row, history_row, state_row)
+    latest_prompt_ts = history_row.latest_ts if history_row is not None else 0.0
+    session_source = (
+        f"task:{task_row.task_id}"
+        if task_row is not None
+        else meta_row.source or (state_row.source if state_row is not None else "")
+    )
+    return CodexHistorySession(
+        session_id=session_id,
+        thread_name=thread_name,
+        updated_at=updated_at,
+        updated_ts=updated_ts,
+        working_dir=working_dir,
+        preview=preview,
+        source=session_source,
+        cli_version=meta_row.cli_version or (state_row.cli_version if state_row is not None else ""),
+        summary=thread_name if not preview else f"{thread_name} | {preview}",
+        first_prompt=first_prompt or state_first_prompt,
+        last_reply=meta_row.last_reply,
+        last_output_summary=_summarize_output(meta_row.last_reply),
+        turn_count=turn_count,
+        model=meta_row.model or (state_row.model if state_row is not None else ""),
+        launch_dir=meta_row.working_dir if meta_row.working_dir != working_dir else "",
+        is_ductor_touched=_is_ductor_touched_session(
             session_id=session_id,
             task_row=task_row,
             meta_row=meta_row,
             latest_prompt_ts=latest_prompt_ts,
             ductor_touches=ductor_touches,
-        )
-        is_subagent = session_source.startswith("subagent:")
-        if not _is_attachable_cwd(working_dir):
-            skipped_count += 1
-            continue
-        summary = thread_name if not preview else f"{thread_name} | {preview}"
-        session = CodexHistorySession(
-            session_id=session_id,
-            thread_name=thread_name,
-            updated_at=updated_at,
-            updated_ts=updated_ts,
-            working_dir=working_dir,
-            preview=preview,
-            source=session_source,
-            cli_version=meta_row.cli_version or (state_row.cli_version if state_row is not None else ""),
-            summary=summary,
-            first_prompt=first_prompt or state_first_prompt,
-            last_reply=meta_row.last_reply,
-            last_output_summary=_summarize_output(meta_row.last_reply),
-            turn_count=turn_count,
-            model=meta_row.model or (state_row.model if state_row is not None else ""),
-            launch_dir=meta_row.working_dir if meta_row.working_dir != working_dir else "",
-            is_ductor_touched=is_ductor_touched,
-            is_ductor_task=task_row is not None,
-            is_subagent=is_subagent,
-        )
-        grouped.setdefault(working_dir, []).append(session)
+        ),
+        is_ductor_task=task_row is not None,
+        is_subagent=session_source.startswith("subagent:"),
+    )
 
+
+def _build_history_projects(
+    grouped: dict[str, list[CodexHistorySession]],
+) -> tuple[CodexHistoryProject, ...]:
     projects: list[CodexHistoryProject] = []
     for working_dir, sessions in grouped.items():
         ordered = tuple(sorted(sessions, key=lambda item: (_session_sort_rank(item), -item.updated_ts, item.session_id)))
@@ -293,11 +358,27 @@ def load_codex_history_browser(home: Path | None = None) -> CodexHistoryBrowser:
         )
 
     projects.sort(key=lambda item: (-item.updated_ts, item.working_dir))
-    return CodexHistoryBrowser(
-        projects=tuple(projects),
-        skipped_count=skipped_count,
-        history_available=history_available,
-    )
+    return tuple(projects)
+
+
+def _codex_history_dirs(home: Path | None) -> tuple[Path, ...]:
+    """Return the active Codex home plus optional read-only history homes.
+
+    Ductor can keep its writable Codex state isolated while exposing older
+    desktop/legacy sessions to its Browse Codex selector.  The additional
+    homes are read-only inputs; resume commands still use the active home.
+    """
+    roots = [home or codex_home()]
+    extra = os.environ.get("DUCTOR_CODEX_HISTORY_HOMES", "")
+    roots.extend(Path(raw).expanduser() for raw in extra.split(os.pathsep) if raw.strip())
+    unique: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        resolved = root.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(resolved)
+    return tuple(unique)
 
 
 def _session_sort_rank(session: CodexHistorySession) -> int:
