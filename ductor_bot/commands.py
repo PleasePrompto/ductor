@@ -23,6 +23,7 @@ def get_bot_commands() -> list[tuple[str, str]]:
         ("model", t_cmd("bot.model")),
         ("effort", t_cmd("bot.effort")),
         ("fast", "Fast mode (costs more)"),
+        ("faston", "Enable Fast mode"),
         ("status", t_cmd("bot.status")),
         ("memory", t_cmd("bot.memory")),
         # Automation & multi-agent

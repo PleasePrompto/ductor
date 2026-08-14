@@ -298,6 +298,11 @@ async def cmd_fast(orch: Orchestrator, key: SessionKey, text: str) -> Orchestrat
     return OrchestratorResult(text=_fast_status_text(enabled))
 
 
+async def cmd_fast_on(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Enable Fast mode from Telegram's argument-free command menu."""
+    return await cmd_fast(orch, key, "/fast on")
+
+
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /memory."""
     logger.info("Memory requested")

@@ -36,6 +36,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_diagnose,
     cmd_effort,
     cmd_fast,
+    cmd_fast_on,
     cmd_implement,
     cmd_memory,
     cmd_model,
@@ -559,6 +560,7 @@ class Orchestrator:
         reg.register_async("/effort", cmd_effort)
         reg.register_async("/fast", cmd_fast)
         reg.register_async("/fast ", cmd_fast)
+        reg.register_async("/faston", cmd_fast_on)
         reg.register_async("/plan", cmd_plan)
         reg.register_async("/plan ", cmd_plan)
         reg.register_async("/implement", cmd_implement)

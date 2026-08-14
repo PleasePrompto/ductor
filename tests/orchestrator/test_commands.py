@@ -11,6 +11,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_diagnose,
     cmd_effort,
     cmd_fast,
+    cmd_fast_on,
     cmd_implement,
     cmd_memory,
     cmd_model,
@@ -62,6 +63,18 @@ async def test_fast_mode_is_stored_per_active_codex_session(orch: Orchestrator) 
     assert session.fast_mode is True
     assert "ON" in status.text
     assert "OFF" in disabled.text
+
+
+async def test_faston_alias_enables_fast_mode(orch: Orchestrator) -> None:
+    key = SessionKey(chat_id=1)
+    await orch._sessions.resolve_session(key, provider="codex", model="gpt-5.6-sol")
+
+    enabled = await cmd_fast_on(orch, key, "/faston")
+    session = await orch._sessions.get_active(key)
+
+    assert "ON" in enabled.text
+    assert session is not None
+    assert session.fast_mode is True
 
 
 async def test_model_list_returns_keyboard(orch: Orchestrator) -> None:
