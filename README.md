@@ -134,6 +134,8 @@ Bot:   → task has a question? It asks the agent → agent asks you → you ans
 ```
 
 Each task gets its own memory file (`TASKMEMORY.md`) and can be resumed with follow-ups.
+On Telegram, one task-status message is updated every 30 seconds while the worker runs and
+while the parent agent reviews its result, then that message changes to the terminal state.
 
 ### 5. Sub-agents (fully isolated second agent)
 

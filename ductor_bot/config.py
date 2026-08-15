@@ -236,6 +236,8 @@ class TasksConfig(BaseModel):
     """Settings for background task delegation."""
 
     enabled: bool = True
+    progress_updates: bool = True
+    progress_interval_seconds: float = Field(default=30.0, ge=10.0)
     max_parallel: int = 5
     timeout_seconds: float = 3600.0
     finished_retention_hours: int = 168
