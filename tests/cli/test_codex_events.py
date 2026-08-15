@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from ductor_bot.cli.codex_events import parse_codex_jsonl, parse_codex_stream_event
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
@@ -88,6 +90,39 @@ def test_parse_ignores_tagged_thinking_before_final_message() -> None:
                     },
                 }
             ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "最终答复"},
+                }
+            ),
+        ]
+    )
+
+    text, _, _ = parse_codex_jsonl(lines)
+
+    assert text == "最终答复"
+
+
+@pytest.mark.parametrize(
+    ("event_type", "tool_type"),
+    [
+        ("item.started", "collab_tool_call"),
+        ("item.completed", "file_change"),
+    ],
+)
+def test_parse_discards_pre_tool_text_for_all_codex_tool_boundaries(
+    event_type: str, tool_type: str
+) -> None:
+    lines = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "内部预告"},
+                }
+            ),
+            json.dumps({"type": event_type, "item": {"type": tool_type}}),
             json.dumps(
                 {
                     "type": "item.completed",

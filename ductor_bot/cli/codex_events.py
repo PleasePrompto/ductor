@@ -53,10 +53,7 @@ def parse_codex_jsonl(raw: str) -> tuple[str, str | None, dict[str, Any] | None]
 
         thread_id = _extract_thread_id(data, thread_id)
         usage = _extract_usage(data, usage)
-        # Only clear pre-tool "thinking" text on item.started; clearing on
-        # item.updated / item.completed would discard the final agent response
-        # if the model emits it before calling a tool.
-        if _is_tool_item(data) and data.get("type") == "item.started":
+        if _is_tool_boundary_event(data):
             result_parts.clear()
         _extract_text(data, result_parts)
 
@@ -112,7 +109,22 @@ def _is_tool_item(data: dict[str, Any]) -> bool:
     if not isinstance(item, dict):
         return False
     item_type = item.get("type", "")
-    return item_type in _CODEX_ITEM_TOOL_MAP or item_type == "mcp_tool_call"
+    return item_type in _CODEX_ITEM_TOOL_MAP or item_type in {
+        "mcp_tool_call",
+        "collab_tool_call",
+    }
+
+
+def _is_tool_boundary_event(data: dict[str, Any]) -> bool:
+    """识别 Codex 各类工具首次可见的事件边界."""
+    if not _is_tool_item(data):
+        return False
+    item = data.get("item")
+    if not isinstance(item, dict):
+        return False
+    if item.get("type") == "file_change":
+        return data.get("type") in {"item.started", "item.completed"}
+    return data.get("type") == "item.started"
 
 
 def _extract_text(data: dict[str, Any], parts: list[str]) -> None:
@@ -255,11 +267,15 @@ def _parse_codex_item(data: dict[str, Any]) -> list[StreamEvent]:
 
 
 def _parse_tool_item(item: dict[str, Any], item_type: str, event_type: str) -> list[StreamEvent]:
-    """Extract tool indicator from a Codex item (``item.started`` only)."""
-    if event_type != "item.started":
+    """Extract a tool indicator from the first event Codex emits for the tool."""
+    valid_events = (
+        {"item.started", "item.completed"} if item_type == "file_change" else {"item.started"}
+    )
+    if event_type not in valid_events:
         return []
-    if item_type == "mcp_tool_call":
-        name = item.get("name") or item.get("tool_name") or "MCP"
+    if item_type in {"mcp_tool_call", "collab_tool_call"}:
+        fallback_name = "MCP" if item_type == "mcp_tool_call" else "Agent"
+        name = item.get("name") or item.get("tool_name") or item.get("tool") or fallback_name
         return [
             ToolUseEvent(
                 type="assistant",

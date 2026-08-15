@@ -742,8 +742,26 @@ class TestSendStreaming:
         assert result_events[0].is_error is False
         assert result_events[0].session_id == "th-stream-1"
 
+    @pytest.mark.parametrize(
+        "tool_event",
+        [
+            {
+                "type": "item.started",
+                "item": {"type": "mcp_tool_call", "name": "search_docs"},
+            },
+            {
+                "type": "item.started",
+                "item": {"type": "collab_tool_call", "tool": "spawn_agent"},
+            },
+            {
+                "type": "item.completed",
+                "item": {"type": "file_change", "changes": []},
+            },
+        ],
+        ids=["mcp", "collab", "file-change"],
+    )
     async def test_streaming_discards_pre_tool_agent_message(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, tool_event: dict[str, object]
     ) -> None:
         cli = _make_cli(monkeypatch)
         lines = [
@@ -753,12 +771,7 @@ class TestSendStreaming:
                     "item": {"type": "agent_message", "text": "内部预告"},
                 }
             ),
-            json.dumps(
-                {
-                    "type": "item.started",
-                    "item": {"type": "mcp_tool_call", "name": "search_docs"},
-                }
-            ),
+            json.dumps(tool_event),
             json.dumps(
                 {
                     "type": "item.completed",
