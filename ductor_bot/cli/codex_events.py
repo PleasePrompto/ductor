@@ -18,6 +18,11 @@ from ductor_bot.cli.stream_events import (
 logger = logging.getLogger(__name__)
 
 
+def _is_tagged_thinking(text: object) -> bool:
+    """识别被 Codex 错标为普通助手消息的 thinking 内容."""
+    return isinstance(text, str) and text.lstrip().lower().startswith("<thinking>")
+
+
 def _tool_parameters(item: dict[str, Any]) -> dict[str, Any] | None:
     for key in ("arguments", "parameters", "input"):
         value = item.get(key)
@@ -138,7 +143,7 @@ def _extract_item_text(data: dict[str, Any], parts: list[str], event_type: str) 
         and event_type == "item.completed"
     ):
         text = item.get("text", "")
-        if text:
+        if text and not _is_tagged_thinking(text):
             parts.append(text)
 
 
@@ -147,7 +152,7 @@ def _extract_message_blocks(data: dict[str, Any], parts: list[str]) -> None:
     for block in data.get("content", []):
         if isinstance(block, dict) and block.get("type") == "text":
             text = block.get("text", "")
-            if text:
+            if text and not _is_tagged_thinking(text):
                 parts.append(text)
 
 
@@ -156,7 +161,7 @@ def _extract_fallback_text(data: dict[str, Any], parts: list[str]) -> None:
     item = data.get("item")
     if isinstance(item, dict) and isinstance(item.get("text"), str):
         item_type = str(item.get("type", "")).lower()
-        if item_type in ("", "agent_message"):
+        if item_type in ("", "agent_message") and not _is_tagged_thinking(item["text"]):
             parts.append(item["text"])
 
 
@@ -239,6 +244,8 @@ def _parse_codex_item(data: dict[str, Any]) -> list[StreamEvent]:
         if event_type != "item.completed":
             return []
         text = item.get("text", "")
+        if _is_tagged_thinking(text):
+            return [ThinkingEvent(type="assistant", text=text)]
         return [AssistantTextDelta(type="assistant", text=text)] if text else []
 
     if item_type == "reasoning":

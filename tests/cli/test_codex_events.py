@@ -76,6 +76,32 @@ def test_parse_multiple_lines() -> None:
     assert "Part 2" in text
 
 
+def test_parse_ignores_tagged_thinking_before_final_message() -> None:
+    lines = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": "  \n<thinking>内部推理</thinking>",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "最终答复"},
+                }
+            ),
+        ]
+    )
+
+    text, _, _ = parse_codex_jsonl(lines)
+
+    assert text == "最终答复"
+
+
 def test_unparseable_lines_skipped() -> None:
     raw = "not json\n" + json.dumps(
         {
@@ -145,6 +171,23 @@ def test_stream_agent_message() -> None:
     assert len(events) == 1
     assert isinstance(events[0], AssistantTextDelta)
     assert events[0].text == "Hello"
+
+
+def test_stream_tagged_agent_message_is_thinking() -> None:
+    line = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "agent_message",
+                "text": "  \n<thinking>内部推理</thinking>",
+            },
+        }
+    )
+
+    events = parse_codex_stream_event(line)
+
+    assert len(events) == 1
+    assert isinstance(events[0], ThinkingEvent)
 
 
 def test_stream_reasoning() -> None:

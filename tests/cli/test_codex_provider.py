@@ -742,6 +742,45 @@ class TestSendStreaming:
         assert result_events[0].is_error is False
         assert result_events[0].session_id == "th-stream-1"
 
+    async def test_streaming_discards_pre_tool_agent_message(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cli = _make_cli(monkeypatch)
+        lines = [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "内部预告"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "item": {"type": "mcp_tool_call", "name": "search_docs"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "最终答复"},
+                }
+            ),
+            json.dumps({"type": "turn.completed", "usage": {}}),
+        ]
+        proc = _make_streaming_process(lines, returncode=0)
+
+        with patch("ductor_bot.cli.executor.asyncio") as mock_asyncio:
+            mock_asyncio.timeout = asyncio.timeout
+            mock_asyncio.subprocess = asyncio.subprocess
+            mock_asyncio.create_subprocess_exec = AsyncMock(return_value=proc)
+            mock_asyncio.create_task = asyncio.ensure_future
+
+            events = await _collect_events(cli.send_streaming("hello"))
+
+        text_events = [event.text for event in events if isinstance(event, AssistantTextDelta)]
+        result_events = [event for event in events if isinstance(event, ResultEvent)]
+        assert (text_events, result_events[-1].result) == (["最终答复"], "最终答复")
+
     async def test_streaming_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)
 
