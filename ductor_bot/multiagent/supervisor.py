@@ -471,6 +471,7 @@ class AgentSupervisor:
         # live (each orchestrator owns its own — see Orchestrator.__init__).
         hub.set_agent_process_registry(name, orch.process_registry)
 
+        hub.set_progress_handler(name, stack.bot.on_task_progress)
         hub.set_result_handler(name, stack.bot.on_task_result)
         hub.set_question_handler(name, stack.bot.on_task_question)
 

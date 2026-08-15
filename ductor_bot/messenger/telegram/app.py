@@ -87,7 +87,7 @@ from ductor_bot.messenger.telegram.welcome import (
 )
 from ductor_bot.multiagent.bus import AsyncInterAgentResult
 from ductor_bot.session.key import SessionKey
-from ductor_bot.tasks.models import TaskResult
+from ductor_bot.tasks.models import TaskProgress, TaskResult
 from ductor_bot.text.response_format import SEP, fmt
 from ductor_bot.workspace.paths import DuctorPaths
 
@@ -1537,6 +1537,12 @@ class TelegramBot:
             return
         set_log_context(operation="task", chat_id=chat_id)
         await self._bus.submit(from_task_result(result))
+
+    async def on_task_progress(self, progress: TaskProgress) -> None:
+        """经消息总线处理权威任务生命周期进度."""
+        from ductor_bot.bus.adapters import from_task_progress
+
+        await self._bus.submit(from_task_progress(progress))
 
     async def on_task_question(
         self,

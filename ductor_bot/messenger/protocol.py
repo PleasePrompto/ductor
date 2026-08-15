@@ -11,13 +11,13 @@ if TYPE_CHECKING:
     from ductor_bot.messenger.notifications import NotificationService
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.orchestrator.core import Orchestrator
-    from ductor_bot.tasks.models import TaskResult
+    from ductor_bot.tasks.models import TaskProgress, TaskResult
     from ductor_bot.workspace.paths import DuctorPaths
 
 
 @runtime_checkable
 class BotProtocol(Protocol):
-    """Interface that both TelegramBot and MatrixBot implement.
+    """每个传输 bot 都应实现的接口.
 
     The supervisor, AgentStack, and InterAgentBus depend ONLY on this protocol,
     never on transport-specific classes.
@@ -50,6 +50,10 @@ class BotProtocol(Protocol):
 
     async def on_async_interagent_result(self, result: AsyncInterAgentResult) -> None:
         """Handle async inter-agent result delivery."""
+        ...
+
+    async def on_task_progress(self, progress: TaskProgress) -> None:
+        """处理权威后台任务生命周期更新."""
         ...
 
     async def on_task_result(self, result: TaskResult) -> None:

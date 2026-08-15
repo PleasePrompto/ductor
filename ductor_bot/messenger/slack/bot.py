@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from ductor_bot.infra.updater import UpdateObserver
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.orchestrator.core import Orchestrator
-    from ductor_bot.tasks.models import TaskResult
+    from ductor_bot.tasks.models import TaskProgress, TaskResult
     from ductor_bot.workspace.paths import DuctorPaths
 
 if TYPE_CHECKING:
@@ -1033,6 +1033,9 @@ class SlackBot:
         env = from_task_result(result)
         env.transport = "sl"
         await self._bus.submit(env)
+
+    async def on_task_progress(self, progress: TaskProgress) -> None:
+        """显式忽略仅供 Telegram 消费的任务进度更新."""
 
     async def on_task_question(
         self,

@@ -11,6 +11,8 @@ import pytest
 
 from ductor_bot.messenger.multi import MultiBotAdapter
 from ductor_bot.messenger.notifications import CompositeNotificationService
+from ductor_bot.messenger.protocol import BotProtocol
+from ductor_bot.tasks.models import TaskProgress
 
 
 def _make_config(transports: list[str] | None = None) -> MagicMock:
@@ -32,6 +34,7 @@ def _make_bot(*, name: str = "bot") -> MagicMock:
     bot.register_startup_hook = MagicMock()
     bot.set_abort_all_callback = MagicMock()
     bot.on_async_interagent_result = AsyncMock()
+    bot.on_task_progress = AsyncMock()
     bot.on_task_result = AsyncMock()
     bot.on_task_question = AsyncMock()
     bot.file_roots = MagicMock(return_value=[Path("/tmp")])
@@ -137,6 +140,9 @@ class TestMultiBotAdapterProperties:
 
 
 class TestMultiBotAdapterDelegation:
+    def test_protocol_declares_task_progress_handler(self) -> None:
+        assert hasattr(BotProtocol, "on_task_progress")
+
     def test_register_startup_hook_delegates_to_primary(self) -> None:
         config = _make_config()
         fake_tg = _make_bot()
@@ -200,6 +206,67 @@ class TestMultiBotAdapterDelegation:
         await adapter.on_task_result(result)
         fake_tg.on_task_result.assert_awaited_once_with(result)
         fake_mx.on_task_result.assert_awaited_once_with(result)
+
+    async def test_on_task_progress_fans_out(self) -> None:
+        config = _make_config()
+        fake_tg = _make_bot()
+        fake_mx = _make_bot()
+
+        with patch(
+            "ductor_bot.messenger.registry._create_single_bot",
+            side_effect=[fake_tg, fake_mx],
+        ):
+            adapter = MultiBotAdapter(config)
+
+        progress = TaskProgress(
+            task_id="t1",
+            chat_id=123,
+            parent_agent="main",
+            name="Task",
+            stage="running",
+            elapsed_seconds=0.0,
+            provider="claude",
+            model="opus",
+            thread_id=456,
+        )
+        await adapter.on_task_progress(progress)
+
+        fake_tg.on_task_progress.assert_awaited_once_with(progress)
+        fake_mx.on_task_progress.assert_awaited_once_with(progress)
+
+    async def test_matrix_and_slack_task_progress_handlers_are_explicit_noops(self) -> None:
+        from ductor_bot.messenger.matrix.bot import MatrixBot
+        from ductor_bot.messenger.slack.bot import SlackBot
+
+        progress = MagicMock()
+
+        assert await MatrixBot.on_task_progress(MagicMock(), progress) is None
+        assert await SlackBot.on_task_progress(MagicMock(), progress) is None
+
+    async def test_telegram_task_progress_handler_submits_safe_bus_envelope(self) -> None:
+        from ductor_bot.bus.envelope import Origin
+        from ductor_bot.messenger.telegram.app import TelegramBot
+
+        bot = MagicMock()
+        bot._bus.submit = AsyncMock()
+        progress = TaskProgress(
+            task_id="t1",
+            chat_id=123,
+            parent_agent="main",
+            name="Task",
+            stage="running",
+            elapsed_seconds=0.0,
+            provider="claude",
+            model="opus",
+            thread_id=456,
+        )
+
+        await TelegramBot.on_task_progress(bot, progress)
+
+        envelope = bot._bus.submit.await_args.args[0]
+        assert envelope.origin is Origin.TASK_PROGRESS
+        assert envelope.prompt == ""
+        assert envelope.prompt_preview == ""
 
     async def test_on_task_question_fans_out(self) -> None:
         config = _make_config()
