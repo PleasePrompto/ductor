@@ -15,6 +15,10 @@ from typing import TYPE_CHECKING
 from ductor_bot.bus.cron_sanitize import sanitize_cron_result_text
 from ductor_bot.bus.envelope import Envelope, Origin
 from ductor_bot.messenger.telegram.sender import SendRichOpts, send_rich
+from ductor_bot.messenger.telegram.task_progress import (
+    TaskProgressUpdate,
+    TelegramTaskProgressTracker,
+)
 from ductor_bot.text.response_format import SEP, fmt
 
 if TYPE_CHECKING:
@@ -33,6 +37,14 @@ class TelegramTransport:
 
     def __init__(self, bot: TelegramBot) -> None:
         self._bot = bot
+        tasks_config = bot.config.tasks
+        enabled = bool(getattr(tasks_config, "progress_updates", True))
+        interval = float(getattr(tasks_config, "progress_interval_seconds", 30.0))
+        self._task_progress = TelegramTaskProgressTracker(
+            bot.bot_instance,
+            interval_seconds=interval,
+            enabled=enabled,
+        )
 
     # -- Protocol methods ---------------------------------------------------
 
@@ -55,6 +67,10 @@ class TelegramTransport:
             await handler(self, envelope)
         else:
             logger.warning("No broadcast handler for origin=%s", envelope.origin.value)
+
+    async def shutdown(self) -> None:
+        """Stop Telegram-local timers before the Bot session closes."""
+        await self._task_progress.shutdown()
 
     # -- Internal helpers ---------------------------------------------------
 
@@ -182,17 +198,24 @@ class TelegramTransport:
         """Deliver task result notification + injected response."""
         opts = self._opts(env)
         name = env.metadata.get("name", env.metadata.get("task_id", "?"))
+        task_id = env.metadata.get("task_id", "?")
+        tracked = await self._task_progress.finish(
+            chat_id=env.chat_id,
+            topic_id=env.topic_id,
+            task_id=task_id,
+            status=env.status,
+        )
 
         # 1. Notification (skip "waiting" — question already shown)
         note = ""
-        if env.status == "done":
+        if not tracked and env.status == "done":
             duration = f"{env.elapsed_seconds:.0f}s"
             target = f"{env.provider}/{env.model}" if env.provider else ""
             detail = f"{duration}, {target}" if target else duration
             note = f"**Task `{name}` completed** ({detail})"
-        elif env.status == "cancelled":
+        elif not tracked and env.status == "cancelled":
             note = f"**Task `{name}` cancelled**"
-        elif env.status == "failed":
+        elif not tracked and env.status == "failed":
             note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
 
         if note:
@@ -201,6 +224,20 @@ class TelegramTransport:
         # 2. Injected response (filled by bus injection for done/failed)
         if env.needs_injection and env.result_text:
             await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
+
+    async def _deliver_task_progress(self, env: Envelope) -> None:
+        """Start or update the Telegram-local task status heartbeat."""
+        task_id = env.metadata.get("task_id", "?")
+        await self._task_progress.update(
+            TaskProgressUpdate(
+                chat_id=env.chat_id,
+                topic_id=env.topic_id,
+                task_id=task_id,
+                name=env.metadata.get("name", task_id),
+                stage=env.status,
+                elapsed_seconds=env.elapsed_seconds,
+            )
+        )
 
     async def _deliver_task_question(self, env: Envelope) -> None:
         """Deliver task question notification + injected agent response."""
@@ -313,6 +350,7 @@ _HANDLERS: dict[Origin, _Handler] = {
     Origin.CRON: TelegramTransport._deliver_cron,
     Origin.HEARTBEAT: TelegramTransport._deliver_heartbeat,
     Origin.INTERAGENT: TelegramTransport._deliver_interagent,
+    Origin.TASK_PROGRESS: TelegramTransport._deliver_task_progress,
     Origin.TASK_RESULT: TelegramTransport._deliver_task_result,
     Origin.TASK_QUESTION: TelegramTransport._deliver_task_question,
     Origin.WEBHOOK_WAKE: TelegramTransport._deliver_webhook_wake,

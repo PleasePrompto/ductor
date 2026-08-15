@@ -223,7 +223,8 @@ class TelegramBot:
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
 
-        self._bus.register_transport(TelegramTransport(self))
+        self._transport = TelegramTransport(self)
+        self._bus.register_transport(self._transport)
         self._sequential = SequentialMiddleware(
             lock_pool=self._lock_pool,
             topic_names=self._topic_names,
@@ -246,6 +247,7 @@ class TelegramBot:
         self._register_member_handlers()
         self._dp.include_router(self._router)
         self._dp.startup.register(self._on_startup)
+        self._dp.shutdown.register(self._on_dispatcher_shutdown)
 
     @property
     def _orch(self) -> Orchestrator:
@@ -1662,7 +1664,12 @@ class TelegramBot:
         )
         return self._exit_code
 
+    async def _on_dispatcher_shutdown(self, **_: object) -> None:
+        """Stop heartbeats while aiogram still owns an open Bot session."""
+        await self._transport.shutdown()
+
     async def shutdown(self) -> None:
+        await self._transport.shutdown()
         await _cancel_task(self._restart_watcher)
         await _cancel_task(self._group_audit_task)
         if self._update_observer:
