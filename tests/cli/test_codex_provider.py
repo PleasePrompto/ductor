@@ -825,6 +825,43 @@ class TestSendStreaming:
         assert result_events[0].is_error is True
         proc.wait.assert_awaited_once()
 
+    async def test_streaming_timeout_discards_unclassified_agent_text(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cli = _make_cli(monkeypatch)
+        proc = AsyncMock(spec=asyncio.subprocess.Process)
+        proc.returncode = None
+        proc.pid = 12345
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+
+        internal_line = json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "尚未确定是否为最终答复"},
+            }
+        )
+        stdout_mock = AsyncMock()
+        stdout_mock.readline = AsyncMock(side_effect=[f"{internal_line}\n".encode(), TimeoutError])
+        proc.stdout = stdout_mock
+
+        stderr_mock = AsyncMock()
+        stderr_mock.read = AsyncMock(return_value=b"")
+        proc.stderr = stderr_mock
+
+        with patch("ductor_bot.cli.executor.asyncio") as mock_asyncio:
+            mock_asyncio.timeout = asyncio.timeout
+            mock_asyncio.subprocess = asyncio.subprocess
+            mock_asyncio.create_subprocess_exec = AsyncMock(return_value=proc)
+            mock_asyncio.create_task = asyncio.ensure_future
+
+            events = await _collect_events(cli.send_streaming("hello", timeout_seconds=0.01))
+
+        assert not any(isinstance(event, AssistantTextDelta) for event in events)
+        result_events = [event for event in events if isinstance(event, ResultEvent)]
+        assert len(result_events) == 1
+        assert result_events[0].is_error is True
+
     async def test_streaming_no_stdout_raises_runtime_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

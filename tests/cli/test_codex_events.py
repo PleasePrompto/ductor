@@ -86,7 +86,7 @@ def test_parse_ignores_tagged_thinking_before_final_message() -> None:
                     "type": "item.completed",
                     "item": {
                         "type": "agent_message",
-                        "text": "  \n<thinking>内部推理</thinking>",
+                        "text": "  \n<thinking>内部推理</thinking>\n工具调用仍在重试",
                     },
                 }
             ),
@@ -214,7 +214,7 @@ def test_stream_tagged_agent_message_is_thinking() -> None:
             "type": "item.completed",
             "item": {
                 "type": "agent_message",
-                "text": "  \n<thinking>内部推理</thinking>",
+                "text": "  \n<thinking>内部推理</thinking>\n工具调用仍在重试",
             },
         }
     )
