@@ -9,12 +9,14 @@ from ductor_bot.bus.adapters import (
     from_cron_result,
     from_heartbeat,
     from_interagent_result,
+    from_task_progress,
     from_task_question,
     from_task_result,
     from_webhook_cron_result,
     from_webhook_wake,
 )
 from ductor_bot.bus.envelope import DeliveryMode, LockMode, Origin
+from ductor_bot.tasks.models import TaskProgress
 
 # -- Fake result types (avoid importing real models with heavy deps) -----------
 
@@ -296,6 +298,37 @@ def test_from_task_result_preserves_parent_agent() -> None:
     sub-agent's bot (not the main agent's)."""
     env = from_task_result(_FakeTaskResult(parent_agent="sonic"))
     assert env.metadata["parent_agent"] == "sonic"
+
+
+def test_from_task_progress_creates_non_injecting_envelope() -> None:
+    progress = TaskProgress(
+        task_id="t1",
+        chat_id=100,
+        parent_agent="main",
+        name="research",
+        stage="running",
+        elapsed_seconds=5.0,
+        provider="claude",
+        model="sonnet",
+        thread_id=42,
+    )
+    env = from_task_progress(progress)
+
+    assert env.origin == Origin.TASK_PROGRESS
+    assert env.chat_id == 100
+    assert env.topic_id == 42
+    assert env.status == "running"
+    assert env.delivery == DeliveryMode.UNICAST
+    assert env.lock_mode == LockMode.NONE
+    assert not env.needs_injection
+    assert env.elapsed_seconds == 5.0
+    assert env.provider == "claude"
+    assert env.model == "sonnet"
+    assert env.metadata == {
+        "task_id": "t1",
+        "name": "research",
+        "parent_agent": "main",
+    }
 
 
 def test_from_task_question() -> None:

@@ -15,7 +15,7 @@ from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 if TYPE_CHECKING:
     from ductor_bot.background.models import BackgroundResult
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
-    from ductor_bot.tasks.models import TaskResult
+    from ductor_bot.tasks.models import TaskProgress, TaskResult
     from ductor_bot.webhook.models import WebhookResult
 
 
@@ -250,7 +250,28 @@ def from_interagent_result(
     )
 
 
-# -- Task results & questions --------------------------------------------------
+# -- Task progress, results & questions ---------------------------------------
+
+
+def from_task_progress(progress: TaskProgress) -> Envelope:
+    """Convert a background task lifecycle update."""
+    return Envelope(
+        origin=Origin.TASK_PROGRESS,
+        chat_id=progress.chat_id,
+        topic_id=progress.thread_id,
+        status=progress.stage,
+        delivery=DeliveryMode.UNICAST,
+        lock_mode=LockMode.NONE,
+        needs_injection=False,
+        elapsed_seconds=progress.elapsed_seconds,
+        provider=progress.provider,
+        model=progress.model,
+        metadata={
+            "task_id": progress.task_id,
+            "name": progress.name,
+            "parent_agent": progress.parent_agent,
+        },
+    )
 
 
 def from_task_result(result: TaskResult) -> Envelope:
