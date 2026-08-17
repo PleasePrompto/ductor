@@ -41,6 +41,7 @@ def parse_codex_jsonl(raw: str) -> tuple[str, str | None, dict[str, Any] | None]
     result_parts: list[str] = []
     thread_id: str | None = None
     usage: dict[str, Any] | None = None
+    started_file_changes: set[str] = set()
 
     for raw_line in lines:
         stripped = raw_line.strip()
@@ -53,7 +54,7 @@ def parse_codex_jsonl(raw: str) -> tuple[str, str | None, dict[str, Any] | None]
 
         thread_id = _extract_thread_id(data, thread_id)
         usage = _extract_usage(data, usage)
-        if _is_tool_boundary_event(data):
+        if _is_tool_boundary_event(data, started_file_changes):
             result_parts.clear()
         _extract_text(data, result_parts)
 
@@ -115,7 +116,7 @@ def _is_tool_item(data: dict[str, Any]) -> bool:
     }
 
 
-def _is_tool_boundary_event(data: dict[str, Any]) -> bool:
+def _is_tool_boundary_event(data: dict[str, Any], started_file_changes: set[str]) -> bool:
     """识别 Codex 各类工具首次可见的事件边界."""
     if not _is_tool_item(data):
         return False
@@ -123,7 +124,15 @@ def _is_tool_boundary_event(data: dict[str, Any]) -> bool:
     if not isinstance(item, dict):
         return False
     if item.get("type") == "file_change":
-        return data.get("type") in {"item.started", "item.completed"}
+        event_type = data.get("type")
+        item_id = item.get("id")
+        if event_type == "item.started":
+            if isinstance(item_id, str):
+                started_file_changes.add(item_id)
+            return True
+        if event_type == "item.completed":
+            return not isinstance(item_id, str) or item_id not in started_file_changes
+        return False
     return data.get("type") == "item.started"
 
 
@@ -257,7 +266,7 @@ def _parse_codex_item(data: dict[str, Any]) -> list[StreamEvent]:
             return []
         text = item.get("text", "")
         if _is_tagged_thinking(text):
-            return [ThinkingEvent(type="assistant", text=text)]
+            return []
         return [AssistantTextDelta(type="assistant", text=text)] if text else []
 
     if item_type == "reasoning":
@@ -310,6 +319,7 @@ class CodexThinkingFilter:
 
     def __init__(self) -> None:
         self._buffered: list[StreamEvent] = []
+        self._emitted_tool_ids: set[str] = set()
 
     def process(self, event: StreamEvent) -> list[StreamEvent]:
         """Process one event, returning zero or more events to emit."""
@@ -318,6 +328,10 @@ class CodexThinkingFilter:
             return []
 
         if isinstance(event, ToolUseEvent):
+            if event.tool_id is not None:
+                if event.tool_id in self._emitted_tool_ids:
+                    return []
+                self._emitted_tool_ids.add(event.tool_id)
             self._buffered.clear()
             return [event]
 

@@ -6,7 +6,11 @@ import json
 
 import pytest
 
-from ductor_bot.cli.codex_events import parse_codex_jsonl, parse_codex_stream_event
+from ductor_bot.cli.codex_events import (
+    CodexThinkingFilter,
+    parse_codex_jsonl,
+    parse_codex_stream_event,
+)
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
     ResultEvent,
@@ -137,6 +141,36 @@ def test_parse_discards_pre_tool_text_for_all_codex_tool_boundaries(
     assert text == "最终答复"
 
 
+def test_parse_keeps_final_text_after_completed_file_change() -> None:
+    """A completion paired with a start must not clear the completed reply."""
+    lines = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.started",
+                    "item": {"type": "file_change", "id": "change-1"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "最终答复"},
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "file_change", "id": "change-1"},
+                }
+            ),
+        ]
+    )
+
+    text, _, _ = parse_codex_jsonl(lines)
+
+    assert text == "最终答复"
+
+
 def test_unparseable_lines_skipped() -> None:
     raw = "not json\n" + json.dumps(
         {
@@ -208,7 +242,7 @@ def test_stream_agent_message() -> None:
     assert events[0].text == "Hello"
 
 
-def test_stream_tagged_agent_message_is_thinking() -> None:
+def test_stream_tagged_agent_message_is_suppressed() -> None:
     line = json.dumps(
         {
             "type": "item.completed",
@@ -221,8 +255,7 @@ def test_stream_tagged_agent_message_is_thinking() -> None:
 
     events = parse_codex_stream_event(line)
 
-    assert len(events) == 1
-    assert isinstance(events[0], ThinkingEvent)
+    assert events == []
 
 
 def test_stream_reasoning() -> None:
@@ -261,6 +294,32 @@ def test_stream_file_change() -> None:
     assert len(events) == 1
     assert isinstance(events[0], ToolUseEvent)
     assert events[0].tool_name == "Edit"
+
+
+def test_thinking_filter_deduplicates_file_change_lifecycle_events() -> None:
+    """A file-change completion must not repeat its already-emitted progress event."""
+    filter_ = CodexThinkingFilter()
+    started = parse_codex_stream_event(
+        json.dumps(
+            {
+                "type": "item.started",
+                "item": {"type": "file_change", "id": "change-1"},
+            }
+        )
+    )[0]
+    completed = parse_codex_stream_event(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "file_change", "id": "change-1"},
+            }
+        )
+    )[0]
+
+    assert filter_.process(started) == [started]
+    assert filter_.process(AssistantTextDelta(type="assistant", text="Final answer")) == []
+    assert filter_.process(completed) == []
+    assert filter_.flush() == [AssistantTextDelta(type="assistant", text="Final answer")]
 
 
 def test_stream_mcp_tool_call() -> None:
