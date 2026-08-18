@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
     from ductor_bot.cli.process_registry import ProcessRegistry
     from ductor_bot.cli.service import CLIService
+    from ductor_bot.cli.stream_events import ToolUseEvent
     from ductor_bot.config import TasksConfig
     from ductor_bot.tasks.registry import TaskRegistry
     from ductor_bot.workspace.paths import DuctorPaths
@@ -519,7 +520,30 @@ class TaskHub:
             timeout = self._config.timeout_seconds
             await self._deliver_progress(entry, "running", time.monotonic() - t0)
             request = await self._prepare_request(entry, prompt, cli, resume_session)
-            response = await cli.execute(request)
+            streamed_parts: list[str] = []
+
+            async def _on_text_delta(text: str) -> None:
+                streamed_parts.append(text)
+                await self._deliver_progress(
+                    entry,
+                    "running",
+                    time.monotonic() - t0,
+                    output_text="".join(streamed_parts),
+                )
+
+            async def _on_tool_activity(event: ToolUseEvent) -> None:
+                await self._deliver_progress(
+                    entry,
+                    "running",
+                    time.monotonic() - t0,
+                    tool_name=event.tool_name,
+                )
+
+            response = await cli.execute_streaming(
+                request,
+                on_text_delta=_on_text_delta,
+                on_tool_activity=_on_tool_activity,
+            )
 
             elapsed = time.monotonic() - t0
             await self._deliver_progress(entry, "reviewing", elapsed)
@@ -672,6 +696,9 @@ class TaskHub:
         entry: TaskEntry,
         stage: str,
         elapsed_seconds: float,
+        *,
+        output_text: str = "",
+        tool_name: str = "",
     ) -> None:
         """尽力投递一条权威任务生命周期更新, 不影响 worker 执行."""
         handler = self._progress_handlers.get(entry.parent_agent)
@@ -689,6 +716,8 @@ class TaskHub:
                     provider=entry.provider,
                     model=entry.model,
                     thread_id=entry.thread_id,
+                    output_text=output_text,
+                    tool_name=tool_name,
                 )
             )
         except Exception:

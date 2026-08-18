@@ -236,6 +236,8 @@ class TelegramTransport:
                 name=env.metadata.get("name", task_id),
                 stage=env.status,
                 elapsed_seconds=env.elapsed_seconds,
+                output_text=env.metadata.get("output_text", ""),
+                tool_name=env.metadata.get("tool_name", ""),
             )
         )
 

@@ -128,6 +128,11 @@ def _make_cli_service() -> MagicMock:
     response.timed_out = False
     response.num_turns = 1
     cli.execute = AsyncMock(return_value=response)
+
+    async def _streaming(request: object, **_: object) -> MagicMock:
+        return await cli.execute(request)
+
+    cli.execute_streaming = AsyncMock(side_effect=_streaming)
     cli.resolve_provider = MagicMock(return_value=("claude", "opus"))
     return cli
 

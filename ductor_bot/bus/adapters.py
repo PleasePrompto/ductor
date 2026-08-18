@@ -270,6 +270,8 @@ def from_task_progress(progress: TaskProgress) -> Envelope:
             "task_id": progress.task_id,
             "name": progress.name,
             "parent_agent": progress.parent_agent,
+            "output_text": progress.output_text,
+            "tool_name": progress.tool_name,
         },
     )
 

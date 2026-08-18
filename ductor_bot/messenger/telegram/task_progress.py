@@ -20,7 +20,7 @@ TaskProgressKey = tuple[int, int | None, str]
 
 @dataclass(frozen=True, slots=True)
 class TaskProgressUpdate:
-    """Authoritative non-terminal lifecycle data for one background task."""
+    """Authoritative lifecycle and streamed output for one background task."""
 
     chat_id: int
     topic_id: int | None
@@ -28,6 +28,8 @@ class TaskProgressUpdate:
     name: str
     stage: str
     elapsed_seconds: float
+    output_text: str = ""
+    tool_name: str = ""
 
 
 @dataclass(slots=True)
@@ -40,6 +42,8 @@ class _ProgressState:
     stage: str
     started_at: float
     generation: int
+    output_text: str = ""
+    tool_name: str = ""
     message_id: int | None = None
     terminal: bool = False
     replacement_attempted: bool = False
@@ -83,6 +87,10 @@ class TelegramTaskProgressTracker:
 
         state.name = _display_name(update.name, update.task_id)
         state.stage = update.stage
+        if update.output_text:
+            state.output_text = update.output_text
+        if update.tool_name:
+            state.tool_name = update.tool_name
         await self._publish(state)
 
     async def finish(
@@ -147,6 +155,8 @@ class TelegramTaskProgressTracker:
                 stage=update.stage,
                 started_at=loop.time() - max(0.0, update.elapsed_seconds),
                 generation=self._generation,
+                output_text=update.output_text,
+                tool_name=update.tool_name,
             )
             self._states[key] = state
 
@@ -292,7 +302,12 @@ class TelegramTaskProgressTracker:
             title = f'🔎 Task "{state.name}" is reviewing the worker result'
         else:
             title = f'⏳ Task "{state.name}" is running'
-        return f"{title}\nID: {state.task_id}\nElapsed: {elapsed}s"
+        parts = [title, f"ID: {state.task_id}", f"Elapsed: {elapsed}s"]
+        if state.tool_name:
+            parts.append(f"[TOOL: {state.tool_name}]")
+        if state.output_text:
+            parts.append("\n" + state.output_text[-3000:])
+        return "\n".join(parts)
 
     def _terminal_text(self, state: _ProgressState, status: str) -> str:
         labels = {

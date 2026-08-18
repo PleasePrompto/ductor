@@ -99,6 +99,8 @@ class TestTelegramTaskProgressTracker:
                 name="Read-only investigation",
                 stage="reviewing",
                 elapsed_seconds=12.0,
+                output_text="The worker found the requested files.",
+                tool_name="Shell",
             )
         )
         await _wait_until(lambda: bot.edit_message_text.await_count >= 2)
@@ -106,6 +108,11 @@ class TestTelegramTaskProgressTracker:
         assert bot.send_message.await_count == 1
         assert bot.edit_message_text.await_args.kwargs["message_id"] == 101
         assert "reviewing" in bot.edit_message_text.await_args.kwargs["text"]
+        assert (
+            "The worker found the requested files."
+            in bot.edit_message_text.await_args.kwargs["text"]
+        )
+        assert "[TOOL: Shell]" in bot.edit_message_text.await_args.kwargs["text"]
         await tracker.shutdown()
 
     @pytest.mark.parametrize(

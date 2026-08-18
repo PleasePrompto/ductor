@@ -142,7 +142,7 @@ class TaskInFlight:
 
 @dataclass(slots=True)
 class TaskProgress:
-    """Lifecycle update emitted while a background task is active."""
+    """Lifecycle and streaming update emitted while a background task is active."""
 
     task_id: str
     chat_id: int
@@ -153,6 +153,8 @@ class TaskProgress:
     provider: str
     model: str
     thread_id: int | None = None
+    output_text: str = ""
+    tool_name: str = ""
 
 
 @dataclass(slots=True)

@@ -328,6 +328,8 @@ def test_from_task_progress_creates_non_injecting_envelope() -> None:
         "task_id": "t1",
         "name": "research",
         "parent_agent": "main",
+        "output_text": "",
+        "tool_name": "",
     }
 
 

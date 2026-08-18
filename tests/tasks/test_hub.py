@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from ductor_bot.cli.process_registry import ProcessRegistry
+from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.tasks.hub import TaskHub
 from ductor_bot.tasks.models import TaskProgress, TaskResult, TaskSubmit
 from ductor_bot.tasks.registry import TaskRegistry
@@ -44,6 +45,11 @@ def _make_cli_service(
     response.timed_out = False
     response.num_turns = num_turns
     cli.execute = AsyncMock(return_value=response)
+
+    async def _streaming(request: object, **_: object) -> MagicMock:
+        return await cli.execute(request)
+
+    cli.execute_streaming = AsyncMock(side_effect=_streaming)
     cli.resolve_provider = MagicMock(return_value=("claude", "opus"))
     return cli
 
@@ -112,6 +118,36 @@ class TestSubmit:
 
 
 class TestRunAndDeliver:
+    async def test_streamed_worker_output_is_emitted_as_progress(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        cli = _make_cli_service("final output")
+        progress_updates: list[TaskProgress] = []
+
+        async def _streaming(_: object, **callbacks: object) -> object:
+            on_text = callbacks["on_text_delta"]
+            on_tool = callbacks["on_tool_activity"]
+            await on_tool(ToolUseEvent(type="assistant", tool_name="Shell"))  # type: ignore[operator]
+            await on_text("partial reply")  # type: ignore[operator]
+            return cli.execute.return_value
+
+        cli.execute_streaming = AsyncMock(side_effect=_streaming)
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_progress_handler("main", progress_updates.append)
+        hub.set_result_handler("main", AsyncMock())
+
+        hub.submit(_submit())
+        await asyncio.sleep(0.1)
+
+        assert any(update.tool_name == "Shell" for update in progress_updates)
+        assert any(update.output_text == "partial reply" for update in progress_updates)
+        await hub.shutdown()
+
     async def test_running_progress_follows_registry_create_and_precedes_execute(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:
