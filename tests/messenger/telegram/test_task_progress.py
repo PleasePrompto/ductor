@@ -74,7 +74,7 @@ class TestTelegramTaskProgressTracker:
         await tracker.shutdown()
 
     async def test_heartbeat_edits_the_original_message_without_spam(self) -> None:
-        bot = _bot(message_ids=[101])
+        bot = _bot(message_ids=[101, 102])
         tracker = TelegramTaskProgressTracker(bot, interval_seconds=0.01)
 
         await _running(tracker)
@@ -145,6 +145,27 @@ class TestTelegramTaskProgressTracker:
         assert handled is True
         assert expected in bot.edit_message_text.await_args.kwargs["text"]
         assert bot.edit_message_text.await_count == count_after_finish
+        await tracker.shutdown()
+
+    async def test_terminal_status_keeps_streamed_output_visible(self) -> None:
+        bot = _bot(message_ids=[101, 102])
+        tracker = TelegramTaskProgressTracker(bot, interval_seconds=30.0)
+
+        await _running(tracker)
+        await tracker.update(
+            TaskProgressUpdate(
+                chat_id=10,
+                topic_id=20,
+                task_id="task-1",
+                name="Read-only investigation",
+                stage="running",
+                elapsed_seconds=1.0,
+                output_text="Final worker findings",
+            )
+        )
+        await tracker.finish(chat_id=10, topic_id=20, task_id="task-1", status="done")
+
+        assert "Final worker findings" in bot.edit_message_text.await_args.kwargs["text"]
         await tracker.shutdown()
 
     async def test_tasks_are_isolated_by_chat_topic_and_task_id(self) -> None:

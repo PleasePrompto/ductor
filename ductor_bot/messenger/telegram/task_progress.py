@@ -318,10 +318,15 @@ class TelegramTaskProgressTracker:
             "timeout": ("⌛", "timed out"),
         }
         icon, label = labels.get(status, ("Info", f"finished ({status})"))
-        return (
+        text = (
             f'{icon} Task "{state.name}" {label}\n'
             f"ID: {state.task_id}\nElapsed: {self._elapsed(state)}s"
         )
+        if state.tool_name:
+            text += f"\n[TOOL: {state.tool_name}]"
+        if state.output_text:
+            text += "\n\n" + state.output_text[-3000:]
+        return text
 
     @staticmethod
     def _elapsed(state: _ProgressState) -> int:
