@@ -141,6 +141,23 @@ class TaskInFlight:
 
 
 @dataclass(slots=True)
+class TaskProgress:
+    """Lifecycle and streaming update emitted while a background task is active."""
+
+    task_id: str
+    chat_id: int
+    parent_agent: str
+    name: str
+    stage: str
+    elapsed_seconds: float
+    provider: str
+    model: str
+    thread_id: int | None = None
+    output_text: str = ""
+    tool_name: str = ""
+
+
+@dataclass(slots=True)
 class TaskResult:
     """Outcome delivered to parent agent after task completion."""
 

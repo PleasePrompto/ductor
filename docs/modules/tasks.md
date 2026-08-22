@@ -6,7 +6,7 @@ Delegated background task system (`TaskHub`) for long-running autonomous work.
 
 - `tasks/hub.py`: task lifecycle (submit/run/resume/question/cancel/shutdown)
 - `tasks/registry.py`: persistent registry + task-folder seeding + cleanup/delete
-- `tasks/models.py`: `TaskSubmit`, `TaskEntry`, `TaskInFlight`, `TaskResult`
+- `tasks/models.py`: `TaskSubmit`, `TaskEntry`, `TaskInFlight`, `TaskProgress`, `TaskResult`
 - `orchestrator/selectors/task_selector.py`: `/tasks` UI callbacks (`tsc:*`)
 - `_home_defaults/workspace/tools/task_tools/*.py`: CLI tools (`create`, `resume`, `ask_parent`, `list`, `cancel`, `delete`)
 
@@ -17,10 +17,10 @@ Run long work asynchronously while keeping parent chat responsive.
 High-level flow:
 
 1. create (`/tasks/create`)
-2. execute (`TaskHub._run`)
+2. emit `running`, then execute (`TaskHub._run`)
 3. optional question (`/tasks/ask_parent`)
 4. optional resume (`/tasks/resume`)
-5. result delivery + parent-session injection
+5. emit `reviewing`, then perform result delivery + parent-session injection
 6. optional permanent deletion (`/tasks/delete`)
 
 ## Persistence and folders
@@ -44,8 +44,18 @@ Startup/maintenance behavior:
 ## Config (`AgentConfig.tasks`)
 
 - `enabled`
+- `progress_updates` (default `true`)
+- `progress_interval_seconds` (default `30.0`, minimum `10.0`)
 - `max_parallel` (per chat)
 - `timeout_seconds`
+
+## Telegram lifecycle status
+
+Telegram keeps one status message per `(chat_id, topic_id, task_id)` and edits it on the
+configured interval. The timer continues through the parent model's result review, then the
+same message becomes completed, failed, cancelled, waiting, or timed out. Task prompts, tool
+arguments, and model reasoning are never used as progress text. Matrix and Slack retain their
+existing terminal-result behavior.
 
 ## Execution model (`TaskHub`)
 

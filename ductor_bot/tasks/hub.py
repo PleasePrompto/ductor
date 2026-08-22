@@ -13,6 +13,7 @@ from ductor_bot.cli.types import AgentRequest
 from ductor_bot.tasks.models import (
     TaskEntry,
     TaskInFlight,
+    TaskProgress,
     TaskResult,
     TaskSubmit,
     normalise_priority,
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
     from ductor_bot.cli.process_registry import ProcessRegistry
     from ductor_bot.cli.service import CLIService
+    from ductor_bot.cli.stream_events import ToolUseEvent
     from ductor_bot.config import TasksConfig
     from ductor_bot.tasks.registry import TaskRegistry
     from ductor_bot.workspace.paths import DuctorPaths
@@ -35,6 +37,7 @@ _RESUMABLE = frozenset({"done", "failed", "cancelled", "waiting"})
 _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
+TaskProgressCallback = Callable[[TaskProgress], Awaitable[None]]
 QuestionHandler = Callable[[str, str, str, int, int | None], Awaitable[None]]
 # QuestionHandler(task_id, question, prompt_preview, chat_id, thread_id) -> None
 
@@ -93,6 +96,7 @@ class TaskHub:
         self._config = config
         self._in_flight: dict[str, TaskInFlight] = {}
         self._result_handlers: dict[str, TaskResultCallback] = {}
+        self._progress_handlers: dict[str, TaskProgressCallback] = {}
         self._question_handlers: dict[str, QuestionHandler] = {}
         self._agent_chat_ids: dict[str, int] = {}
         self._maintenance_task: asyncio.Task[None] | None = None
@@ -119,6 +123,10 @@ class TaskHub:
     def set_result_handler(self, agent_name: str, handler: TaskResultCallback) -> None:
         """Register callback for delivering results to a parent agent."""
         self._result_handlers[agent_name] = handler
+
+    def set_progress_handler(self, agent_name: str, handler: TaskProgressCallback) -> None:
+        """注册任务生命周期更新的投递回调."""
+        self._progress_handlers[agent_name] = handler
 
     def set_question_handler(self, agent_name: str, handler: QuestionHandler) -> None:
         """Register handler for task-agent questions (ask_parent)."""
@@ -510,10 +518,35 @@ class TaskHub:
         final_delivery_started = False
         try:
             timeout = self._config.timeout_seconds
+            await self._deliver_progress(entry, "running", time.monotonic() - t0)
             request = await self._prepare_request(entry, prompt, cli, resume_session)
-            response = await cli.execute(request)
+            streamed_parts: list[str] = []
+
+            async def _on_text_delta(text: str) -> None:
+                streamed_parts.append(text)
+                await self._deliver_progress(
+                    entry,
+                    "running",
+                    time.monotonic() - t0,
+                    output_text="".join(streamed_parts),
+                )
+
+            async def _on_tool_activity(event: ToolUseEvent) -> None:
+                await self._deliver_progress(
+                    entry,
+                    "running",
+                    time.monotonic() - t0,
+                    tool_name=event.tool_name,
+                )
+
+            response = await cli.execute_streaming(
+                request,
+                on_text_delta=_on_text_delta,
+                on_tool_activity=_on_tool_activity,
+            )
 
             elapsed = time.monotonic() - t0
+            await self._deliver_progress(entry, "reviewing", elapsed)
             inflight = self._in_flight.get(entry.task_id)
             has_pending = bool(inflight and inflight.has_pending_question)
             status, error = _classify_task_response(response, timeout, has_pending)
@@ -656,6 +689,43 @@ class TaskHub:
                 "Error delivering task result id=%s to '%s'",
                 result.task_id,
                 result.parent_agent,
+            )
+
+    async def _deliver_progress(
+        self,
+        entry: TaskEntry,
+        stage: str,
+        elapsed_seconds: float,
+        *,
+        output_text: str = "",
+        tool_name: str = "",
+    ) -> None:
+        """尽力投递一条权威任务生命周期更新, 不影响 worker 执行."""
+        handler = self._progress_handlers.get(entry.parent_agent)
+        if handler is None:
+            return
+        try:
+            await handler(
+                TaskProgress(
+                    task_id=entry.task_id,
+                    chat_id=entry.chat_id,
+                    parent_agent=entry.parent_agent,
+                    name=entry.name,
+                    stage=stage,
+                    elapsed_seconds=elapsed_seconds,
+                    provider=entry.provider,
+                    model=entry.model,
+                    thread_id=entry.thread_id,
+                    output_text=output_text,
+                    tool_name=tool_name,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Task progress delivery failed id=%s stage=%s parent='%s'",
+                entry.task_id,
+                stage,
+                entry.parent_agent,
             )
 
 

@@ -18,6 +18,11 @@ from ductor_bot.cli.stream_events import (
 logger = logging.getLogger(__name__)
 
 
+def _is_tagged_thinking(text: object) -> bool:
+    """识别被 Codex 错标为普通助手消息的 thinking 内容."""
+    return isinstance(text, str) and text.lstrip().lower().startswith("<thinking>")
+
+
 def _tool_parameters(item: dict[str, Any]) -> dict[str, Any] | None:
     for key in ("arguments", "parameters", "input"):
         value = item.get(key)
@@ -36,6 +41,7 @@ def parse_codex_jsonl(raw: str) -> tuple[str, str | None, dict[str, Any] | None]
     result_parts: list[str] = []
     thread_id: str | None = None
     usage: dict[str, Any] | None = None
+    started_file_changes: set[str] = set()
 
     for raw_line in lines:
         stripped = raw_line.strip()
@@ -48,10 +54,7 @@ def parse_codex_jsonl(raw: str) -> tuple[str, str | None, dict[str, Any] | None]
 
         thread_id = _extract_thread_id(data, thread_id)
         usage = _extract_usage(data, usage)
-        # Only clear pre-tool "thinking" text on item.started; clearing on
-        # item.updated / item.completed would discard the final agent response
-        # if the model emits it before calling a tool.
-        if _is_tool_item(data) and data.get("type") == "item.started":
+        if _is_tool_boundary_event(data, started_file_changes):
             result_parts.clear()
         _extract_text(data, result_parts)
 
@@ -107,7 +110,30 @@ def _is_tool_item(data: dict[str, Any]) -> bool:
     if not isinstance(item, dict):
         return False
     item_type = item.get("type", "")
-    return item_type in _CODEX_ITEM_TOOL_MAP or item_type == "mcp_tool_call"
+    return item_type in _CODEX_ITEM_TOOL_MAP or item_type in {
+        "mcp_tool_call",
+        "collab_tool_call",
+    }
+
+
+def _is_tool_boundary_event(data: dict[str, Any], started_file_changes: set[str]) -> bool:
+    """识别 Codex 各类工具首次可见的事件边界."""
+    if not _is_tool_item(data):
+        return False
+    item = data.get("item")
+    if not isinstance(item, dict):
+        return False
+    if item.get("type") == "file_change":
+        event_type = data.get("type")
+        item_id = item.get("id")
+        if event_type == "item.started":
+            if isinstance(item_id, str):
+                started_file_changes.add(item_id)
+            return True
+        if event_type == "item.completed":
+            return not isinstance(item_id, str) or item_id not in started_file_changes
+        return False
+    return data.get("type") == "item.started"
 
 
 def _extract_text(data: dict[str, Any], parts: list[str]) -> None:
@@ -138,7 +164,7 @@ def _extract_item_text(data: dict[str, Any], parts: list[str], event_type: str) 
         and event_type == "item.completed"
     ):
         text = item.get("text", "")
-        if text:
+        if text and not _is_tagged_thinking(text):
             parts.append(text)
 
 
@@ -147,7 +173,7 @@ def _extract_message_blocks(data: dict[str, Any], parts: list[str]) -> None:
     for block in data.get("content", []):
         if isinstance(block, dict) and block.get("type") == "text":
             text = block.get("text", "")
-            if text:
+            if text and not _is_tagged_thinking(text):
                 parts.append(text)
 
 
@@ -156,7 +182,7 @@ def _extract_fallback_text(data: dict[str, Any], parts: list[str]) -> None:
     item = data.get("item")
     if isinstance(item, dict) and isinstance(item.get("text"), str):
         item_type = str(item.get("type", "")).lower()
-        if item_type in ("", "agent_message"):
+        if item_type in ("", "agent_message") and not _is_tagged_thinking(item["text"]):
             parts.append(item["text"])
 
 
@@ -239,6 +265,8 @@ def _parse_codex_item(data: dict[str, Any]) -> list[StreamEvent]:
         if event_type != "item.completed":
             return []
         text = item.get("text", "")
+        if _is_tagged_thinking(text):
+            return []
         return [AssistantTextDelta(type="assistant", text=text)] if text else []
 
     if item_type == "reasoning":
@@ -248,11 +276,15 @@ def _parse_codex_item(data: dict[str, Any]) -> list[StreamEvent]:
 
 
 def _parse_tool_item(item: dict[str, Any], item_type: str, event_type: str) -> list[StreamEvent]:
-    """Extract tool indicator from a Codex item (``item.started`` only)."""
-    if event_type != "item.started":
+    """Extract a tool indicator from the first event Codex emits for the tool."""
+    valid_events = (
+        {"item.started", "item.completed"} if item_type == "file_change" else {"item.started"}
+    )
+    if event_type not in valid_events:
         return []
-    if item_type == "mcp_tool_call":
-        name = item.get("name") or item.get("tool_name") or "MCP"
+    if item_type in {"mcp_tool_call", "collab_tool_call"}:
+        fallback_name = "MCP" if item_type == "mcp_tool_call" else "Agent"
+        name = item.get("name") or item.get("tool_name") or item.get("tool") or fallback_name
         return [
             ToolUseEvent(
                 type="assistant",
@@ -287,6 +319,7 @@ class CodexThinkingFilter:
 
     def __init__(self) -> None:
         self._buffered: list[StreamEvent] = []
+        self._emitted_tool_ids: set[str] = set()
 
     def process(self, event: StreamEvent) -> list[StreamEvent]:
         """Process one event, returning zero or more events to emit."""
@@ -295,6 +328,10 @@ class CodexThinkingFilter:
             return []
 
         if isinstance(event, ToolUseEvent):
+            if event.tool_id is not None:
+                if event.tool_id in self._emitted_tool_ids:
+                    return []
+                self._emitted_tool_ids.add(event.tool_id)
             self._buffered.clear()
             return [event]
 

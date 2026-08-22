@@ -234,6 +234,8 @@ Implementation status note:
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `enabled` | `bool` | `true` | Enables shared delegated task system (`TaskHub`) |
+| `progress_updates` | `bool` | `true` | Enables Telegram's single-message TaskHub lifecycle status |
+| `progress_interval_seconds` | `float` | `30.0` | Seconds between Telegram status edits (`>= 10.0`) |
 | `max_parallel` | `int` | `5` | Max concurrent running tasks per chat in `TaskHub` |
 | `timeout_seconds` | `float` | `3600.0` | Timeout per delegated task run |
 | `finished_retention_hours` | `int` | `168` | Age limit for finished task history (done/failed/cancelled); `0` disables age pruning |

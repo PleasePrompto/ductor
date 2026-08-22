@@ -12,6 +12,7 @@ import pytest
 from ductor_bot.config import AgentConfig
 from ductor_bot.multiagent.health import AgentHealth
 from ductor_bot.multiagent.models import SubAgentConfig
+from ductor_bot.multiagent.stack import AgentStack
 from ductor_bot.multiagent.supervisor import (
     _MAX_RESTART_RETRIES,
     AgentSupervisor,
@@ -46,6 +47,30 @@ class TestSupervisorInit:
 
     def test_agents_path(self, supervisor: AgentSupervisor, tmp_path: Path) -> None:
         assert supervisor._agents_path == tmp_path / "agents.json"
+
+
+class TestTaskHubWiring:
+    def test_wires_progress_handler_for_agent_stack(
+        self, supervisor: AgentSupervisor, main_config: AgentConfig, tmp_path: Path
+    ) -> None:
+        hub = MagicMock()
+        supervisor._task_hub = hub
+
+        orchestrator = MagicMock()
+        bot = MagicMock()
+        bot.orchestrator = orchestrator
+        bot.on_task_progress = AsyncMock()
+        stack = AgentStack(
+            name="main",
+            config=main_config,
+            paths=MagicMock(tasks_dir=tmp_path / "tasks"),
+            bot=bot,
+            is_main=True,
+        )
+
+        supervisor._wire_task_hub(stack)
+
+        hub.set_progress_handler.assert_called_once_with("main", bot.on_task_progress)
 
 
 class TestStartupFailures:

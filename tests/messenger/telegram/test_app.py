@@ -182,6 +182,16 @@ class TestTelegramBotInit:
         with pytest.raises(RuntimeError, match="Orchestrator not initialized"):
             _ = tg_bot._orch
 
+    async def test_dispatcher_shutdown_stops_progress_before_aiogram_closes_session(
+        self,
+    ) -> None:
+        tg_bot, _ = _make_tg_bot()
+        tg_bot._transport.shutdown = AsyncMock()
+
+        await tg_bot._dp.emit_shutdown()
+
+        tg_bot._transport.shutdown.assert_awaited_once()
+
 
 class TestTelegramBotRun:
     async def test_run_returns_exit_code(self) -> None:
@@ -241,6 +251,27 @@ class TestTelegramBotRun:
         tg_bot._dp.stop_polling.assert_called_once()
         bot_instance.delete_webhook.assert_called_once_with(drop_pending_updates=False)
         bot_instance.session.close.assert_called_once()
+
+    async def test_explicit_shutdown_stops_progress_before_bot_session(self) -> None:
+        tg_bot, bot_instance = _make_tg_bot()
+        tg_bot._orchestrator = MagicMock()
+        tg_bot._orchestrator.shutdown = AsyncMock()
+        order: list[str] = []
+
+        async def _stop_progress() -> None:
+            order.append("progress")
+
+        async def _close_session() -> None:
+            order.append("session")
+
+        tg_bot._transport.shutdown = AsyncMock(side_effect=_stop_progress)
+        tg_bot._dp.stop_polling = AsyncMock()
+        bot_instance.session = MagicMock()
+        bot_instance.session.close = AsyncMock(side_effect=_close_session)
+
+        await tg_bot.shutdown()
+
+        assert order == ["progress", "session"]
 
 
 # ---------------------------------------------------------------------------

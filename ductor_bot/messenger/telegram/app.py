@@ -87,7 +87,7 @@ from ductor_bot.messenger.telegram.welcome import (
 )
 from ductor_bot.multiagent.bus import AsyncInterAgentResult
 from ductor_bot.session.key import SessionKey
-from ductor_bot.tasks.models import TaskResult
+from ductor_bot.tasks.models import TaskProgress, TaskResult
 from ductor_bot.text.response_format import SEP, fmt
 from ductor_bot.workspace.paths import DuctorPaths
 
@@ -223,7 +223,8 @@ class TelegramBot:
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
 
-        self._bus.register_transport(TelegramTransport(self))
+        self._transport = TelegramTransport(self)
+        self._bus.register_transport(self._transport)
         self._sequential = SequentialMiddleware(
             lock_pool=self._lock_pool,
             topic_names=self._topic_names,
@@ -246,6 +247,7 @@ class TelegramBot:
         self._register_member_handlers()
         self._dp.include_router(self._router)
         self._dp.startup.register(self._on_startup)
+        self._dp.shutdown.register(self._on_dispatcher_shutdown)
 
     @property
     def _orch(self) -> Orchestrator:
@@ -1538,6 +1540,12 @@ class TelegramBot:
         set_log_context(operation="task", chat_id=chat_id)
         await self._bus.submit(from_task_result(result))
 
+    async def on_task_progress(self, progress: TaskProgress) -> None:
+        """经消息总线处理权威任务生命周期进度."""
+        from ductor_bot.bus.adapters import from_task_progress
+
+        await self._bus.submit(from_task_progress(progress))
+
     async def on_task_question(
         self,
         task_id: str,
@@ -1656,7 +1664,12 @@ class TelegramBot:
         )
         return self._exit_code
 
+    async def _on_dispatcher_shutdown(self, **_: object) -> None:
+        """Stop heartbeats while aiogram still owns an open Bot session."""
+        await self._transport.shutdown()
+
     async def shutdown(self) -> None:
+        await self._transport.shutdown()
         await _cancel_task(self._restart_watcher)
         await _cancel_task(self._group_audit_task)
         if self._update_observer:

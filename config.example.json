@@ -135,6 +135,8 @@
     },
     "tasks": {
         "enabled": true,
+        "progress_updates": true,
+        "progress_interval_seconds": 30.0,
         "max_parallel": 5,
         "timeout_seconds": 3600.0,
         "finished_retention_hours": 168,

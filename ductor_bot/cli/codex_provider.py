@@ -225,11 +225,11 @@ class CodexCLI(BaseCLI):
                 for event in thinking_filter.process(raw_event):
                     state.track(event)
                     yield event
+
+        async def post_handler(result: SubprocessResult) -> AsyncGenerator[StreamEvent, None]:
             for event in thinking_filter.flush():
                 state.track(event)
                 yield event
-
-        async def post_handler(result: SubprocessResult) -> AsyncGenerator[StreamEvent, None]:
             yield _codex_final_result(
                 result,
                 state.accumulated_text,

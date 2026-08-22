@@ -742,6 +742,58 @@ class TestSendStreaming:
         assert result_events[0].is_error is False
         assert result_events[0].session_id == "th-stream-1"
 
+    @pytest.mark.parametrize(
+        "tool_event",
+        [
+            {
+                "type": "item.started",
+                "item": {"type": "mcp_tool_call", "name": "search_docs"},
+            },
+            {
+                "type": "item.started",
+                "item": {"type": "collab_tool_call", "tool": "spawn_agent"},
+            },
+            {
+                "type": "item.completed",
+                "item": {"type": "file_change", "changes": []},
+            },
+        ],
+        ids=["mcp", "collab", "file-change"],
+    )
+    async def test_streaming_discards_pre_tool_agent_message(
+        self, monkeypatch: pytest.MonkeyPatch, tool_event: dict[str, object]
+    ) -> None:
+        cli = _make_cli(monkeypatch)
+        lines = [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "内部预告"},
+                }
+            ),
+            json.dumps(tool_event),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "最终答复"},
+                }
+            ),
+            json.dumps({"type": "turn.completed", "usage": {}}),
+        ]
+        proc = _make_streaming_process(lines, returncode=0)
+
+        with patch("ductor_bot.cli.executor.asyncio") as mock_asyncio:
+            mock_asyncio.timeout = asyncio.timeout
+            mock_asyncio.subprocess = asyncio.subprocess
+            mock_asyncio.create_subprocess_exec = AsyncMock(return_value=proc)
+            mock_asyncio.create_task = asyncio.ensure_future
+
+            events = await _collect_events(cli.send_streaming("hello"))
+
+        text_events = [event.text for event in events if isinstance(event, AssistantTextDelta)]
+        result_events = [event for event in events if isinstance(event, ResultEvent)]
+        assert (text_events, result_events[-1].result) == (["最终答复"], "最终答复")
+
     async def test_streaming_timeout(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cli = _make_cli(monkeypatch)
 
@@ -772,6 +824,43 @@ class TestSendStreaming:
         assert len(result_events) == 1
         assert result_events[0].is_error is True
         proc.wait.assert_awaited_once()
+
+    async def test_streaming_timeout_discards_unclassified_agent_text(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cli = _make_cli(monkeypatch)
+        proc = AsyncMock(spec=asyncio.subprocess.Process)
+        proc.returncode = None
+        proc.pid = 12345
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+
+        internal_line = json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": "尚未确定是否为最终答复"},
+            }
+        )
+        stdout_mock = AsyncMock()
+        stdout_mock.readline = AsyncMock(side_effect=[f"{internal_line}\n".encode(), TimeoutError])
+        proc.stdout = stdout_mock
+
+        stderr_mock = AsyncMock()
+        stderr_mock.read = AsyncMock(return_value=b"")
+        proc.stderr = stderr_mock
+
+        with patch("ductor_bot.cli.executor.asyncio") as mock_asyncio:
+            mock_asyncio.timeout = asyncio.timeout
+            mock_asyncio.subprocess = asyncio.subprocess
+            mock_asyncio.create_subprocess_exec = AsyncMock(return_value=proc)
+            mock_asyncio.create_task = asyncio.ensure_future
+
+            events = await _collect_events(cli.send_streaming("hello", timeout_seconds=0.01))
+
+        assert not any(isinstance(event, AssistantTextDelta) for event in events)
+        result_events = [event for event in events if isinstance(event, ResultEvent)]
+        assert len(result_events) == 1
+        assert result_events[0].is_error is True
 
     async def test_streaming_no_stdout_raises_runtime_error(
         self, monkeypatch: pytest.MonkeyPatch

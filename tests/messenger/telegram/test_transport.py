@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from ductor_bot.bus.bus import MessageBus
 from ductor_bot.bus.cron_sanitize import (
     is_cron_transport_ack_line,
     sanitize_cron_result_text,
 )
 from ductor_bot.bus.envelope import Envelope, Origin
+from ductor_bot.messenger.telegram.task_progress import TaskProgressUpdate
 from ductor_bot.messenger.telegram.transport import TelegramTransport
 
 if TYPE_CHECKING:
@@ -29,6 +32,8 @@ def _make_transport() -> tuple[TelegramTransport, MagicMock, AsyncMock]:
     """
     bot = MagicMock()
     bot.bot_instance = MagicMock()
+    bot.config.tasks.progress_updates = True
+    bot.config.tasks.progress_interval_seconds = 30.0
     bot.file_roots.return_value = [Path("/tmp/roots")]
     bot._orch.paths = MagicMock()
     bot._orch.named_sessions.update_after_response = MagicMock()
@@ -360,6 +365,144 @@ class TestInteragentDelivery:
 
 
 class TestTaskResultDelivery:
+    async def test_task_progress_updates_the_single_message_tracker(self) -> None:
+        transport, _, _ = _make_transport()
+        transport._task_progress.update = AsyncMock()
+        env = _env(
+            origin=Origin.TASK_PROGRESS,
+            chat_id=99,
+            topic_id=123,
+            status="reviewing",
+            elapsed_seconds=14.0,
+            metadata={"name": "audit", "task_id": "t1"},
+        )
+
+        await transport.deliver(env)
+
+        transport._task_progress.update.assert_awaited_once_with(
+            TaskProgressUpdate(
+                chat_id=99,
+                topic_id=123,
+                task_id="t1",
+                name="audit",
+                stage="reviewing",
+                elapsed_seconds=14.0,
+            )
+        )
+
+    async def test_tracked_done_finalizes_before_sending_only_injected_body(self) -> None:
+        transport, _, _ = _make_transport()
+        order: list[str] = []
+
+        async def _finish(**_: object) -> bool:
+            order.append("finish")
+            return True
+
+        async def _send(*_: object, **__: object) -> bool:
+            order.append("send")
+            return True
+
+        transport._task_progress.finish = AsyncMock(side_effect=_finish)
+        env = _env(
+            origin=Origin.TASK_RESULT,
+            chat_id=99,
+            topic_id=123,
+            status="done",
+            result_text="Injected answer",
+            needs_injection=True,
+            metadata={"name": "audit", "task_id": "t1"},
+        )
+
+        with patch(
+            "ductor_bot.messenger.telegram.transport.send_rich",
+            new=AsyncMock(side_effect=_send),
+        ) as mock_send:
+            await transport.deliver(env)
+
+        transport._task_progress.finish.assert_awaited_once_with(
+            chat_id=99,
+            topic_id=123,
+            task_id="t1",
+            status="done",
+        )
+        assert order == ["finish", "send"]
+        assert mock_send.await_count == 1
+        assert mock_send.await_args.args[2] == "Injected answer"
+
+    async def test_waiting_finalizes_tracker_without_duplicate_notification(self) -> None:
+        transport, _, _ = _make_transport()
+        transport._task_progress.finish = AsyncMock(return_value=True)
+        env = _env(
+            origin=Origin.TASK_RESULT,
+            chat_id=99,
+            topic_id=123,
+            status="waiting",
+            metadata={"name": "audit", "task_id": "t1"},
+        )
+
+        with patch(
+            "ductor_bot.messenger.telegram.transport.send_rich", new_callable=AsyncMock
+        ) as mock_send:
+            await transport.deliver(env)
+
+        transport._task_progress.finish.assert_awaited_once()
+        mock_send.assert_not_awaited()
+
+    async def test_heartbeat_continues_while_parent_result_injection_is_blocked(self) -> None:
+        transport, bot, _ = _make_transport()
+        bot.bot_instance.send_message = AsyncMock(return_value=MagicMock(message_id=101))
+        heartbeat_edited = asyncio.Event()
+
+        async def _edit(**_: object) -> None:
+            heartbeat_edited.set()
+
+        bot.bot_instance.edit_message_text = AsyncMock(side_effect=_edit)
+        transport._task_progress._interval_seconds = 0.01
+
+        injection_started = asyncio.Event()
+        release_injection = asyncio.Event()
+        injector = MagicMock()
+
+        async def _inject(*_: object, **__: object) -> str:
+            injection_started.set()
+            await release_injection.wait()
+            return "Parent-reviewed answer"
+
+        injector.inject_prompt = AsyncMock(side_effect=_inject)
+        bus = MessageBus()
+        bus.register_transport(transport)
+        bus.set_injector(injector)
+
+        await bus.submit(
+            _env(
+                origin=Origin.TASK_PROGRESS,
+                chat_id=99,
+                topic_id=123,
+                status="running",
+                metadata={"name": "audit", "task_id": "t1"},
+            )
+        )
+        result = _env(
+            origin=Origin.TASK_RESULT,
+            chat_id=99,
+            topic_id=123,
+            status="done",
+            prompt="Review the worker result",
+            needs_injection=True,
+            metadata={"name": "audit", "task_id": "t1"},
+        )
+
+        with patch("ductor_bot.messenger.telegram.transport.send_rich", new_callable=AsyncMock):
+            delivery = asyncio.create_task(bus.submit(result))
+            await asyncio.wait_for(injection_started.wait(), timeout=0.5)
+            await asyncio.wait_for(heartbeat_edited.wait(), timeout=0.5)
+            assert delivery.done() is False
+            release_injection.set()
+            await asyncio.wait_for(delivery, timeout=0.5)
+
+        assert "completed" in bot.bot_instance.edit_message_text.await_args.kwargs["text"]
+        await transport.shutdown()
+
     async def test_done_with_injection(self) -> None:
         transport, _, _ = _make_transport()
         env = _env(
