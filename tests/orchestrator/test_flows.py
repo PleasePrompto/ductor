@@ -6,6 +6,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import time_machine
 
 from ductor_bot.cli.types import AgentResponse
 from ductor_bot.orchestrator.core import Orchestrator
@@ -86,6 +87,61 @@ async def test_normal_resume_session_no_append(orch: Orchestrator) -> None:
     request = second_call[0][0]
     assert request.append_system_prompt is None
     assert request.resume_session is not None
+
+
+@time_machine.travel("2025-06-15 12:00:00+00:00", tick=False)
+async def test_task_question_answer_keeps_stale_parent_session(orch: Orchestrator) -> None:
+    """A waiting task question bypasses normal idle expiry for the answer."""
+    orch._config.idle_timeout_minutes = 30
+    await _establish_session(orch)
+
+    task_hub = MagicMock()
+    task_hub.get_pending_question.return_value = MagicMock(
+        parent_session_id="sess-123",
+        parent_provider="claude",
+        parent_model="opus",
+        parent_reasoning_effort="",
+    )
+    orch._task_hub = task_hub
+    mock_execute = AsyncMock(return_value=_mock_response(result="answer handled"))
+    object.__setattr__(orch._cli_service, "execute", mock_execute)
+
+    with time_machine.travel("2025-06-15 13:00:00+00:00", tick=False):
+        await normal(orch, SessionKey(chat_id=1), "oui")
+
+    request = mock_execute.call_args.args[0]
+    assert request.resume_session == "sess-123"
+
+
+async def test_task_question_session_has_priority_over_secondary_meta_turn(
+    orch: Orchestrator,
+) -> None:
+    """A pending task answer resumes its question session after a secondary turn."""
+    key = SessionKey.telegram(1)
+    setup = AsyncMock(return_value=_mock_response(session_id="parent-session"))
+    object.__setattr__(orch._cli_service, "execute", setup)
+    await normal(orch, key, "Primary context")
+
+    secondary = AsyncMock(return_value=_mock_response(session_id="secondary-session"))
+    object.__setattr__(orch._cli_service, "execute", secondary)
+    await normal(orch, key, "Secondary metadata context")
+
+    task_hub = MagicMock()
+    task_hub.get_pending_question.return_value = MagicMock(
+        parent_session_id="parent-session",
+        parent_provider="claude",
+        parent_model="opus",
+        parent_reasoning_effort="",
+    )
+    orch._task_hub = task_hub
+
+    answer = AsyncMock(return_value=_mock_response(result="Answer handled"))
+    object.__setattr__(orch._cli_service, "execute", answer)
+    await normal(orch, key, "Confirmed")
+
+    request = answer.call_args.args[0]
+    assert request.resume_session == "parent-session"
+    assert request.prompt == "Confirmed"
 
 
 async def test_normal_error_preserves_session(orch: Orchestrator) -> None:

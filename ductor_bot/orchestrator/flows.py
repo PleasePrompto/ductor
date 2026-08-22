@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from ductor_bot.bus.cron_followup import CronFollowupContext, build_cron_followup_prompt
 from ductor_bot.cli.stream_events import ToolUseEvent
 from ductor_bot.cli.timeout_controller import TimeoutConfig as TCConfig
 from ductor_bot.cli.timeout_controller import TimeoutController
@@ -22,6 +23,7 @@ from ductor_bot.log_context import set_log_context
 from ductor_bot.orchestrator.hooks import HookContext
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.session import SessionData, SessionKey
+from ductor_bot.tasks.models import TaskEntry
 from ductor_bot.text.response_format import session_error_text, timeout_error_text
 from ductor_bot.workspace.loader import build_appended_files_block, read_mainmemory
 
@@ -83,7 +85,50 @@ def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController
     )
 
 
-async def _prepare_normal(
+async def _consume_cron_followup(
+    orch: Orchestrator,
+    key: SessionKey,
+    text: str,
+) -> tuple[str, bool]:
+    """Consume and render a pending interactive cron context, if present."""
+    context: CronFollowupContext | None = await orch._cron_followups.consume(key)
+    if context is None:
+        return text, False
+    return build_cron_followup_prompt(context, text), True
+
+
+async def _restore_pending_task_session(
+    orch: Orchestrator,
+    key: SessionKey,
+    pending_task: TaskEntry,
+    session: SessionData | None,
+    request_target: tuple[str, str, str],
+) -> tuple[SessionData, bool] | None:
+    """Restore the exact parent session captured for a task question."""
+    if not pending_task.parent_session_id:
+        return None
+
+    requested_provider, requested_model, requested_effort = request_target
+    provider = pending_task.parent_provider or requested_provider
+    model = pending_task.parent_model or requested_model
+    effort = pending_task.parent_reasoning_effort or requested_effort
+    if session is None:
+        session, _ = await orch._sessions.resolve_session(
+            key,
+            provider=provider,
+            model=model,
+            reasoning_effort=effort,
+        )
+
+    session.provider = provider
+    session.model = model
+    session.reasoning_effort = effort
+    session.session_id = pending_task.parent_session_id
+    await orch._sessions.preserve_session_identity(session)
+    return session, False
+
+
+async def _prepare_normal(  # noqa: C901
     orch: Orchestrator,
     key: SessionKey,
     text: str,
@@ -98,13 +143,54 @@ async def _prepare_normal(
     req_model, req_provider = orch.resolve_runtime_target(requested_model)
     requested_effort = orch._config.reasoning_effort
 
-    session, is_new = await orch._sessions.resolve_session(
-        key,
-        provider=req_provider,
-        model=req_model,
-        reasoning_effort=requested_effort,
-        preserve_existing_target=model_override is None,
-    )
+    # Cron reports are delivered raw, so an interactive report must be
+    # explicitly joined to the next ordinary user turn. The store is durable
+    # and keyed by transport/chat/topic, which also covers restarts and stale
+    # session shells. Commands do not reach this flow and therefore do not
+    # accidentally consume the pending context.
+    text, cron_followup_pending = await _consume_cron_followup(orch, key, text)
+
+    # A task question is already a turn in the parent conversation.  Once it
+    # has been injected, the answer must resume that exact provider session,
+    # even if the normal idle/message freshness policy would rotate it.  This
+    # matters when a user answers much later or after a restart (the waiting
+    # task state is persisted, while the in-memory task handle is not).
+    pending_task = None
+    task_question_pending = False
+    task_hub = orch._task_hub
+    if model_override is None and task_hub is not None:
+        pending_task = task_hub.get_pending_question(key.chat_id, key.topic_id)
+        task_question_pending = pending_task is not None
+
+    session: SessionData | None = None
+    is_new = True
+    if task_question_pending or cron_followup_pending:
+        if task_question_pending and pending_task is not None:
+            restored = await _restore_pending_task_session(
+                orch,
+                key,
+                pending_task,
+                session,
+                (req_provider, req_model, requested_effort),
+            )
+            if restored is not None:
+                session, is_new = restored
+
+        if session is None:
+            session = await orch._sessions.get_active(key)
+        if session is not None and is_new and session.session_id:
+            await orch._sessions.preserve_session_identity(session)
+            is_new = False
+
+    if session is None:
+        session, is_new = await orch._sessions.resolve_session(
+            key,
+            provider=req_provider,
+            model=req_model,
+            reasoning_effort=requested_effort,
+            preserve_existing_target=model_override is None,
+        )
+    assert session is not None
     req_model = session.model
     req_provider = session.provider
     req_effort = session.reasoning_effort

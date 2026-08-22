@@ -157,6 +157,53 @@ class TaskHub:
         """Register the primary chat_id for an agent (for resolving CLI-submitted tasks)."""
         self._agent_chat_ids[agent_name] = chat_id
 
+    def has_pending_question(self, chat_id: int, thread_id: int | None = None) -> bool:
+        """Return whether a task is waiting for an answer in this chat/topic.
+
+        This is intentionally backed by the persistent registry rather than
+        only ``_in_flight``: a bot restart drops the in-memory handles, while
+        a waiting task and its last question remain durable in ``tasks.json``.
+        The normal foreground flow uses this to keep the injected parent
+        session resumable even when the ordinary idle timeout has elapsed.
+        """
+        return self.get_pending_question(chat_id, thread_id) is not None
+
+    def get_pending_question(self, chat_id: int, thread_id: int | None = None) -> TaskEntry | None:
+        """Return the newest persisted task question for a chat/topic, if any."""
+        return next(
+            (
+                entry
+                for entry in self._registry.list_all(chat_id=chat_id)
+                if entry.thread_id == thread_id
+                and entry.status in {"running", "waiting"}
+                and bool((entry.last_question or "").strip())
+            ),
+            None,
+        )
+
+    def bind_pending_question_session(  # noqa: PLR0913
+        self,
+        chat_id: int,
+        thread_id: int | None,
+        *,
+        session_id: str,
+        provider: str,
+        model: str,
+        reasoning_effort: str,
+    ) -> None:
+        """Persist the parent session used to deliver a pending task question."""
+        entry = self.get_pending_question(chat_id, thread_id)
+        if entry is None:
+            return
+        self._registry.update_status(
+            entry.task_id,
+            entry.status,
+            parent_session_id=session_id,
+            parent_provider=provider,
+            parent_model=model,
+            parent_reasoning_effort=reasoning_effort,
+        )
+
     def _check_enabled(self) -> None:
         if not self._config.enabled:
             msg = "Task system is disabled"

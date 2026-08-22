@@ -6,7 +6,8 @@ import logging
 import secrets
 from typing import Protocol, runtime_checkable
 
-from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode
+from ductor_bot.bus.cron_followup import CronFollowupStore
+from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 from ductor_bot.bus.lock_pool import LockPool
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class MessageBus:
         self._locks = lock_pool if lock_pool is not None else LockPool()
         self._transports: list[TransportAdapter] = []
         self._injector: SessionInjector | None = None
+        self._cron_followup_store: CronFollowupStore | None = None
 
     @property
     def lock_pool(self) -> LockPool:
@@ -81,6 +83,10 @@ class MessageBus:
     def set_injector(self, injector: SessionInjector) -> None:
         """Set the session injector (typically the Orchestrator)."""
         self._injector = injector
+
+    def set_cron_followup_store(self, store: CronFollowupStore) -> None:
+        """Persist interactive cron context after a successful unicast delivery."""
+        self._cron_followup_store = store
 
     async def submit(self, envelope: Envelope) -> None:
         """Route an envelope: assign ID, acquire lock, inject, deliver."""
@@ -127,6 +133,23 @@ class MessageBus:
                     envelope.result_text = f"Error processing {envelope.origin.value} result"
 
         await self._deliver(envelope)
+        if (
+            envelope.origin is Origin.CRON
+            and envelope.delivery is DeliveryMode.UNICAST
+            and envelope.metadata.get("interactive") is True
+            and envelope.delivered
+            and self._cron_followup_store is not None
+        ):
+            try:
+                await self._cron_followup_store.record(envelope)
+            except Exception:
+                # Delivery has already succeeded. Keep that success visible
+                # even if durable follow-up persistence is temporarily broken.
+                logger.exception(
+                    "Could not persist interactive cron follow-up: chat=%d topic=%s",
+                    envelope.chat_id,
+                    envelope.topic_id,
+                )
 
     async def _deliver(self, envelope: Envelope) -> None:
         """Route to the correct transport(s) with cascading fallback."""

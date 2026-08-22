@@ -600,6 +600,47 @@ class TestCancelWithProcessRegistry:
 
 
 class TestForwardQuestion:
+    async def test_pending_question_is_visible_from_persistent_registry(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        submit = TaskSubmit(
+            chat_id=42,
+            prompt="build a website",
+            message_id=1,
+            thread_id=99,
+            parent_agent="main",
+        )
+        entry = registry.create(submit, "claude", "opus")
+        registry.update_status(entry.task_id, "waiting", last_question="Which framework?")
+
+        assert hub.has_pending_question(42, 99) is True
+        pending = hub.get_pending_question(42, 99)
+        assert pending is not None
+        assert pending.parent_session_id == ""
+        assert hub.has_pending_question(42, None) is False
+        assert hub.has_pending_question(7, 99) is False
+
+        hub.bind_pending_question_session(
+            42,
+            99,
+            session_id="parent-session",
+            provider="claude",
+            model="opus",
+            reasoning_effort="high",
+        )
+        persisted = registry.get(entry.task_id)
+        assert persisted is not None
+        assert persisted.parent_session_id == "parent-session"
+        assert persisted.parent_provider == "claude"
+        assert persisted.parent_model == "opus"
+        assert persisted.parent_reasoning_effort == "high"
+
     async def test_forwards_and_returns_immediately(
         self, registry: TaskRegistry, tmp_path: Path
     ) -> None:

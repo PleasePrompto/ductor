@@ -60,6 +60,10 @@ class TaskEntry:
     question_count: int = 0
     num_turns: int = 0
     last_question: str = ""
+    parent_session_id: str = ""
+    parent_provider: str = ""
+    parent_model: str = ""
+    parent_reasoning_effort: str = ""
     original_prompt: str = ""
     thinking: str = ""
     reasoning_effort: str = ""
@@ -91,6 +95,10 @@ class TaskEntry:
             "question_count": self.question_count,
             "num_turns": self.num_turns,
             "last_question": self.last_question,
+            "parent_session_id": self.parent_session_id,
+            "parent_provider": self.parent_provider,
+            "parent_model": self.parent_model,
+            "parent_reasoning_effort": self.parent_reasoning_effort,
             "thinking": self.thinking,
             "reasoning_effort": self.reasoning_effort,
             "tasks_dir": self.tasks_dir,
@@ -120,6 +128,10 @@ class TaskEntry:
             question_count=d.get("question_count", 0),
             num_turns=d.get("num_turns", 0),
             last_question=d.get("last_question", ""),
+            parent_session_id=d.get("parent_session_id", ""),
+            parent_provider=d.get("parent_provider", ""),
+            parent_model=d.get("parent_model", ""),
+            parent_reasoning_effort=d.get("parent_reasoning_effort", ""),
             # #90: .get(..., "") default preserves backward-compat for tasks.json
             # files written before the original_prompt field was persisted.
             original_prompt=d.get("original_prompt", ""),
