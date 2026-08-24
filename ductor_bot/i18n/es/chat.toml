@@ -461,3 +461,12 @@ async_task_received = "📥 **Tarea asíncrona recibida** de `{sender}`\nSesión
 [effort]
 select = "Selecciona el esfuerzo de razonamiento para {model}:"
 unsupported = "El esfuerzo de razonamiento no es configurable para el proveedor `{provider}`."
+
+[account]
+default_label = "predeterminada"
+active_line = "**Cuenta de Claude:** {account}"
+none_configured = "No hay cuentas de Claude configuradas. Añade un mapa `claude_accounts` a config.json, p. ej. `{\"work\": \"~/.claude-work\"}`."
+select = "Elige el almacén de credenciales con el que autenticarte:"
+switched = "Cambiado a la cuenta de Claude **{account}**. Se aplica desde el siguiente mensaje: la sesión actual sigue siendo reanudable."
+switched_docker_warning = "Cambiado a la cuenta de Claude **{account}**, pero el modo sandbox de Docker está activado y no monta el almacén de credenciales en el contenedor."
+unknown = "Cuenta de Claude `{account}` desconocida. Configuradas: {known}"

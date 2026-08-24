@@ -19,6 +19,7 @@ from ductor_bot.cli.base import (
     _feed_stdin_and_close,
     _win_feed_stdin,
 )
+from ductor_bot.cli.claude_accounts import ENV_VAR as CLAUDE_ACCOUNT_ENV
 from ductor_bot.cli.stream_events import ResultEvent, StreamEvent
 from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import CLIResponse, task_id_from_label
@@ -76,6 +77,15 @@ def build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
         # Sub-agent home is <main_home>/agents/<name>/
         main_home = ductor_home.parent.parent
         env["DUCTOR_SHARED_MEMORY_PATH"] = str(main_home / "SHAREDMEMORY.md")
+
+    # Claude account: point the credential store at the selected account, or
+    # drop an inherited value so the default store is used. Setting it to an
+    # empty string would NOT be equivalent — Claude Code reads empty as
+    # ``~/.claude`` and would ignore a custom CLAUDE_CONFIG_DIR.
+    if config.claude_account_dir:
+        env[CLAUDE_ACCOUNT_ENV] = config.claude_account_dir
+    else:
+        env.pop(CLAUDE_ACCOUNT_ENV, None)
     return env
 
 

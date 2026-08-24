@@ -30,7 +30,7 @@ class CallbackResult:
     handled: bool = True
 
 
-async def route_callback(
+async def route_callback(  # noqa: PLR0911
     orch: Orchestrator,
     key: SessionKey,
     callback_data: str,
@@ -39,6 +39,7 @@ async def route_callback(
 
     Shared prefixes (handled here):
 
+    * ``acc:`` -- Claude account selector
     * ``ms:`` -- model selector
     * ``crn:`` -- cron selector
     * ``nsc:`` -- session selector
@@ -54,6 +55,10 @@ async def route_callback(
     Returns a :class:`CallbackResult`.  When ``handled`` is ``False``, the
     transport bot must process the callback itself.
     """
+    from ductor_bot.orchestrator.selectors.account_selector import (
+        handle_account_callback,
+        is_account_selector_callback,
+    )
     from ductor_bot.orchestrator.selectors.cron_selector import (
         handle_cron_callback,
         is_cron_selector_callback,
@@ -70,6 +75,10 @@ async def route_callback(
         handle_task_callback,
         is_task_selector_callback,
     )
+
+    if is_account_selector_callback(callback_data):
+        resp = await handle_account_callback(orch, callback_data)
+        return CallbackResult(text=resp.text, buttons=resp.buttons)
 
     if is_model_selector_callback(callback_data):
         resp = await handle_model_callback(orch, key, callback_data)

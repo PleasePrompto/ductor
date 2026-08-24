@@ -82,6 +82,8 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `reasoning_effort` | `str` | `"medium"` | Default reasoning effort for Claude (`--effort`) and Codex (`-c model_reasoning_effort`); per-session override via `/effort` |
 | `append_system_prompt_files` | `list[str]` | `[]` | Workspace-relative files appended to the system prompt on every agent-driven turn (chat, named sessions, inter-agent, tasks); paths escaping the workspace and files over 256 KiB are skipped |
 | `project_roots` | `dict[str, str]` | `{}` | Per-topic working-directory override: maps a topic key to a directory the CLI runs in instead of the shared workspace (see below) |
+| `claude_accounts` | `dict[str, str]` | `{}` | Claude credential stores: account name -> directory used as `CLAUDE_SECURESTORAGE_CONFIG_DIR` (see below) |
+| `claude_account` | `str` | `""` | Active entry of `claude_accounts`; empty means the default store. Switched at runtime with `/account` |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
 | `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"` or `"matrix"` |
@@ -122,6 +124,47 @@ is used. When `transports` contains multiple entries (e.g.
 transports in parallel and `transport` is auto-set to the first
 entry. A model validator normalizes both fields at load time so
 they stay consistent.
+
+### `claude_accounts` / `claude_account`
+
+Claude Code reads its OAuth credentials from the directory named by
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`, falling back to the regular config dir. Only
+the *credential store* moves — `CLAUDE_CONFIG_DIR` is untouched, so sessions,
+projects, skills, MCP servers and settings stay shared between accounts.
+
+That split is the point: when one subscription hits its rate limit mid-task,
+switching accounts lets the same conversation continue via `--resume` instead of
+starting over.
+
+```json
+{
+  "claude_accounts": {
+    "work": "~/.claude-work",
+    "personal": "~/.claude-personal"
+  },
+  "claude_account": "work"
+}
+```
+
+Each directory needs its own login once:
+
+```bash
+CLAUDE_SECURESTORAGE_CONFIG_DIR=~/.claude-work claude   # then /login
+```
+
+Behavior:
+
+- `/account` shows the configured stores as buttons; `/account <name>` switches
+  directly. `/account` with no accounts configured explains how to add them.
+- The choice is global, not per-topic — the credential store is a property of
+  the CLI process, and a per-topic value would make it ambiguous which
+  subscription a background task or cron job spends.
+- Takes effect on the next CLI invocation; the running session is not reset.
+- An unknown `claude_account` is cleared on load with a warning rather than
+  silently falling back to the default store.
+- **Not supported in Docker sandbox mode** — the credential directory is not
+  mounted into the container, so the default account is used. Configuring both
+  logs a warning at startup and when switching.
 
 ### `project_roots`
 
@@ -584,6 +627,7 @@ Hot-reloadable top-level fields:
 - `permission_mode`, `file_access`, `user_timezone`
 - `streaming`, `heartbeat`, `cleanup`, `cli_parameters`, `scene`, `image`, `language`
 - `project_roots` (per-topic working-dir overrides take effect on the next turn)
+- `claude_accounts`, `claude_account` (credential store applies on the next CLI call)
 - `allowed_user_ids`, `allowed_group_ids`, `group_mention_only`
 
 Current non-hot fields that often surprise people:

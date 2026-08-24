@@ -460,3 +460,12 @@ async_task_received = "📥 **Tugas async diterima** dari `{sender}`\nSesi: `{se
 [effort]
 select = "Pilih upaya penalaran untuk {model}:"
 unsupported = "Upaya penalaran tidak dapat diatur untuk penyedia `{provider}`."
+
+[account]
+default_label = "bawaan"
+active_line = "**Akun Claude:** {account}"
+none_configured = "Belum ada akun Claude yang dikonfigurasi. Tambahkan map `claude_accounts` ke config.json, mis. `{\"work\": \"~/.claude-work\"}`."
+select = "Pilih penyimpanan kredensial untuk autentikasi:"
+switched = "Beralih ke akun Claude **{account}**. Berlaku mulai pesan berikutnya — sesi saat ini tetap bisa dilanjutkan."
+switched_docker_warning = "Beralih ke akun Claude **{account}**, tetapi mode sandbox Docker aktif dan tidak memasang penyimpanan kredensial ke dalam kontainer."
+unknown = "Akun Claude `{account}` tidak dikenal. Terkonfigurasi: {known}"

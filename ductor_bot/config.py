@@ -443,6 +443,12 @@ class AgentConfig(BaseModel):
     append_system_prompt_files: list[str] = Field(default_factory=list)
     # Per-topic project roots: topic name | "<topic_id>" | "<chat_id>:<topic_id>" -> path
     project_roots: dict[str, str] = Field(default_factory=dict)
+    # Claude credential stores: account name -> CLAUDE_SECURESTORAGE_CONFIG_DIR path.
+    # Only the credential store moves; sessions/skills/MCP stay in CLAUDE_CONFIG_DIR,
+    # so /account can switch subscriptions without losing a resumable session.
+    claude_accounts: dict[str, str] = Field(default_factory=dict)
+    # Active entry of claude_accounts; empty string means the default store.
+    claude_account: str = ""
     gemini_api_key: str | None = None
     streaming: StreamingConfig = Field(default_factory=StreamingConfig)
     docker: DockerConfig = Field(default_factory=DockerConfig)
@@ -497,6 +503,28 @@ class AgentConfig(BaseModel):
         """
         if self.cli_timeout != 600.0 and self.timeouts.normal == 600.0:
             self.timeouts.normal = self.cli_timeout
+        return self
+
+    @model_validator(mode="after")
+    def _validate_claude_account(self) -> AgentConfig:
+        """Reset an unknown ``claude_account`` and warn about Docker mode.
+
+        An unknown name would silently fall back to the default credential
+        store, which is the opposite of what someone switching accounts wants
+        to happen — clear it loudly instead.
+        """
+        if self.claude_account and self.claude_account not in self.claude_accounts:
+            logger.warning(
+                "claude_account %r is not in claude_accounts; using the default store",
+                self.claude_account,
+            )
+            self.claude_account = ""
+        if self.claude_account and self.docker.enabled:
+            logger.warning(
+                "claude_account is set but Docker sandbox mode is enabled; the "
+                "credential store is not mapped into the container and the "
+                "default account will be used"
+            )
         return self
 
     @model_validator(mode="after")
