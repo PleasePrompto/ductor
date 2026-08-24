@@ -97,6 +97,26 @@ def _resolve_gemini_model(model: str, home: Path) -> str:
     return model
 
 
+def _resolve_opencode_model(model: str, home: Path) -> str:
+    """Validate/resolve an opencode model against the cached model list."""
+    if "/" in model:
+        return model
+    cache_path = home / "config" / "opencode_models.json"
+    if not cache_path.is_file():
+        return model
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        valid_ids = data.get("models", [])
+        if model in valid_ids:
+            return model
+        if valid_ids:
+            print(f"Note: '{model}' is not a valid OpenCode model. Using: {valid_ids[0]}")
+            return valid_ids[0]
+    except (json.JSONDecodeError, OSError):
+        pass
+    return model
+
+
 def _resolve_model(provider: str | None, model: str | None) -> str | None:
     """Validate model name against known models for the given provider.
 
@@ -128,6 +148,9 @@ def _resolve_model(provider: str | None, model: str | None) -> str | None:
             return model
         print(f"Note: '{model}' is not a valid Grok model. Using: grok-4.5")
         return "grok-4.5"
+
+    if provider == "opencode":
+        return _resolve_opencode_model(model, home)
 
     return model
 

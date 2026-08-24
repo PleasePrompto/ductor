@@ -17,6 +17,7 @@ Cross-tool skill sync between ductor workspace and CLI skill homes.
 <-> ~/.codex/skills/ (or $CODEX_HOME/skills)
 <-> ~/.gemini/skills/
 <-> ~/.grok/skills/ (or $GROK_HOME/skills)
+<-> ~/.config/opencode/skills/ (or $XDG_CONFIG_HOME/opencode/skills)
 ```
 
 `<agent-home>`:
@@ -37,7 +38,7 @@ Bundled source: `ductor_bot/_home_defaults/workspace/skills/`.
 
 1. discover skill dirs in all roots
 2. union names
-3. pick canonical source by priority (`ductor > claude > codex > gemini > grok`)
+3. pick canonical source by priority (`ductor > claude > codex > gemini > grok > opencode`)
 4. mirror to other roots
 5. cleanup broken managed links
 
@@ -46,7 +47,7 @@ Bundled source: `ductor_bot/_home_defaults/workspace/skills/`.
 Cross-tool sync is controlled by the `skills` config block (see `config.md` &rarr; `SkillsConfig`):
 
 - `skills.sync_enabled` (default `true`): global switch. When `false`, `sync_skills` returns early and no cross-tool sync runs.
-- `skills.sync.{claude,codex,gemini,grok}` (default `true`): per-provider toggles. A disabled provider's skill dir is dropped from `_cli_skill_dirs()`, so it is neither linked into nor used as a sync source.
+- `skills.sync.{claude,codex,gemini,grok,opencode}` (default `true`): per-provider toggles. A disabled provider's skill dir is dropped from `_cli_skill_dirs()`, so it is neither linked into nor used as a sync source.
 
 Toggles are read live from `config.json` on each sync tick, so changes take effect within one interval without restart. Disabling a provider stops new links from being recreated; existing ductor-created links remain until shutdown cleanup or manual removal.
 

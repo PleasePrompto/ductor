@@ -244,6 +244,48 @@ class TestDockerManager:
         assert "-w /ductor/workspace" in run_str
         # DUCTOR_HOME env var set inside container
         assert "DUCTOR_HOME=/ductor" in run_str
+
+    async def test_mounts_opencode_config_and_data(
+        self, docker_config: DockerConfig, docker_paths: DuctorPaths, tmp_path: Path
+    ) -> None:
+        from ductor_bot.infra.docker import DockerManager
+
+        config_home = tmp_path / "xdg-config"
+        data_home = tmp_path / "xdg-data"
+        opencode_config = config_home / "opencode"
+        opencode_data = data_home / "opencode"
+        opencode_config.mkdir(parents=True)
+        opencode_data.mkdir(parents=True)
+        mgr = DockerManager(docker_config, docker_paths)
+        run_args: list[str] = []
+
+        async def mock_exec(*args: str, **_kwargs: object) -> tuple[int, str]:
+            cmd = " ".join(args)
+            if "docker info" in cmd:
+                return 0, "ok"
+            if "image inspect" in cmd:
+                return 0, "ok"
+            if "container inspect" in cmd:
+                return 1, ""
+            if "docker run" in cmd:
+                run_args.extend(args)
+                return 0, "cid"
+            return 0, ""
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/docker"),
+            patch.object(mgr, "_exec", side_effect=mock_exec),
+            patch.dict(
+                "os.environ",
+                {"XDG_CONFIG_HOME": str(config_home), "XDG_DATA_HOME": str(data_home)},
+                clear=False,
+            ),
+        ):
+            await mgr.setup()
+
+        run_str = " ".join(run_args)
+        assert f"{opencode_config}:/home/node/.config/opencode:rw" in run_str
+        assert f"{opencode_data}:/home/node/.local/share/opencode:rw" in run_str
         # Template tools overlay should NOT be present
         assert "tools:ro" not in run_str
 

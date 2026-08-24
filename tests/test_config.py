@@ -173,6 +173,13 @@ def test_registry_provider_for_antigravity() -> None:
     assert reg.provider_for("antigravity-default") == "antigravity"
 
 
+def test_registry_provider_for_opencode_slash_model() -> None:
+    reg = ModelRegistry()
+    assert reg.provider_for("opencode/claude-sonnet-4-5") == "opencode"
+    assert reg.provider_for("anthropic/claude-opus-5") == "opencode"
+    assert reg.provider_for("gemini/gemini-3-pro") == "opencode"
+
+
 def test_streaming_config_fields() -> None:
     s = StreamingConfig(enabled=False, min_chars=100)
     assert s.enabled is False

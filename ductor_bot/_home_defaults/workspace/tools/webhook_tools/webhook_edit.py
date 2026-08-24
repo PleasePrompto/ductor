@@ -92,7 +92,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--provider",
-        choices=["claude", "codex", "gemini", "grok"],
+        choices=["claude", "codex", "gemini", "grok", "opencode"],
         help="Change CLI provider (claude, codex, or gemini)",
     )
     parser.add_argument(

@@ -45,6 +45,7 @@ class RulesSelector:
         codex_result = auth.get("codex")
         gemini_result = auth.get("gemini")
         grok_result = auth.get("grok")
+        opencode_result = auth.get("opencode")
 
         self._claude_authenticated = (
             claude_result.status == AuthStatus.AUTHENTICATED if claude_result else False
@@ -58,11 +59,14 @@ class RulesSelector:
         self._grok_authenticated = (
             grok_result.status == AuthStatus.AUTHENTICATED if grok_result else False
         )
+        self._opencode_authenticated = (
+            opencode_result.status == AuthStatus.AUTHENTICATED if opencode_result else False
+        )
 
     @property
     def _agents_md_needed(self) -> bool:
-        """AGENTS.md is shared by Codex and Grok Build."""
-        return self._codex_authenticated or self._grok_authenticated
+        """AGENTS.md is shared by Codex, Grok Build, and opencode."""
+        return self._codex_authenticated or self._grok_authenticated or self._opencode_authenticated
 
     @property
     def _authenticated_count(self) -> int:
@@ -73,6 +77,7 @@ class RulesSelector:
                 self._codex_authenticated,
                 self._gemini_authenticated,
                 self._grok_authenticated,
+                self._opencode_authenticated,
             )
         )
 
@@ -82,13 +87,14 @@ class RulesSelector:
         Returns:
             "all-clis" if 2+ providers authenticated
             "claude-only" if only Claude
-            "codex-only" if only Codex (or only Grok — same AGENTS.md rules)
+            "codex-only" if only Codex (or only Grok / only opencode — same
+            AGENTS.md rules)
             "gemini-only" if only Gemini
             "claude-only" as fallback (no providers authenticated)
         """
         if self._authenticated_count >= 2:
             return "all-clis"
-        if self._codex_authenticated or self._grok_authenticated:
+        if self._codex_authenticated or self._grok_authenticated or self._opencode_authenticated:
             return "codex-only"
         if self._gemini_authenticated:
             return "gemini-only"
@@ -154,12 +160,13 @@ class RulesSelector:
         """
         variant = self.get_variant_suffix()
         logger.info(
-            "Deploying rule files (variant: %s, claude=%s, codex=%s, gemini=%s, grok=%s)",
+            "Deploying rule files (variant: %s, claude=%s, codex=%s, gemini=%s, grok=%s, opencode=%s)",
             variant,
             self._claude_authenticated,
             self._codex_authenticated,
             self._gemini_authenticated,
             self._grok_authenticated,
+            self._opencode_authenticated,
         )
 
         template_dirs = self.discover_template_directories()
@@ -191,7 +198,7 @@ class RulesSelector:
                     deployed_count += 1
                     logger.debug("Deployed: %s -> CLAUDE.md", template.name)
 
-                # Deploy AGENTS.md if Codex and/or Grok is authenticated
+                # Deploy AGENTS.md if Codex, Grok, and/or opencode is authenticated
                 if self._agents_md_needed:
                     agents_dst = dst_dir / "AGENTS.md"
                     shutil.copy2(template, agents_dst)
@@ -209,12 +216,13 @@ class RulesSelector:
                 logger.exception("Failed to deploy %s", template)
 
         logger.info(
-            "Deployed %d rule files (Claude=%s, Codex=%s, Gemini=%s, Grok=%s)",
+            "Deployed %d rule files (Claude=%s, Codex=%s, Gemini=%s, Grok=%s, OpenCode=%s)",
             deployed_count,
             self._claude_authenticated,
             self._codex_authenticated,
             self._gemini_authenticated,
             self._grok_authenticated,
+            self._opencode_authenticated,
         )
 
         # Cleanup: Remove stale files that don't match current auth status
@@ -224,14 +232,14 @@ class RulesSelector:
         """Remove rule files that don't match current auth status.
 
         Removes CLAUDE.md, AGENTS.md, or GEMINI.md files for providers
-        that are not currently authenticated. AGENTS.md is kept while either
-        Codex or Grok is authenticated.
+        that are not currently authenticated. AGENTS.md is kept while any of
+        Codex, Grok, or opencode is authenticated.
         """
         stale: list[tuple[str, str]] = []
         if not self._claude_authenticated:
             stale.append(("CLAUDE.md", "Claude"))
         if not self._agents_md_needed:
-            stale.append(("AGENTS.md", "Codex/Grok"))
+            stale.append(("AGENTS.md", "Codex/Grok/OpenCode"))
         if not self._gemini_authenticated:
             stale.append(("GEMINI.md", "Gemini"))
 

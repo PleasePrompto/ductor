@@ -15,6 +15,8 @@ def test_cli_parameters_config_defaults() -> None:
     assert config.codex == []
     assert config.gemini == []
     assert config.antigravity == []
+    assert config.grok == []
+    assert config.opencode == []
 
 
 def test_cli_parameters_config_with_values() -> None:
@@ -24,11 +26,15 @@ def test_cli_parameters_config_with_values() -> None:
         codex=["--verbose", "--debug"],
         gemini=["--experimental"],
         antigravity=["--log-file", "agy.log"],
+        grok=["--reasoning-effort", "high"],
+        opencode=["--variant", "high"],
     )
     assert config.claude == ["--fast", "--no-cache"]
     assert config.codex == ["--verbose", "--debug"]
     assert config.gemini == ["--experimental"]
     assert config.antigravity == ["--log-file", "agy.log"]
+    assert config.grok == ["--reasoning-effort", "high"]
+    assert config.opencode == ["--variant", "high"]
 
 
 def test_agent_config_includes_cli_parameters() -> None:
@@ -40,6 +46,8 @@ def test_agent_config_includes_cli_parameters() -> None:
     assert config.cli_parameters.codex == []
     assert config.cli_parameters.gemini == []
     assert config.cli_parameters.antigravity == []
+    assert config.cli_parameters.grok == []
+    assert config.cli_parameters.opencode == []
 
 
 def test_agent_config_with_cli_parameters() -> None:
@@ -145,6 +153,8 @@ def test_deep_merge_nested_cli_parameters() -> None:
     assert merged["cli_parameters"]["codex"] == []
     assert "antigravity" in merged["cli_parameters"]
     assert merged["cli_parameters"]["antigravity"] == []
+    assert "opencode" in merged["cli_parameters"]
+    assert merged["cli_parameters"]["opencode"] == []
     assert changed is True
 
 

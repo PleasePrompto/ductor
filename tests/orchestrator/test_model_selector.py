@@ -227,6 +227,81 @@ async def test_start_one_provider_antigravity(orch: Orchestrator) -> None:
     assert "antigravity-default" in labels
 
 
+async def test_callback_provider_opencode_shows_default_and_recent(
+    orch: Orchestrator,
+) -> None:
+    from ductor_bot.config import (
+        reset_opencode_models,
+        set_opencode_default_model,
+        set_opencode_models,
+        set_opencode_recent_models,
+    )
+
+    reset_opencode_models()
+    set_opencode_default_model("opencode-go/model-alpha")
+    set_opencode_recent_models(("opencode-go/model-alpha", "opencode-go/model-beta"))
+    set_opencode_models(
+        ("opencode-go/model-beta", "opencode-go/model-gamma", "opencode/model-delta")
+    )
+    try:
+        resp = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
+        assert "Select OpenCode model" in resp.text
+        assert resp.buttons is not None
+        labels = [btn.text for row in resp.buttons.rows for btn in row]
+        callbacks = [btn.callback_data for row in resp.buttons.rows for btn in row]
+        # Default first and labeled; recent next; discovered last; no duplicates.
+        assert labels[0] == "* @go/model-alpha"
+        assert "@go/model-beta" in labels
+        assert "@go/model-gamma" in labels
+        assert "@zen/model-delta" in labels
+        assert "<< Back" in labels
+        assert all(
+            callback.startswith(f"ms:o:{index}:") for index, callback in enumerate(callbacks[:4])
+        )
+    finally:
+        reset_opencode_models()
+
+
+async def test_opencode_index_callback_supports_long_ids_and_colons(orch: Orchestrator) -> None:
+    from ductor_bot.config import reset_opencode_models, set_opencode_models
+
+    model = "openrouter/cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+    reset_opencode_models()
+    set_opencode_models((model,))
+    try:
+        step = await handle_model_callback(orch, SessionKey(chat_id=1), "ms:p:opencode")
+        assert step.buttons is not None
+        button = step.buttons.rows[0][0]
+        callback = button.callback_data
+        assert callback.startswith("ms:o:0:")
+        assert len(callback.encode()) <= 64
+        assert len(button.text) <= 64
+
+        result = await handle_model_callback(orch, SessionKey(chat_id=1), callback)
+        assert model in result.text
+    finally:
+        reset_opencode_models()
+
+
+def test_opencode_selector_models_dedupes_and_orders() -> None:
+    from ductor_bot.config import (
+        reset_opencode_models,
+        set_opencode_default_model,
+        set_opencode_models,
+        set_opencode_recent_models,
+    )
+    from ductor_bot.orchestrator.selectors.model_selector import _opencode_selector_models
+
+    reset_opencode_models()
+    set_opencode_default_model("a/one")
+    set_opencode_recent_models(("a/one", "b/two", "c/three"))
+    set_opencode_models(("b/two", "d/four"))
+    try:
+        assert _opencode_selector_models() == ["a/one", "b/two", "c/three", "d/four"]
+    finally:
+        reset_opencode_models()
+
+
 # -- handle_model_callback: provider selection --
 
 

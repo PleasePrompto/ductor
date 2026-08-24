@@ -90,7 +90,7 @@ Runtime behavior:
 3. optional preflight gate (`cron_preflight.enabled`): runs `cron_tasks/<task_folder>/scripts/preflight.py`; when it exits `0` and prints `skip_marker` as its last line, the agent run is skipped (status `success:preflight`). Fail-open otherwise.
 4. folder check
 5. resolve task overrides (`provider/model/reasoning/cli_parameters`)
-6. build provider command (`claude`, `codex`, `gemini`, or `grok`)
+6. build provider command (`claude`, `codex`, `gemini`, `grok`, or `opencode`)
 7. execute with timeout (`cli_timeout`)
 8. parse output
 9. send result callback to chat when the run actually executes and produces a callback path

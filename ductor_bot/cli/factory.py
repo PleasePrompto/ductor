@@ -32,6 +32,11 @@ def create_cli(config: CLIConfig) -> BaseCLI:
 
         return GrokCLI(config)
 
+    if config.provider == "opencode":
+        from ductor_bot.cli.opencode_provider import OpencodeCLI
+
+        return OpencodeCLI(config)
+
     from ductor_bot.cli.claude_provider import ClaudeCodeCLI
 
     return ClaudeCodeCLI(config)

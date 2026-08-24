@@ -983,6 +983,21 @@ def test_cli_skill_dirs_filters_disabled_provider(
         assert _cli_skill_dirs(frozenset()) == {}
 
 
+def test_cli_skill_dirs_includes_opencode_when_config_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_home = tmp_path / "home"
+    config_home = tmp_path / "config"
+    (config_home / "opencode").mkdir(parents=True)
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    monkeypatch.delenv("GROK_HOME", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    with patch("ductor_bot.workspace.skill_sync.Path.home", return_value=fake_home):
+        assert set(_cli_skill_dirs(None)) == {"opencode"}
+        assert set(_cli_skill_dirs(frozenset({"opencode"}))) == {"opencode"}
+        assert _cli_skill_dirs(frozenset({"claude"})) == {}
+
+
 def test_sync_skills_skipped_when_globally_disabled(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     paths.skills_dir.mkdir(parents=True, exist_ok=True)

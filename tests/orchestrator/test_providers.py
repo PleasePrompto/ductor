@@ -175,9 +175,64 @@ class TestDefaultModelForProvider:
         pm = _pm()
         assert pm.default_model_for_provider("gemini") == ""
 
+    def test_opencode_no_discovery_returns_empty(self) -> None:
+        from ductor_bot.config import reset_opencode_models
+
+        reset_opencode_models()
+        pm = _pm()
+        assert pm.default_model_for_provider("opencode") == ""
+
+    def test_opencode_prefers_runtime_default(self) -> None:
+        from ductor_bot.config import (
+            reset_opencode_models,
+            set_opencode_default_model,
+            set_opencode_models,
+        )
+
+        reset_opencode_models()
+        set_opencode_default_model("provider-a/model-recent")
+        set_opencode_models(("provider-a/model-one",))
+        pm = _pm()
+        assert pm.default_model_for_provider("opencode") == "provider-a/model-recent"
+
+    def test_opencode_uses_recent_when_no_default(self) -> None:
+        from ductor_bot.config import (
+            reset_opencode_models,
+            set_opencode_recent_models,
+        )
+
+        reset_opencode_models()
+        set_opencode_recent_models(("provider-a/model-recent", "provider-a/model-two"))
+        pm = _pm()
+        assert pm.default_model_for_provider("opencode") == "provider-a/model-recent"
+
+    def test_opencode_uses_first_discovered_model(self) -> None:
+        from ductor_bot.config import set_opencode_models
+
+        set_opencode_models(("provider-a/model-one", "provider-a/model-two"))
+        pm = _pm()
+        assert pm.default_model_for_provider("opencode") == "provider-a/model-one"
+
     def test_unknown_provider(self) -> None:
         pm = _pm()
         assert pm.default_model_for_provider("unknown") == ""
+
+
+class TestOpenCodeDirectiveAliases:
+    def test_provider_alias_resolves_model(self) -> None:
+        pm = _pm()
+        assert pm.resolve_session_directive("go/model-alpha") == (
+            "opencode",
+            "opencode-go/model-alpha",
+        )
+        assert pm.resolve_session_directive("zen/model-beta") == (
+            "opencode",
+            "opencode/model-beta",
+        )
+
+    def test_known_model_accepts_qualified_opencode_id(self) -> None:
+        pm = _pm()
+        assert pm.is_known_model("zen/model-beta") is True
 
 
 # ---------------------------------------------------------------------------

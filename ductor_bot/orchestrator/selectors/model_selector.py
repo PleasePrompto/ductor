@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.auth import AuthStatus, check_all_auth
+from ductor_bot.cli.opencode_aliases import shorten_opencode_model_id
 from ductor_bot.config import (
     ANTIGRAVITY_MODELS_ORDERED,
     CLAUDE_MODELS_ORDERED,
@@ -17,6 +20,9 @@ from ductor_bot.config import (
     get_antigravity_models,
     get_gemini_models,
     get_grok_models_ordered,
+    get_opencode_default_model,
+    get_opencode_models_ordered,
+    get_opencode_recent_models,
     update_config_file_async,
 )
 from ductor_bot.i18n import t
@@ -189,6 +195,7 @@ def _chunk_buttons(
     model_ids: list[str],
     *,
     columns: int = 2,
+    label_fn: Callable[[str], str] | None = None,
 ) -> list[list[Button]]:
     rows: list[list[Button]] = []
     for index in range(0, len(model_ids), columns):
@@ -196,7 +203,7 @@ def _chunk_buttons(
         rows.append(
             [
                 Button(
-                    text=_button_label(model_id),
+                    text=label_fn(model_id) if label_fn else _button_label(model_id),
                     callback_data=f"ms:m:{model_id}",
                 )
                 for model_id in chunk
@@ -252,6 +259,8 @@ async def model_selector_start(
         buttons.append(Button(text="ANTIGRAVITY", callback_data="ms:p:antigravity"))
     if "grok" in authed:
         buttons.append(Button(text="GROK BUILD", callback_data="ms:p:grok"))
+    if "opencode" in authed:
+        buttons.append(Button(text="OPENCODE", callback_data="ms:p:opencode"))
 
     provider_rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     keyboard = ButtonGrid(rows=provider_rows)
@@ -319,6 +328,17 @@ async def handle_model_callback(  # noqa: PLR0911
 
     if action == "m":
         return await _handle_model_selected(orch, key, payload)
+
+    if action == "o":
+        try:
+            model_id = _opencode_selector_models()[int(payload)]
+        except (ValueError, IndexError):
+            logger.warning("Invalid OpenCode model selector callback: %s", data)
+            return SelectorResponse(text=t("model.unknown_action"))
+        if extra != _opencode_model_fingerprint(model_id):
+            logger.warning("Stale OpenCode model selector callback: %s", data)
+            return SelectorResponse(text=t("model.unknown_action"))
+        return await _handle_model_selected(orch, key, model_id)
 
     if action == "r":
         return await _handle_reasoning_selected(orch, key, effort=payload, model_id=extra)
@@ -612,6 +632,83 @@ async def _build_model_step(
             text=f"{header}\n\n{t('model.select_antigravity')}", buttons=keyboard
         )
 
+    if provider == "opencode":
+        return _build_opencode_step(header)
+
+    return _build_codex_step(header, codex_cache)
+
+
+def _build_opencode_step(header: str) -> SelectorResponse:
+    """Build the model selection keyboard for opencode.
+
+    Shows the user's default opencode model first (labeled), then recently
+    used models, then the rest of the discovered list — deduplicated and
+    capped so the keyboard stays manageable.
+    """
+    ordered = _opencode_selector_models()
+    if not ordered:
+        keyboard = ButtonGrid(
+            rows=[
+                [Button(text=t("model.btn_back"), callback_data="ms:b:root")],
+            ]
+        )
+        return SelectorResponse(
+            text=f"{header}\n\n{t('model.no_opencode')}",
+            buttons=keyboard,
+        )
+    default_model = get_opencode_default_model()
+    model_names = [model_id.split("/", 1)[-1] for model_id in ordered]
+    duplicate_names = {name for name in model_names if model_names.count(name) > 1}
+
+    def _label(model_id: str) -> str:
+        provider, separator, model_name = model_id.partition("/")
+        label = shorten_opencode_model_id(model_id) if separator else model_id
+        if model_name in duplicate_names:
+            label = f"{provider}: {model_name}" if separator else label
+        if model_id == default_model:
+            label = f"* {label}"
+        return label if len(label) <= 64 else f"{label[:63]}…"
+
+    opencode_buttons = [
+        Button(
+            text=_label(model_id),
+            callback_data=f"ms:o:{index}:{_opencode_model_fingerprint(model_id)}",
+        )
+        for index, model_id in enumerate(ordered)
+    ]
+    opencode_rows = _rows_of(opencode_buttons)
+    opencode_rows.append([Button(text=t("model.btn_back"), callback_data="ms:b:root")])
+    keyboard = ButtonGrid(rows=opencode_rows)
+    return SelectorResponse(text=f"{header}\n\n{t('model.select_opencode')}", buttons=keyboard)
+
+
+_OPENCODE_SELECTOR_CAP = 20
+
+
+def _opencode_model_fingerprint(model_id: str) -> str:
+    """Return a compact token that prevents stale index callbacks selecting another model."""
+    return hashlib.sha256(model_id.encode()).hexdigest()[:8]
+
+
+def _opencode_selector_models() -> list[str]:
+    """Order selector models: default, then recent, then discovered, deduped."""
+    default_model = get_opencode_default_model()
+    recent = get_opencode_recent_models()
+    discovered = list(get_opencode_models_ordered())
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for model_id in (default_model, *recent, *discovered):
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        ordered.append(model_id)
+        if len(ordered) >= _OPENCODE_SELECTOR_CAP:
+            break
+    return ordered
+
+
+def _build_codex_step(header: str, codex_cache: CodexModelCache | None) -> SelectorResponse:
+    """Build the model selection keyboard for Codex from the live cache."""
     # Use cache instead of live discovery
     codex_models = codex_cache.models if codex_cache else []
     if not codex_models:

@@ -12,6 +12,7 @@ from ductor_bot.cli.auth import (
     check_claude_auth,
     check_codex_auth,
     check_gemini_auth,
+    check_opencode_auth,
     format_age,
     gemini_uses_api_key_mode,
 )
@@ -632,3 +633,135 @@ def test_antigravity_cli_logged_in_returns_false_on_probe_error(
     monkeypatch.setattr(subprocess, "run", _raise)
 
     assert _auth_mod._antigravity_cli_logged_in() is False
+
+
+# -- OpenCode auth --
+
+
+def test_check_opencode_auth_not_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(_auth_mod.shutil, "which", lambda _cmd: None)
+
+    result = check_opencode_auth()
+
+    assert result.provider == "opencode"
+    assert result.status == AuthStatus.NOT_FOUND
+
+
+def test_check_opencode_auth_installed_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(_auth_mod.shutil, "which", lambda _cmd: "/usr/bin/opencode")
+    monkeypatch.setattr(_auth_mod, "_opencode_cli_logged_in", lambda _binary: False)
+
+    result = check_opencode_auth()
+
+    assert result.status == AuthStatus.INSTALLED
+
+
+def test_check_opencode_auth_authenticated_via_auth_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    data_home = tmp_path / "data"
+    opencode_home = data_home / "opencode"
+    opencode_home.mkdir(parents=True)
+    (opencode_home / "auth.json").write_text('{"anthropic": {"type": "api"}}', encoding="utf-8")
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    monkeypatch.setattr(_auth_mod.shutil, "which", lambda _cmd: None)
+
+    result = check_opencode_auth()
+
+    assert result.status == AuthStatus.AUTHENTICATED
+    assert result.auth_file == opencode_home / "auth.json"
+
+
+def test_check_opencode_auth_empty_auth_file_is_not_authenticated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    data_home = tmp_path / "data"
+    opencode_home = data_home / "opencode"
+    opencode_home.mkdir(parents=True)
+    (opencode_home / "auth.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+    monkeypatch.setattr(_auth_mod.shutil, "which", lambda _cmd: None)
+
+    result = check_opencode_auth()
+
+    assert result.status == AuthStatus.NOT_FOUND
+
+
+def test_check_opencode_auth_authenticated_via_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ductor_bot.cli.auth as _auth_mod
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(_auth_mod.shutil, "which", lambda _cmd: "/usr/bin/opencode")
+    monkeypatch.setattr(_auth_mod, "_opencode_cli_logged_in", lambda _binary: True)
+
+    result = check_opencode_auth()
+
+    assert result.status == AuthStatus.AUTHENTICATED
+
+
+def test_opencode_cli_logged_in_returns_true_for_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    import ductor_bot.cli.auth as _auth_mod
+
+    class _FakeResult:
+        returncode = 0
+        stdout = "Credential: anthropic/api\n"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: _FakeResult())
+
+    assert _auth_mod._opencode_cli_logged_in("/usr/bin/opencode") is True
+
+
+def test_opencode_cli_logged_in_returns_false_for_no_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    import ductor_bot.cli.auth as _auth_mod
+
+    class _FakeResult:
+        returncode = 0
+        stdout = "No providers are configured.\n"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: _FakeResult())
+
+    assert _auth_mod._opencode_cli_logged_in("/usr/bin/opencode") is False
+
+
+def test_opencode_cli_logged_in_returns_false_for_zero_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import subprocess
+
+    import ductor_bot.cli.auth as _auth_mod
+
+    class _FakeResult:
+        returncode = 0
+        stdout = "Credentials ~/.local/share/opencode/auth.json\n0 credentials\n"
+        stderr = ""
+
+    monkeypatch.setattr(subprocess, "run", lambda *_a, **_kw: _FakeResult())
+
+    assert _auth_mod._opencode_cli_logged_in("/usr/bin/opencode") is False

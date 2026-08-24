@@ -67,6 +67,29 @@ def test_case_insensitive() -> None:
     assert result.model == "opus"
 
 
+def test_opencode_provider_alias_model_directive() -> None:
+    result = parse_directives("@go/model-alpha hello", KNOWN)
+    assert result.model == "opencode-go/model-alpha"
+    assert result.cleaned == "hello"
+
+    result = parse_directives("@zen/model-beta hello", KNOWN)
+    assert result.model == "opencode/model-beta"
+    assert result.cleaned == "hello"
+
+
+def test_opencode_alias_preserves_nested_model_slashes() -> None:
+    result = parse_directives("@or/provider/model-gamma hello", KNOWN)
+    assert result.model == "openrouter/provider/model-gamma"
+    assert result.cleaned == "hello"
+
+
+def test_opencode_directive_preserves_colon_suffix() -> None:
+    model = "openrouter/qwen/qwen-plus:free"
+    result = parse_directives(f"@{model} hello", frozenset({model}))
+    assert result.model == model
+    assert result.cleaned == "hello"
+
+
 def test_parsed_directives_defaults() -> None:
     pd = ParsedDirectives(cleaned="test")
     assert not pd.has_model
