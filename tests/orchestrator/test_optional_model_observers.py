@@ -19,6 +19,7 @@ async def test_skips_observers_for_missing_optional_clis() -> None:
         patch("ductor_bot.orchestrator.observers.GeminiCacheObserver") as gemini_cls,
         patch("ductor_bot.orchestrator.observers.AntigravityCacheObserver") as agy_cls,
         patch("ductor_bot.orchestrator.observers.GrokCacheObserver") as grok_cls,
+        patch("ductor_bot.orchestrator.observers.OpencodeCacheObserver") as opencode_cls,
         patch("ductor_bot.orchestrator.observers.CodexCacheObserver") as codex_cls,
     ):
         cache = await manager.init_model_caches(
@@ -26,15 +27,18 @@ async def test_skips_observers_for_missing_optional_clis() -> None:
             on_gemini_refresh=MagicMock(),
             on_antigravity_refresh=MagicMock(),
             on_grok_refresh=MagicMock(),
+            on_opencode_refresh=MagicMock(),
         )
 
     gemini_cls.assert_not_called()
     agy_cls.assert_not_called()
     grok_cls.assert_not_called()
+    opencode_cls.assert_not_called()
     codex_cls.assert_not_called()
     assert manager.gemini_cache_obs is None
     assert manager.antigravity_cache_obs is None
     assert manager.grok_cache_obs is None
+    assert manager.opencode_cache_obs is None
     assert manager.codex_cache_obs is None
     assert cache.models == []
 
@@ -47,6 +51,8 @@ async def test_starts_observers_for_installed_optional_clis() -> None:
     agy_observer.start = AsyncMock()
     grok_observer = MagicMock()
     grok_observer.start = AsyncMock()
+    opencode_observer = MagicMock()
+    opencode_observer.start = AsyncMock()
     codex_observer = MagicMock()
     codex_observer.start = AsyncMock()
     codex_observer.get_cache.return_value = CodexModelCache("", [])
@@ -61,21 +67,30 @@ async def test_starts_observers_for_installed_optional_clis() -> None:
             return_value=agy_observer,
         ),
         patch("ductor_bot.orchestrator.observers.GrokCacheObserver", return_value=grok_observer),
+        patch(
+            "ductor_bot.orchestrator.observers.OpencodeCacheObserver",
+            return_value=opencode_observer,
+        ),
         patch("ductor_bot.orchestrator.observers.CodexCacheObserver", return_value=codex_observer),
     ):
         await manager.init_model_caches(
-            installed_providers=frozenset({"claude", "codex", "gemini", "antigravity", "grok"}),
+            installed_providers=frozenset(
+                {"claude", "codex", "gemini", "antigravity", "grok", "opencode"}
+            ),
             on_gemini_refresh=MagicMock(),
             on_antigravity_refresh=MagicMock(),
             on_grok_refresh=MagicMock(),
+            on_opencode_refresh=MagicMock(),
         )
 
     gemini_observer.start.assert_awaited_once()
     agy_observer.start.assert_awaited_once()
     grok_observer.start.assert_awaited_once()
+    opencode_observer.start.assert_awaited_once()
     assert manager.gemini_cache_obs is gemini_observer
     assert manager.antigravity_cache_obs is agy_observer
     assert manager.grok_cache_obs is grok_observer
+    assert manager.opencode_cache_obs is opencode_observer
     assert manager.codex_cache_obs is codex_observer
     codex_observer.start.assert_awaited_once()
 
@@ -91,6 +106,7 @@ async def test_installed_but_unauthenticated_provider_still_gets_observer() -> N
         patch("ductor_bot.orchestrator.observers.GeminiCacheObserver") as gemini_cls,
         patch("ductor_bot.orchestrator.observers.AntigravityCacheObserver") as agy_cls,
         patch("ductor_bot.orchestrator.observers.GrokCacheObserver") as grok_cls,
+        patch("ductor_bot.orchestrator.observers.OpencodeCacheObserver") as opencode_cls,
         patch("ductor_bot.orchestrator.observers.CodexCacheObserver", return_value=codex_observer),
     ):
         await manager.init_model_caches(
@@ -98,9 +114,11 @@ async def test_installed_but_unauthenticated_provider_still_gets_observer() -> N
             on_gemini_refresh=MagicMock(),
             on_antigravity_refresh=MagicMock(),
             on_grok_refresh=MagicMock(),
+            on_opencode_refresh=MagicMock(),
         )
 
     gemini_cls.assert_not_called()
     agy_cls.assert_not_called()
     grok_cls.assert_not_called()
+    opencode_cls.assert_not_called()
     codex_observer.start.assert_awaited_once()

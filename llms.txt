@@ -1,6 +1,6 @@
 # ductor
 
-> Multi-transport AI orchestration runtime (Telegram + Matrix) that executes official provider CLIs (`claude`, `codex`, `gemini`, `agy`) as subprocesses, supports optional direct WebSocket API transport, streams responses, persists per-chat/provider state, and runs automation (cron, webhook, heartbeat, cleanup) in-process.
+> Multi-transport AI orchestration runtime (Telegram + Matrix) that executes official provider CLIs (`claude`, `codex`, `gemini`, `agy`, `grok`, `opencode`) as subprocesses, supports optional direct WebSocket API transport, streams responses, persists per-chat/provider state, and runs automation (cron, webhook, heartbeat, cleanup) in-process.
 
 ductor is a Python service that routes user input to official CLI tools instead of SDK proxy layers. Core principle: keep runtime state inspectable and local (`~/.ductor/`) with JSON/Markdown files and minimal hidden state.
 
@@ -13,7 +13,7 @@ Telegram update / Matrix sync event / optional API message
   -> ingress layer (TelegramBot / MatrixBot / ApiServer /ws)
   -> Orchestrator (commands, directives, flows)
   -> CLIService (provider wrapper)
-  -> provider subprocess (claude/codex/gemini/agy)
+  -> provider subprocess (claude/codex/gemini/agy/grok/opencode)
   -> streamed/non-streamed output back to caller
 ```
 
@@ -83,7 +83,7 @@ Sub-agent homes live under `~/.ductor/agents/<name>/` with their own config/sess
 - Webhook ingress (`webhooks.json`, modes: `wake`, `cron_task`)
 - Heartbeat observer
 - Cleanup observer
-- Codex/Gemini/Antigravity model cache observers
+- Codex/Gemini/Antigravity/Grok/OpenCode model cache observers
 - Config hot-reloader
 - Rule-sync and skill-sync watchers
 

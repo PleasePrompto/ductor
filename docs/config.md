@@ -184,6 +184,7 @@ Notes:
 | `gemini` | `list[str]` | `[]` | Extra args appended to Gemini CLI command |
 | `antigravity` | `list[str]` | `[]` | Extra args appended to Antigravity (`agy`) CLI command |
 | `grok` | `list[str]` | `[]` | Extra args appended to Grok Build (`grok`) CLI command |
+| `opencode` | `list[str]` | `[]` | Extra args appended to opencode CLI command |
 
 Used by `CLIServiceConfig` for main-chat calls.
 
@@ -569,6 +570,7 @@ Runtime note (`Orchestrator._start_api_server` + `ApiServer._authenticate`):
 | `codex` | `bool` | `true` | Include `~/.codex/skills` (or `$CODEX_HOME/skills`) in cross-tool sync |
 | `gemini` | `bool` | `true` | Include `~/.gemini/skills` in cross-tool sync |
 | `grok` | `bool` | `true` | Include `~/.grok/skills` in cross-tool sync |
+| `opencode` | `bool` | `true` | Include `~/.config/opencode/skills` in cross-tool sync |
 
 Toggles are read live from `config.json` on each skill-sync tick (independent of `ConfigReloader`), so changes take effect within one sync interval without restart. A disabled provider is dropped from the sync, so its skill dir is neither linked into nor used as a source; existing ductor-created links are not actively removed (cleared on shutdown cleanup or manually).
 
@@ -618,11 +620,13 @@ Restart classification is computed from `AgentConfig` top-level schema fields.
   because `agy` model selection is not reliable there; discovered display names
   are still known to directives and API provider metadata.
 - Grok Build models have a hardcoded fallback list (`grok-4.5`, `grok-composer-2.5-fast`) and refresh from `grok models` at startup (discovery order preserved). The Telegram `/model` selector shows the discovery-ordered IDs via `get_grok_models_ordered()`.
+- OpenCode model IDs always take the `<provider>/<model>` form and depend on the providers configured in opencode; they refresh from `opencode models` at startup. There is no hardcoded fallback list.
 - Provider resolution (`provider_for(model_id)`):
   - Claude when in `CLAUDE_MODELS` or when model looks like `claude-*`,
   - Gemini when in aliases/discovered set or when model looks like `gemini-*`/`auto-gemini-*`,
   - Antigravity when in the built-in/discovered set or when model looks like `antigravity-*`,
   - Grok when in `GROK_MODELS`/discovered set or when model looks like `grok-*`,
+  - OpenCode when the model ID contains a `/` (the `<provider>/<model>` separator, which no other provider uses),
   - otherwise Codex.
 
 ## Timezone Resolution
@@ -701,9 +705,21 @@ Behavior:
 - refreshed hourly in background,
 - refresh callback updates the runtime Grok model registry (`set_grok_models(...)`), preserving discovery order for the `/model` selector.
 
+## OpenCode Model Cache
+
+Path: `~/.ductor/config/opencode_models.json` (per-agent home).
+
+Behavior:
+
+- loaded at orchestrator startup (`OpencodeCacheObserver.start()`),
+- startup load uses cached data when fresh and refreshes only when stale/missing,
+- refreshed hourly in background,
+- refresh callback updates the runtime opencode model registry (`set_opencode_models(...)`), preserving discovery order for the `/model` selector,
+- no hardcoded fallback list: available models depend on the providers configured in opencode.
+
 ## Model-cache observer gating
 
-The Gemini, Antigravity, Grok, and Codex cache observers are only created for providers found by the startup auth detection (`installed_providers`), which is fallback-aware (e.g. finds a Gemini CLI under NVM that a plain PATH lookup would miss). A provider whose CLI is not detected gets no cache observer at all.
+The Gemini, Antigravity, Grok, OpenCode, and Codex cache observers are only created for providers found by the startup auth detection (`installed_providers`), which is fallback-aware (e.g. finds a Gemini CLI under NVM that a plain PATH lookup would miss). A provider whose CLI is not detected gets no cache observer at all.
 
 ## `agents.json` (Multi-Agent Registry)
 

@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.opencode_aliases import expand_opencode_model_alias
 from ductor_bot.config import (
     _GEMINI_ALIASES,
     ANTIGRAVITY_MODELS,
@@ -16,9 +17,14 @@ from ductor_bot.config import (
     get_gemini_models,
     get_grok_models,
     get_grok_models_ordered,
+    get_opencode_default_model,
+    get_opencode_models,
+    get_opencode_models_ordered,
+    get_opencode_recent_models,
     set_antigravity_models,
     set_gemini_models,
     set_grok_models,
+    set_opencode_models,
 )
 
 if TYPE_CHECKING:
@@ -29,6 +35,18 @@ if TYPE_CHECKING:
     from ductor_bot.config import AgentConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _opencode_default_model() -> str:
+    """Return the user's default opencode model (config > recent > discovered)."""
+    default = get_opencode_default_model()
+    if default:
+        return default
+    recent = get_opencode_recent_models()
+    if recent:
+        return recent[0]
+    ordered = get_opencode_models_ordered()
+    return ordered[0] if ordered else ""
 
 
 class ProviderManager:
@@ -84,6 +102,8 @@ class ProviderManager:
             return "Antigravity"
         if provider == "grok":
             return "Grok Build"
+        if provider == "opencode":
+            return "OpenCode"
         return "Codex"
 
     # -- Auth / init ----------------------------------------------------------
@@ -140,6 +160,11 @@ class ProviderManager:
         set_grok_models(models)
         self.refresh_known_model_ids()
 
+    def on_opencode_models_refresh(self, models: tuple[str, ...]) -> None:
+        """Callback for OpencodeCacheObserver: update model registry."""
+        set_opencode_models(models)
+        self.refresh_known_model_ids()
+
     def refresh_gemini_api_key_mode(self) -> bool:
         """Re-read ``~/.gemini/settings.json`` and update the cache.
 
@@ -161,6 +186,7 @@ class ProviderManager:
             | get_gemini_models()
             | get_antigravity_models()
             | get_grok_models()
+            | get_opencode_models()
         )
 
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
@@ -170,7 +196,10 @@ class ProviderManager:
 
     def is_known_model(self, candidate: str) -> bool:
         """Return True if *candidate* is a recognized model ID for any provider."""
+        candidate = expand_opencode_model_alias(candidate)
         if candidate in self._known_model_ids:
+            return True
+        if "/" in candidate and ModelRegistry.provider_for(candidate) == "opencode":
             return True
         codex = self._codex_cache_fn() if self._codex_cache_fn else None
         return bool(codex and codex.validate_model(candidate))
@@ -181,6 +210,8 @@ class ProviderManager:
             return self._config.model if self._config.provider == "claude" else "sonnet"
         if provider == "grok":
             return self._config.model if self._config.provider == "grok" else "grok-4.5"
+        if provider == "opencode":
+            return _opencode_default_model()
         if provider == "codex":
             codex = self._codex_cache_fn() if self._codex_cache_fn else None
             if codex:
@@ -199,7 +230,10 @@ class ProviderManager:
         - known model   (``@opus``)  -> (inferred_provider, model)
         - unknown                    -> None
         """
-        if key in ("claude", "codex", "gemini", "antigravity", "grok"):
+        canonical_key = expand_opencode_model_alias(key)
+        if canonical_key != key:
+            return "opencode", canonical_key
+        if key in ("claude", "codex", "gemini", "antigravity", "grok", "opencode"):
             return key, self.default_model_for_provider(key)
         if self.is_known_model(key):
             provider = self._models.provider_for(key)
@@ -222,6 +256,7 @@ class ProviderManager:
             "codex": ("Codex", "#10B981"),
             "antigravity": ("Antigravity", "#3B82F6"),
             "grok": ("Grok Build", "#111827"),
+            "opencode": ("OpenCode", "#22C55E"),
         }
         providers: list[dict[str, object]] = []
         for pid in sorted(self._available_providers):
@@ -240,6 +275,8 @@ class ProviderManager:
                 models = sorted(antigravity) if antigravity else sorted(ANTIGRAVITY_MODELS)
             elif pid == "grok":
                 models = list(get_grok_models_ordered())
+            elif pid == "opencode":
+                models = list(get_opencode_models_ordered())
             else:
                 models = []
             providers.append({"id": pid, "name": name, "color": color, "models": models})

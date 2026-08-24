@@ -517,12 +517,87 @@ def _grok_cli_logged_in(binary: str) -> bool:
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
+def check_opencode_auth() -> AuthResult:
+    """Check opencode CLI auth via auth.json or a ``opencode auth list`` probe."""
+    try:
+        default_home = str(Path.home() / ".local" / "share")
+    except (RuntimeError, OSError):
+        logger.debug("OpenCode auth: home directory unresolvable; treating as NOT_FOUND")
+        return AuthResult("opencode", AuthStatus.NOT_FOUND)
+
+    data_home = Path(os.environ.get("XDG_DATA_HOME", default_home))
+    auth_file = data_home / "opencode" / "auth.json"
+    binary = shutil.which("opencode")
+
+    if _opencode_auth_file_valid(auth_file):
+        mtime = datetime.fromtimestamp(auth_file.stat().st_mtime, tz=UTC)
+        result = AuthResult("opencode", AuthStatus.AUTHENTICATED, auth_file, mtime)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    if binary is not None and _opencode_cli_logged_in(binary):
+        result = AuthResult("opencode", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (cli)", result.provider, result.status)
+        return result
+
+    if binary is not None:
+        result = AuthResult("opencode", AuthStatus.INSTALLED)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    result = AuthResult("opencode", AuthStatus.NOT_FOUND)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
+def _opencode_auth_file_valid(auth_file: Path) -> bool:
+    """Return True when ``auth.json`` holds at least one non-empty credential."""
+    try:
+        if not auth_file.is_file() or auth_file.stat().st_size == 0:
+            return False
+    except OSError:
+        return False
+    try:
+        data = json.loads(auth_file.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        # Unreadable but non-empty -- treat as present rather than blocking.
+        return True
+    if isinstance(data, dict):
+        return any(bool(value) for value in data.values())
+    return bool(data)
+
+
+def _opencode_cli_logged_in(binary: str) -> bool:
+    """Run ``opencode auth list`` and return True when it lists credentials."""
+    try:
+        proc = subprocess.run(
+            [binary, "auth", "list"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            creationflags=_CREATION_FLAGS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.debug("OpenCode CLI auth probe failed: %s", exc)
+        return False
+
+    output = f"{proc.stdout}\n{proc.stderr}".lower()
+    if any(
+        token in output
+        for token in ("no providers", "no credentials", "0 credentials", "not logged in")
+    ):
+        return False
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
     "gemini": check_gemini_auth,
     "antigravity": check_antigravity_auth,
     "grok": check_grok_auth,
+    "opencode": check_opencode_auth,
 }
 
 

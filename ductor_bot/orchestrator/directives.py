@@ -6,9 +6,11 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from ductor_bot.cli.opencode_aliases import expand_opencode_model_alias
+
 logger = logging.getLogger(__name__)
 
-_DIRECTIVE_RE = re.compile(r"@([a-zA-Z][a-zA-Z0-9_.-]*)(?:=(\S+))?")
+_DIRECTIVE_RE = re.compile(r"@([a-zA-Z][a-zA-Z0-9_.:/\-]*)(?:=(\S+))?")
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,10 +50,11 @@ def parse_directives(text: str, known_models: frozenset[str]) -> ParsedDirective
             break
 
         key = match.group(1).lower()
+        canonical_key = expand_opencode_model_alias(key)
         value: str | None = match.group(2)
 
-        if key in known_models and model is None:
-            model = key
+        if (canonical_key in known_models or canonical_key != key) and model is None:
+            model = canonical_key
         else:
             raw_directives[key] = value
 

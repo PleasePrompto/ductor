@@ -111,7 +111,7 @@ One-shot isolated run in task folder:
 2. quiet-hour gate (hook-level only; no heartbeat quiet-hour fallback)
 3. dependency lock
 4. resolve task execution config
-5. build provider command (Claude/Codex/Gemini/Grok)
+5. build provider command (Claude/Codex/Gemini/Grok/OpenCode)
 6. execute with timeout
 7. parse result and return `WebhookResult`
 
@@ -129,6 +129,7 @@ Antigravity is not supported in webhook `cron_task` mode because that path uses 
 - `error:cli_not_found_codex`
 - `error:cli_not_found_gemini`
 - `error:cli_not_found_grok`
+- `error:cli_not_found_opencode`
 - `error:timeout`
 - `error:exit_<code>`
 - `skipped:quiet_hours`

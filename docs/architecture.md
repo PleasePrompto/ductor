@@ -96,7 +96,7 @@ Matrix startup follows a similar pattern (orchestrator creation, bus wiring, obs
 3. inject runtime environment note into workspace rule files
 4. instantiate `Orchestrator`
 5. check provider auth and apply provider availability
-6. initialize model cache observers (Gemini + Antigravity + Grok + Codex), only for provider CLIs found by startup auth detection
+6. initialize model cache observers (Gemini + Antigravity + Grok + OpenCode + Codex), only for provider CLIs found by startup auth detection
 7. initialize task observers (`BackgroundObserver`, `CronObserver`, `WebhookObserver`)
 8. start observers (`cron`, `heartbeat`, `webhook`, `cleanup`) + rule/skill watchers
 9. optional API server startup

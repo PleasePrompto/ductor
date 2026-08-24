@@ -100,7 +100,10 @@ Responsibilities:
 
 Directive resolution supports:
 
-- provider directives (`@codex`, `@gemini`, `@claude`, `@antigravity`, `@grok`)
+- provider directives (`@codex`, `@gemini`, `@claude`, `@antigravity`, `@grok`, `@opencode`)
+- OpenCode provider/model aliases: `@go/<model>` → `opencode-go/<model>`,
+  `@zen/<model>` → `opencode/<model>`, and `@or/<model>` →
+  `openrouter/<model>`; full `provider/model` IDs remain supported
 - model directives (`@opus`, `@flash`, cache-backed IDs)
 
 ## Selector subsystem (`orchestrator/selectors/`)

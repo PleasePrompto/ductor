@@ -139,6 +139,28 @@ def test_deploy_grok_only_with_agents_md(mock_paths: DuctorPaths) -> None:
         assert not (mock_paths.ductor_home / "config" / "CLAUDE.md").exists()
 
 
+def test_deploy_opencode_only_with_agents_md(mock_paths: DuctorPaths) -> None:
+    """OpenCode loads AGENTS.md; deploy it when only OpenCode is authenticated."""
+    auth = {
+        "claude": AuthResult(provider="claude", status=AuthStatus.NOT_FOUND),
+        "codex": AuthResult(provider="codex", status=AuthStatus.NOT_FOUND),
+        "gemini": AuthResult(provider="gemini", status=AuthStatus.NOT_FOUND),
+        "grok": AuthResult(provider="grok", status=AuthStatus.NOT_FOUND),
+        "opencode": AuthResult(provider="opencode", status=AuthStatus.AUTHENTICATED),
+    }
+
+    with patch("ductor_bot.cli.auth.check_all_auth", return_value=auth):
+        selector = RulesSelector(mock_paths)
+        assert selector.get_variant_suffix() == "codex-only"
+        selector.deploy_rules()
+
+        config_agents = mock_paths.ductor_home / "config" / "AGENTS.md"
+        assert config_agents.exists()
+        assert "Codex Only Template" in config_agents.read_text()
+        assert not (mock_paths.ductor_home / "config" / "CLAUDE.md").exists()
+        assert not (mock_paths.ductor_home / "config" / "GEMINI.md").exists()
+
+
 def test_deploy_codex_only_with_agents_md(mock_paths: DuctorPaths) -> None:
     """Test that only AGENTS.md is created when only Codex is authenticated."""
     auth = {

@@ -208,6 +208,7 @@ class CLIParametersConfig(BaseModel):
     gemini: list[str] = Field(default_factory=list)
     antigravity: list[str] = Field(default_factory=list)
     grok: list[str] = Field(default_factory=list)
+    opencode: list[str] = Field(default_factory=list)
 
 
 class MatrixConfig(BaseModel):
@@ -408,6 +409,7 @@ class SkillSyncProviders(BaseModel):
     codex: bool = True
     gemini: bool = True
     grok: bool = True
+    opencode: bool = True
 
 
 class SkillsConfig(BaseModel):
@@ -640,6 +642,16 @@ _runtime_antigravity: list[frozenset[str]] = [frozenset()]
 _runtime_grok: list[frozenset[str]] = [frozenset()]
 _runtime_grok_ordered: list[tuple[str, ...]] = [()]
 
+# opencode model IDs take the "<provider>/<model>" form and depend on the
+# providers the user has configured; there is no stable hardcoded list.
+OPENCODE_MODELS_ORDERED: tuple[str, ...] = ()
+OPENCODE_MODELS: frozenset[str] = frozenset(OPENCODE_MODELS_ORDERED)
+
+_runtime_opencode: list[frozenset[str]] = [frozenset()]
+_runtime_opencode_ordered: list[tuple[str, ...]] = [()]
+_runtime_opencode_default: list[str] = [""]
+_runtime_opencode_recent: list[tuple[str, ...]] = [()]
+
 
 class ModelRegistry:
     """Provider resolution for models.
@@ -673,6 +685,10 @@ class ModelRegistry:
             return "antigravity"
         if model_id in GROK_MODELS or model_id in _runtime_grok[0] or model_id.startswith("grok-"):
             return "grok"
+        # opencode model IDs always carry a "/" (<provider>/<model>) separator,
+        # which no other provider's model IDs contain.
+        if "/" in model_id:
+            return "opencode"
         return "codex"
 
 
@@ -751,3 +767,59 @@ def reset_grok_models() -> None:
     """Clear runtime Grok models. For test teardown only."""
     _runtime_grok[0] = frozenset()
     _runtime_grok_ordered[0] = ()
+
+
+def get_opencode_models() -> frozenset[str]:
+    """Return dynamically discovered opencode models (may be empty)."""
+    return _runtime_opencode[0]
+
+
+def get_opencode_models_ordered() -> tuple[str, ...]:
+    """Return opencode models in discovery order (empty when unknown)."""
+    return _runtime_opencode_ordered[0]
+
+
+def get_opencode_default_model() -> str:
+    """Return the user's default opencode model (``""`` when unknown)."""
+    return _runtime_opencode_default[0]
+
+
+def get_opencode_recent_models() -> tuple[str, ...]:
+    """Return recently used opencode models, newest first (may be empty)."""
+    return _runtime_opencode_recent[0]
+
+
+def set_opencode_models(models: tuple[str, ...] | frozenset[str] | list[str]) -> None:
+    """Set runtime opencode models discovered from ``opencode models``.
+
+    Refuses to overwrite with an empty set to prevent cache wipe.
+    Preserves discovery order when a sequence is provided.
+    """
+    if not models:
+        return
+    if isinstance(models, frozenset):
+        ordered = tuple(sorted(models))
+    else:
+        ordered = tuple(dict.fromkeys(models))  # dedupe, keep order
+    if not ordered:
+        return
+    _runtime_opencode_ordered[0] = ordered
+    _runtime_opencode[0] = frozenset(ordered)
+
+
+def set_opencode_default_model(model: str) -> None:
+    """Set the user's default opencode model (empty string clears it)."""
+    _runtime_opencode_default[0] = model
+
+
+def set_opencode_recent_models(models: tuple[str, ...] | list[str]) -> None:
+    """Set recently used opencode models (empty tuple clears them)."""
+    _runtime_opencode_recent[0] = tuple(dict.fromkeys(models))
+
+
+def reset_opencode_models() -> None:
+    """Clear runtime opencode models. For test teardown only."""
+    _runtime_opencode[0] = frozenset()
+    _runtime_opencode_ordered[0] = ()
+    _runtime_opencode_default[0] = ""
+    _runtime_opencode_recent[0] = ()

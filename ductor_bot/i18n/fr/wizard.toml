@@ -12,6 +12,7 @@ codex = "  OpenAI Codex CLI  {status}"
 gemini = "  Google Gemini CLI {status}"
 antigravity = "  Antigravity CLI   {status}"
 grok = "  xAI Grok CLI      {status}"
+opencode = "  OpenCode CLI      {status}"
 no_auth = """\
 \n[bold red]Au moins un CLI doit être installé et authentifié.[/bold red]\n
   Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
@@ -22,6 +23,7 @@ codex_check_failed = "[yellow]Codex auth check raised: {error}. Skipping.[/yello
 gemini_check_failed = "[yellow]Gemini auth check raised: {error}. Skipping.[/yellow]"
 antigravity_check_failed = "[yellow]Antigravity auth check raised: {error}. Skipping.[/yellow]"
 grok_check_failed = "[yellow]Grok auth check raised: {error}. Skipping.[/yellow]"
+opencode_check_failed = "[yellow]OpenCode auth check raised: {error}. Skipping.[/yellow]"
 
 [disclaimer]
 title = "[bold yellow]Avertissement[/bold yellow]"

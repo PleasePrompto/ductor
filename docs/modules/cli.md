@@ -1,12 +1,12 @@
 # cli/
 
-Provider-agnostic CLI execution layer for Claude Code, Codex, Gemini, Antigravity, and Grok Build.
+Provider-agnostic CLI execution layer for Claude Code, Codex, Gemini, Antigravity, Grok Build, and OpenCode.
 
 ## Files
 
 - `types.py`: `AgentRequest`, `AgentResponse`, `CLIResponse`
 - `base.py`: `BaseCLI`, `CLIConfig`, `docker_wrap()`, Windows helpers
-- `factory.py`: provider factory (`claude` / `codex` / `gemini` / `antigravity` / `grok`)
+- `factory.py`: provider factory (`claude` / `codex` / `gemini` / `antigravity` / `grok` / `opencode`)
 - `service.py`: `CLIService` gateway for orchestrator
 - `init_wizard.py`: interactive onboarding and smart reset flow
 - `executor.py`: shared subprocess lifecycle helpers for provider wrappers
@@ -17,21 +17,25 @@ Provider-agnostic CLI execution layer for Claude Code, Codex, Gemini, Antigravit
 - `gemini_provider.py`: Gemini subprocess wrapper
 - `antigravity_provider.py`: Antigravity (`agy`) subprocess wrapper — always runs on the host, even with the Docker sandbox enabled (the sandbox image ships no `agy` binary or auth state). `agy` has no headless streaming mode (`--print` is one-shot; `--prompt-interactive` needs a TTY), so `send_streaming` reuses the `--print` path. Because `agy --print` silently drops stdout in non-TTY subprocesses (upstream bug `google-antigravity/antigravity-cli#76`), the answer is read back from agy's own transcript (`<home>/.gemini/antigravity-cli/brain/<conv-id>/.system_generated/logs/transcript.jsonl`, the final `PLANNER_RESPONSE` entry — clean, without tool-call narration), with stdout as fallback. `--print <prompt>` is placed last and adjacent (it consumes the next token as its prompt value), and agy is grounded in the per-agent workspace via `--add-dir`
 - `grok_provider.py`: Grok Build (`grok`) headless wrapper — oneshot `--output-format json`, streaming `streaming-json`, session `--resume`/`--continue`, long prompts via `--prompt-file`, tool filter via `--tools`/`--disallowed-tools`
+- `opencode_provider.py`: opencode (`opencode run --format json`) wrapper — NDJSON event streaming, session `--session`/`--continue`, model `--model <provider>/<model>`, `--auto` permission approval, long prompts piped through stdin. No explicit stream `end` marker: the final result is synthesized from accumulated text parts. Uses the configured Docker sandbox when enabled, with OpenCode config/data directories mounted for auth and session continuity
 - `stream_events.py`: normalized stream events + Claude stream parser
 - `codex_events.py`: Codex JSONL parser
 - `gemini_events.py`: Gemini NDJSON + JSON parser
 - `antigravity_events.py`: Antigravity `--print` output parser (`parse_antigravity_json`)
 - `grok_events.py`: Grok JSON / streaming-json parser (text, thought, tool, error, auto_compact_*, end)
+- `opencode_events.py`: opencode NDJSON parser (text, reasoning, tool_use, step_start/step_finish, error; text parts are emitted complete)
 - `coalescer.py`: streaming text coalescing buffer used by bot streaming dispatch
 - `gemini_utils.py`: Gemini CLI discovery, trusted folder, model discovery helpers
 - `codex_discovery.py`: Codex model discovery via `codex app-server` JSON-RPC
 - `antigravity_discovery.py`: Antigravity model discovery via `agy models` (parses display names)
+- `opencode_discovery.py`: opencode model discovery via `opencode models` (model IDs are `<provider>/<model>`)
 - `process_registry.py`: subprocess tracking/abort/kill
 - `auth.py`: provider auth detection
 - `param_resolver.py`: task override resolution for cron/webhook one-shot runs
 - `codex_cache.py`, `codex_cache_observer.py`: Codex model cache + observer
 - `gemini_cache.py`, `gemini_cache_observer.py`: Gemini model cache + observer
 - `antigravity_cache.py`, `antigravity_cache_observer.py`: Antigravity model cache + observer (refreshes `~/.ductor/config/antigravity_models.json` from `agy models`, hourly)
+- `opencode_cache.py`, `opencode_cache_observer.py`: opencode model cache + observer (refreshes `~/.ductor/config/opencode_models.json` from `opencode models`, hourly; no hardcoded fallback)
 
 ## Execution path
 
@@ -70,6 +74,7 @@ Configured globally in `config.json`:
 - `cli_parameters.gemini`
 - `cli_parameters.antigravity`
 - `cli_parameters.grok`
+- `cli_parameters.opencode`
 
 `CLIService` forwards them per provider.
 
@@ -79,12 +84,13 @@ Used by cron and webhook `cron_task` runs.
 
 - input: `TaskOverrides(provider, model, reasoning_effort, cli_parameters)`
 - output: immutable `TaskExecutionConfig`
-- supported one-shot providers: `claude`, `codex`, `gemini`, `grok`
+- supported one-shot providers: `claude`, `codex`, `gemini`, `grok`, `opencode`
 - validation:
   - Claude model in `CLAUDE_MODELS`
   - Codex model validated against `CodexModelCache`
   - Gemini model validated against aliases/discovered IDs or `gemini-*` patterns
   - Grok model in `GROK_MODELS` or `grok-*` prefix
+  - OpenCode model in the discovered set or any `<provider>/<model>` ID
 - Codex / Claude / Grok reasoning effort applied only when supported by model
 - task `cli_parameters` are appended after the global provider-specific args
 
@@ -171,6 +177,31 @@ Recovery triggers handled in orchestrator flows:
   fallback `grok-4.5` / `grok-composer-2.5-fast`; any `grok-*` ID still routes
 - efforts: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`
 
+### OpenCode
+
+- binary `opencode` (install: `curl -fsSL https://opencode.ai/install | bash`)
+- command shape: `opencode run <message> --format json` (NDJSON events on stdout)
+- non-interactive only: the TUI is never launched (a message is always provided)
+- permission: `--auto` when `bypassPermissions` (opencode auto-approves non-denied
+  permissions; without it opencode auto-rejects permission requests)
+- session continuity: `--session <id>` (resume) / `--continue`
+- model: `--model <provider>/<model>` (model IDs always carry a `/` separator)
+- long prompts: piped through stdin (`opencode run` reads piped stdin when not a TTY);
+  no `--prompt-file` flag exists
+- stream: no explicit `end` marker — text parts are emitted complete
+  (`part.time.end`), the final result is synthesized from accumulated parts;
+  `error` events map to terminal error `ResultEvent`
+- steps: `step_start` counts turns; `step_finish` tokens feed `usage` (best-effort)
+- models: discovered via `opencode models` into `opencode_models.json` (hourly refresh);
+  no hardcoded fallback (models depend on the configured opencode providers)
+- default + recent models: read from opencode's own state (config file
+  `~/.config/opencode/opencode.json[c]` for the default, session database
+  `~/.local/share/opencode/opencode.db` for recently used models). Both are
+  plain-file reads, so they work even when the `opencode` binary is not on the
+  service PATH. The `/model` selector shows default → recent → discovered
+  (deduplicated), and `default_model_for_provider("opencode")` uses them too.
+- efforts: not mapped (pass `--variant` via `cli_parameters.opencode`)
+
 ## Auth detection (`auth.py`)
 
 Statuses: `AUTHENTICATED`, `INSTALLED`, `NOT_FOUND`.
@@ -186,6 +217,7 @@ Statuses: `AUTHENTICATED`, `INSTALLED`, `NOT_FOUND`.
   - `settings.json` selected auth mode
   - optional fallback to `~/.ductor/config/config.json` `gemini_api_key`
 - Grok: `~/.grok/auth.json`, then `XAI_API_KEY`, then `grok models` probe; install markers: binary or `config.toml`
+- OpenCode: `$XDG_DATA_HOME/opencode/auth.json` (default `~/.local/share/opencode/auth.json`) with at least one non-empty credential, then `opencode auth list` probe; install marker: binary on PATH
 
 ## Model caches
 
@@ -224,6 +256,15 @@ Each provider's cache observer is created only when the startup auth detection r
 - hourly refresh loop
 - refresh callback updates runtime Grok model registry (`set_grok_models`)
 - Telegram model selector shows discovery-ordered IDs via `get_grok_models_ordered()`
+
+### OpenCode cache
+
+- file: `~/.ductor/config/opencode_models.json` (per-agent home, e.g. `~/.ductor-cto/config/`)
+- discovery source: `discover_opencode_models()` (`opencode_discovery.py`) via `opencode models`
+- loaded on startup (uses cache when fresh, refreshes when stale/missing)
+- hourly refresh loop
+- refresh callback updates runtime opencode model registry (`set_opencode_models`)
+- Telegram model selector shows discovery-ordered IDs via `get_opencode_models_ordered()`
 
 ## Process registry
 

@@ -370,6 +370,25 @@ class DockerManager:
             (home / ".gemini", f"{container_home}/.gemini", "rw"),
         ]
 
+        # OpenCode keeps configuration/skills under XDG_CONFIG_HOME and auth,
+        # sessions, and its model database under XDG_DATA_HOME. Mount the
+        # resolved host directories at the container's standard XDG locations
+        # so the CLI works with both default and custom host XDG paths.
+        xdg_config_home = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
+        xdg_data_home = Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share"))
+        auth_dirs += [
+            (
+                xdg_config_home / "opencode",
+                f"{container_home}/.config/opencode",
+                "rw",
+            ),
+            (
+                xdg_data_home / "opencode",
+                f"{container_home}/.local/share/opencode",
+                "rw",
+            ),
+        ]
+
         # Optional: mount host cache dir for browser profiles & binaries.
         # Disabled by default -- exposes host cache to the sandbox.
         if self._config.mount_host_cache:

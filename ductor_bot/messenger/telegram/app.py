@@ -986,18 +986,7 @@ class TelegramBot:
         ]
 
         if len(providers) == 1:
-            p = next(iter(providers))
-            if p == "claude":
-                lines.append(t("session_help.claude_single"))
-                lines.append(t("session_help.claude_model"))
-            elif p == "codex":
-                lines.append(t("session_help.codex_single"))
-            elif p == "grok":
-                lines.append(t("session_help.grok_single"))
-                lines.append(t("session_help.grok_model"))
-            else:
-                lines.append(t("session_help.gemini_single"))
-                lines.append(t("session_help.gemini_model"))
+            lines.extend(self._single_provider_help_lines(next(iter(providers))))
         else:
             lines.append(t("session_help.default_provider"))
             if "claude" in providers:
@@ -1008,6 +997,8 @@ class TelegramBot:
                 lines.append(t("session_help.gemini_multi"))
             if "grok" in providers:
                 lines.append(t("session_help.grok_multi"))
+            if "opencode" in providers:
+                lines.append(t("session_help.opencode_multi"))
             lines.append(t("session_help.explicit"))
 
         lines += [
@@ -1021,6 +1012,18 @@ class TelegramBot:
         ]
 
         return fmt(t("session_help.header"), SEP, "\n".join(lines))
+
+    def _single_provider_help_lines(self, provider: str) -> list[str]:
+        """Build session-help lines for a single authenticated provider."""
+        if provider == "claude":
+            return [t("session_help.claude_single"), t("session_help.claude_model")]
+        if provider == "codex":
+            return [t("session_help.codex_single")]
+        if provider == "grok":
+            return [t("session_help.grok_single"), t("session_help.grok_model")]
+        if provider == "opencode":
+            return [t("session_help.opencode_single")]
+        return [t("session_help.gemini_single"), t("session_help.gemini_model")]
 
     async def _on_session(self, message: Message) -> None:
         """Handle /session: submit a named background session."""
@@ -1049,7 +1052,7 @@ class TelegramBot:
         provider_override: str | None = None
         model_override: str | None = None
         session_followup: str | None = None
-        directive_match = re.match(r"@([a-zA-Z][a-zA-Z0-9_.-]*)\s+", prompt)
+        directive_match = re.match(r"@([a-zA-Z][a-zA-Z0-9_.:/\-]*)\s+", prompt)
         if directive_match:
             key = directive_match.group(1).lower()
             rest = prompt[directive_match.end() :]
@@ -1059,8 +1062,8 @@ class TelegramBot:
                 provider_override, model_override = resolved[0], resolved[1] or None
                 prompt = rest
                 # If key was a provider name, check for optional model after it
-                if key in ("claude", "codex", "gemini", "antigravity", "grok"):
-                    model_match = re.match(r"([a-zA-Z][a-zA-Z0-9_.-]*)\s+", prompt)
+                if key in ("claude", "codex", "gemini", "antigravity", "grok", "opencode"):
+                    model_match = re.match(r"([a-zA-Z][a-zA-Z0-9_.:/-]*)\s+", prompt)
                     if model_match:
                         candidate = model_match.group(1).lower()
                         if self._orch.is_known_model(candidate):
@@ -1108,7 +1111,9 @@ class TelegramBot:
                     "gemini": "Gemini",
                     "antigravity": "Antigravity",
                     "grok": "Grok Build",
+                    "opencode": "OpenCode",
                 }.get(provider, provider)
+
                 model_info = f" ({model})" if model else ""
                 await send_rich(
                     self._bot,

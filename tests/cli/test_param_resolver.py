@@ -322,3 +322,62 @@ def test_resolve_missing_bucket_falls_back_to_empty(
 
     assert result.provider == "claude"
     assert result.cli_parameters == []
+
+
+def test_resolve_opencode_model_from_discovery(
+    base_config: AgentConfig, codex_cache: CodexModelCache
+) -> None:
+    from ductor_bot.config import set_opencode_models
+
+    set_opencode_models(("provider-a/model-one",))
+    overrides = TaskOverrides(provider="opencode", model="provider-a/model-one")
+
+    result = resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
+
+    assert result.provider == "opencode"
+    assert result.model == "provider-a/model-one"
+
+
+def test_resolve_opencode_accepts_any_provider_model_id(
+    base_config: AgentConfig, codex_cache: CodexModelCache
+) -> None:
+    """opencode can run any <provider>/<model> its credentials support."""
+    overrides = TaskOverrides(provider="opencode", model="provider-a/model-one")
+
+    result = resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
+
+    assert result.provider == "opencode"
+    assert result.model == "provider-a/model-one"
+
+
+def test_resolve_opencode_rejects_bare_model(
+    base_config: AgentConfig, codex_cache: CodexModelCache
+) -> None:
+    overrides = TaskOverrides(provider="opencode", model="model-one")
+
+    with pytest.raises(DuctorError, match="Invalid OpenCode model"):
+        resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
+
+
+def test_resolve_opencode_bucket_with_overrides(
+    base_config: AgentConfig, codex_cache: CodexModelCache
+) -> None:
+    """opencode bucket + override concat; claude bucket must not leak."""
+    merged = base_config.model_copy(
+        update={
+            "cli_parameters": CLIParametersConfig(
+                claude=["IGNORED"],
+                opencode=["--variant", "high"],
+            ),
+        }
+    )
+    overrides = TaskOverrides(
+        provider="opencode",
+        model="provider-a/model-one",
+        cli_parameters=["--print-logs"],
+    )
+
+    result = resolve_cli_config(merged, codex_cache, task_overrides=overrides)
+
+    assert result.provider == "opencode"
+    assert result.cli_parameters == ["--variant", "high", "--print-logs"]

@@ -16,6 +16,7 @@ from ductor_bot.cli.codex_events import parse_codex_jsonl
 from ductor_bot.cli.gemini_events import parse_gemini_json
 from ductor_bot.cli.gemini_utils import find_gemini_cli
 from ductor_bot.cli.grok_events import parse_grok_json
+from ductor_bot.cli.opencode_events import parse_opencode_json
 from ductor_bot.cli.param_resolver import TaskExecutionConfig
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from ductor_bot.infra.process_tree import force_kill_process_tree
@@ -103,6 +104,19 @@ def parse_grok_result(stdout: bytes) -> str:
     if not raw:
         return ""
     text, _session_id, _usage, _model_usage, _turns, _is_error, _cost = parse_grok_json(raw)
+    if text:
+        return text
+    return raw[:2000]
+
+
+def parse_opencode_result(stdout: bytes) -> str:
+    """Extract result text from opencode CLI NDJSON output."""
+    if not stdout:
+        return ""
+    raw = stdout.decode(errors="replace").strip()
+    if not raw:
+        return ""
+    text, _session_id, _usage, _model_usage, _turns, _is_error, _cost = parse_opencode_json(raw)
     if text:
         return text
     return raw[:2000]
@@ -228,6 +242,29 @@ def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCom
     return OneShotCommand(cmd=cmd, cleanup_paths=cleanup)
 
 
+# Match OpencodeCLI: long prompts are fed through stdin (no --prompt-file flag).
+_OPENCODE_PROMPT_ARGV_SOFT_LIMIT = 24_000
+
+
+def _build_opencode_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+    """Build an opencode CLI command for one-shot cron execution."""
+    cli = which("opencode")
+    if not cli:
+        return None
+    cmd = [cli, "run"]
+    if exec_config.model:
+        cmd += ["--model", exec_config.model]
+    if exec_config.permission_mode == "bypassPermissions":
+        cmd.append("--auto")
+    cmd += ["--format", "json"]
+    cmd.extend(exec_config.cli_parameters)
+
+    if len(prompt) > _OPENCODE_PROMPT_ARGV_SOFT_LIMIT:
+        return OneShotCommand(cmd=cmd, stdin_input=prompt.encode())
+    cmd.append(prompt)
+    return OneShotCommand(cmd=cmd)
+
+
 _CmdBuilder = Callable[[TaskExecutionConfig, str], OneShotCommand | None]
 _ResultParser = Callable[[bytes], str]
 
@@ -236,6 +273,7 @@ _CMD_BUILDERS: dict[str, _CmdBuilder] = {
     "gemini": _build_gemini_cmd,
     "codex": _build_codex_cmd,
     "grok": _build_grok_cmd,
+    "opencode": _build_opencode_cmd,
 }
 
 _RESULT_PARSERS: dict[str, _ResultParser] = {
@@ -243,6 +281,7 @@ _RESULT_PARSERS: dict[str, _ResultParser] = {
     "gemini": parse_gemini_result,
     "codex": parse_codex_result,
     "grok": parse_grok_result,
+    "opencode": parse_opencode_result,
 }
 
 

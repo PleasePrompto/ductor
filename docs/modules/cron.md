@@ -107,6 +107,7 @@ Supported providers:
 - Codex
 - Gemini
 - Grok Build
+- OpenCode
 
 Antigravity is not supported in the cron one-shot command builder. Use a supported provider override for cron jobs when the global chat provider is `antigravity`.
 
@@ -116,12 +117,14 @@ Examples:
 - Codex: `codex exec --json ... -- <prompt>`
 - Gemini: `gemini -p "" --output-format json --include-directories . ...` (prompt passed via stdin)
 - Grok: `grok --output-format json --model <id> --permission-mode <mode> ... -p <prompt>` (prompts over ~24k chars use `--prompt-file`)
+- OpenCode: `opencode run --model <id> ... --format json <prompt>` (prompts over ~24k chars passed via stdin)
 
 `bypassPermissions` behavior:
 
 - Codex: `--dangerously-bypass-approvals-and-sandbox`
 - Gemini: `--approval-mode yolo`
 - Grok: `--always-approve` (alongside `--permission-mode`)
+- OpenCode: `--auto`
 
 ## Status values
 
@@ -134,6 +137,7 @@ Typical values:
 - `error:cli_not_found_codex`
 - `error:cli_not_found_gemini`
 - `error:cli_not_found_grok`
+- `error:cli_not_found_opencode`
 - `error:timeout`
 - `error:exit_<code>`
 

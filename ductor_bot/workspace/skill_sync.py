@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -38,7 +39,7 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 
 _SKILL_SYNC_INTERVAL = 30.0
 _MANAGED_MARKER = ".ductor_managed"
-_SYNCABLE_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok"})
+_SYNCABLE_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok", "opencode"})
 
 
 def _load_skill_sync_config(config_path: Path) -> tuple[bool, frozenset[str]]:
@@ -139,23 +140,25 @@ def _cli_skill_dirs(enabled_providers: frozenset[str] | None = None) -> dict[str
     enabled. ``enabled_providers=None`` (the default) means all providers.
     Uses the same detection pattern as ``cli/auth.py``.
     """
+    specs: tuple[tuple[str, Callable[[], Path]], ...] = (
+        ("claude", lambda: Path.home() / ".claude"),
+        ("codex", lambda: Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))),
+        ("gemini", lambda: Path.home() / ".gemini"),
+        ("grok", lambda: Path(os.environ.get("GROK_HOME", str(Path.home() / ".grok")))),
+        (
+            "opencode",
+            lambda: (
+                Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "opencode"
+            ),
+        ),
+    )
     dirs: dict[str, Path] = {}
-    if enabled_providers is None or "claude" in enabled_providers:
-        claude_home = Path.home() / ".claude"
-        if claude_home.is_dir():
-            dirs["claude"] = claude_home / "skills"
-    if enabled_providers is None or "codex" in enabled_providers:
-        codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-        if codex_home.is_dir():
-            dirs["codex"] = codex_home / "skills"
-    if enabled_providers is None or "gemini" in enabled_providers:
-        gemini_home = Path.home() / ".gemini"
-        if gemini_home.is_dir():
-            dirs["gemini"] = gemini_home / "skills"
-    if enabled_providers is None or "grok" in enabled_providers:
-        grok_home = Path(os.environ.get("GROK_HOME", str(Path.home() / ".grok")))
-        if grok_home.is_dir():
-            dirs["grok"] = grok_home / "skills"
+    for name, home_fn in specs:
+        if enabled_providers is not None and name not in enabled_providers:
+            continue
+        home = home_fn()
+        if home.is_dir():
+            dirs[name] = home / "skills"
     return dirs
 
 
@@ -360,7 +363,7 @@ def sync_skills(paths: DuctorPaths, *, docker_active: bool = False) -> None:
     """Multi-way skill directory sync: ductor workspace <-> CLI skill dirs.
 
     Syncs between ductor workspace, ~/.claude/skills, ~/.codex/skills,
-    and ~/.gemini/skills.
+    ~/.gemini/skills, ~/.grok/skills, and ~/.config/opencode/skills.
 
     When *docker_active* is ``True``, copies are used instead of symlinks
     so skills resolve inside the Docker container.
@@ -393,8 +396,8 @@ def sync_skills(paths: DuctorPaths, *, docker_active: bool = False) -> None:
     for reg in registries.values():
         all_names.update(reg.keys())
 
-    # Priority order: ductor > claude > codex > gemini
-    priority = ("ductor", "claude", "codex", "gemini", "grok")
+    # Priority order: ductor > claude > codex > gemini > grok > opencode
+    priority = ("ductor", "claude", "codex", "gemini", "grok", "opencode")
     for skill_name in sorted(all_names):
         canonical = _resolve_canonical(
             skill_name,

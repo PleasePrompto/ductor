@@ -20,7 +20,7 @@ from ductor_bot.config import (
     get_gemini_models,
 )
 
-_TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok"})
+_TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok", "opencode"})
 
 
 def _looks_like_gemini_model(model: str) -> bool:
@@ -188,6 +188,16 @@ def resolve_cli_config(
         if model not in known and not model.startswith("grok-"):
             msg = (
                 f"Invalid Grok model: {model}. Must be one of {sorted(known)} or a grok-* model ID"
+            )
+            raise DuctorError(msg)
+    elif provider == "opencode":
+        from ductor_bot.config import get_opencode_models
+
+        known = get_opencode_models()
+        if model not in known and "/" not in model:
+            msg = (
+                f"Invalid OpenCode model: {model}. Must be one of {sorted(known)} "
+                "or a <provider>/<model> ID"
             )
             raise DuctorError(msg)
     else:  # codex

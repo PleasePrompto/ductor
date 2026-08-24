@@ -2,7 +2,7 @@ This file gives coding agents a current map of the repository.
 
 ## Project Overview
 
-ductor is a multi-transport chat orchestrator for the official provider CLIs (`claude`, `codex`, `gemini`, `agy`, `grok`).
+ductor is a multi-transport chat orchestrator for the official provider CLIs (`claude`, `codex`, `gemini`, `agy`, `grok`, `opencode`).
 It runs Telegram, Matrix and/or Slack, can expose an optional direct WebSocket API, keeps state under `~/.ductor`, and supervises the main agent plus optional sub-agents in one asyncio process.
 
 Stack:
@@ -95,8 +95,8 @@ Observer / TaskHub / InterAgentBus callback
 - Workspace init is zone-based:
   - Zone 2 overwrite: `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, framework-managed tool scripts
   - Zone 3 seed-once: user-owned files
-- Rule sync is mtime-based for sibling `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`; cron task folders additionally get missing rule backfill. `AGENTS.md` serves Codex **and** Grok — like Codex, Grok loads project rules from `AGENTS.md` (`RulesSelector` deploys it when either is authenticated).
-- Skill sync spans `~/.ductor/workspace/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/skills`, `~/.grok/skills`:
+- Rule sync is mtime-based for sibling `CLAUDE.md` / `AGENTS.md` / `GEMINI.md`; cron task folders additionally get missing rule backfill. `AGENTS.md` serves Codex, Grok **and** OpenCode — like Codex, Grok and opencode load project rules from `AGENTS.md` (`RulesSelector` deploys it when any of them is authenticated).
+- Skill sync spans `~/.ductor/workspace/skills`, `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/skills`, `~/.grok/skills`, `~/.config/opencode/skills`:
   - normal mode: links/junctions
   - Docker mode: managed copies (`.ductor_managed`)
 - `ductor agents add` is a Telegram-focused scaffold; Matrix sub-agents are supported through `agents.json` or the bundled agent tool scripts.
@@ -114,6 +114,7 @@ All run as in-process asyncio tasks:
 - `GeminiCacheObserver`
 - `AntigravityCacheObserver`
 - `GrokCacheObserver`
+- `OpencodeCacheObserver`
 - config reloader
 - rule sync watcher
 - skill sync watcher
