@@ -144,7 +144,7 @@ def _validate_reasoning_effort(
     """
     if not reasoning_effort:
         return None
-    if orch.models.provider_for(model_id) not in ("codex", "claude", "grok"):
+    if orch.models.provider_for(model_id) not in ("codex", "claude", "grok", "omp"):
         return None
 
     supported = _supported_efforts(orch, model_id)
@@ -508,7 +508,7 @@ async def switch_model(
             # Codex and Claude both use reasoning_effort — only drop it when
             # switching to a provider that has no notion of effort.
             if (
-                new_provider not in {"codex", "claude", "grok"}
+                new_provider not in {"codex", "claude", "grok", "omp"}
                 and "reasoning_effort" not in registry_updates
             ):
                 registry_updates["reasoning_effort"] = None
@@ -554,7 +554,7 @@ async def _status_line(orch: Orchestrator, key: SessionKey) -> str:
         model, provider = orch.resolve_runtime_target(orch._config.model)
         effort = orch._config.reasoning_effort
 
-    if provider in ("codex", "claude", "grok") and effort and effort != "default":
+    if provider in ("codex", "claude", "grok", "omp") and effort and effort != "default":
         current = (
             f"{t('model.header')}\n{t('model.current_with_effort', model=model, effort=effort)}"
         )

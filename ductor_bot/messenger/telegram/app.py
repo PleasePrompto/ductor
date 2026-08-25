@@ -976,7 +976,7 @@ class TelegramBot:
                 "Topic name updated: %d/%d = %s", message.chat.id, message.message_thread_id, name
             )
 
-    def _build_session_help(self) -> str:
+    def _build_session_help(self) -> str:  # noqa: C901
         """Build the /session hub: explain the system + show commands."""
         providers = self._orch.available_providers
         lines: list[str] = [
@@ -995,6 +995,9 @@ class TelegramBot:
             elif p == "grok":
                 lines.append(t("session_help.grok_single"))
                 lines.append(t("session_help.grok_model"))
+            elif p == "omp":
+                lines.append(t("session_help.omp_single"))
+                lines.append(t("session_help.omp_model"))
             else:
                 lines.append(t("session_help.gemini_single"))
                 lines.append(t("session_help.gemini_model"))
@@ -1008,6 +1011,8 @@ class TelegramBot:
                 lines.append(t("session_help.gemini_multi"))
             if "grok" in providers:
                 lines.append(t("session_help.grok_multi"))
+            if "omp" in providers:
+                lines.append(t("session_help.omp_multi"))
             lines.append(t("session_help.explicit"))
 
         lines += [
@@ -1108,6 +1113,7 @@ class TelegramBot:
                     "gemini": "Gemini",
                     "antigravity": "Antigravity",
                     "grok": "Grok Build",
+                    "omp": "Oh My Pi",
                 }.get(provider, provider)
                 model_info = f" ({model})" if model else ""
                 await send_rich(

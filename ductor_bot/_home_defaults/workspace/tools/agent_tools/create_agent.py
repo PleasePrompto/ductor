@@ -44,6 +44,7 @@ def _agents_path() -> Path:
 
 _CLAUDE_MODELS = ("haiku", "sonnet", "sonnet[1m]", "opus", "opus[1m]", "fable")
 _GROK_MODELS = ("grok-4.5", "grok-composer-2.5-fast")
+_OMP_MODELS = ("anthropic/claude-opus-5", "anthropic/claude-sonnet-5")
 
 
 def _main_home() -> Path:
@@ -129,6 +130,12 @@ def _resolve_model(provider: str | None, model: str | None) -> str | None:
         print(f"Note: '{model}' is not a valid Grok model. Using: grok-4.5")
         return "grok-4.5"
 
+    if provider == "omp":
+        if model in _OMP_MODELS or "/" in model:
+            return model
+        print(f"Note: '{model}' is not a valid Omp model. Using: anthropic/claude-opus-5")
+        return "anthropic/claude-opus-5"
+
     return model
 
 
@@ -179,7 +186,7 @@ def main() -> None:
     parser.add_argument(
         "--provider",
         default=None,
-        help="AI provider (claude/openai/gemini/antigravity)",
+        help="AI provider (claude/openai/gemini/antigravity/grok/omp)",
     )
     parser.add_argument(
         "--model",
