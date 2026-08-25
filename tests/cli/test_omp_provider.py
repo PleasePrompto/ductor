@@ -55,6 +55,24 @@ class TestOmpEvents:
         assert cost == 0.01
         assert not is_err
 
+    def test_parse_json_error_flag(self) -> None:
+        raw = json.dumps(
+            {
+                "type": "agent_end",
+                "is_error": True,
+                "messages": [
+                    {"role": "assistant", "content": [{"type": "text", "text": "boom"}]},
+                ],
+            }
+        )
+        _text, _sid, _u, _mu, _t, is_err, _c = parse_omp_json(raw)
+        assert is_err
+
+    def test_parse_json_camel_case_error_flag(self) -> None:
+        raw = json.dumps({"type": "agent_end", "isError": True, "messages": []})
+        _text, _sid, _u, _mu, _t, is_err, _c = parse_omp_json(raw)
+        assert is_err
+
     def test_parse_json_empty(self) -> None:
         text, sid, _u, _mu, _t, is_err, _c = parse_omp_json("")
         assert text == ""

@@ -112,7 +112,7 @@ def _supported_efforts(orch: Orchestrator, model_id: str) -> tuple[str, ...]:
     Codex delegates to the live Codex cache (per-model); Claude and Grok
     use static tuples; others have no notion of effort.
     """
-    provider = orch._providers.models.provider_for(model_id)
+    provider = orch.models.provider_for(model_id)
     if provider == "claude":
         return CLAUDE_SUPPORTED_EFFORTS
     if provider == "grok":
@@ -123,10 +123,9 @@ def _supported_efforts(orch: Orchestrator, model_id: str) -> tuple[str, ...]:
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
         )
-        if codex_cache:
-            info = codex_cache.get_model(model_id)
-            if info and info.supported_efforts:
-                return info.supported_efforts
+        model_info = codex_cache.get_model(model_id) if codex_cache else None
+        if model_info is not None:
+            return tuple(model_info.supported_efforts)
         return CODEX_SUPPORTED_EFFORTS_FALLBACK
     return ()
 

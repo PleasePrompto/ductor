@@ -99,6 +99,12 @@ def parse_omp_json(  # noqa: C901, PLR0912, PLR0915
                         break
             if not usage:
                 usage, model_usage, total_cost = _extract_spend(data)
+            if (
+                data.get("is_error") is True
+                or data.get("isError") is True
+                or (isinstance(data.get("error"), str) and data["error"])
+            ):
+                is_error = True
             continue
         if str(data.get("type", "")).lower() == "error":
             found_envelope = True
