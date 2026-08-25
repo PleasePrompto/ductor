@@ -12,16 +12,19 @@ codex = "  OpenAI Codex CLI  {status}"
 gemini = "  Google Gemini CLI {status}"
 antigravity = "  Antigravity CLI   {status}"
 grok = "  xAI Grok CLI      {status}"
+omp = "  Oh My Pi CLI      {status}"
 no_auth = """\
 \n[bold red]Pelo menos um CLI precisa estar instalado e autenticado.[/bold red]\n
   Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
   Codex:  [dim]https://github.com/openai/codex[/dim]
-  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"""
+  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]
+  Oh My Pi: [dim]https://github.com/oh-my-pi/pi[/dim]"""
 claude_check_failed = "[yellow]Claude auth check raised: {error}. Skipping.[/yellow]"
 codex_check_failed = "[yellow]Codex auth check raised: {error}. Skipping.[/yellow]"
 gemini_check_failed = "[yellow]Gemini auth check raised: {error}. Skipping.[/yellow]"
 antigravity_check_failed = "[yellow]Antigravity auth check raised: {error}. Skipping.[/yellow]"
 grok_check_failed = "[yellow]Grok auth check raised: {error}. Skipping.[/yellow]"
+omp_check_failed = "[yellow]Omp auth check raised: {error}. Skipping.[/yellow]"
 
 [disclaimer]
 title = "[bold yellow]Aviso Legal[/bold yellow]"

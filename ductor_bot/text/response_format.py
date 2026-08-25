@@ -91,6 +91,7 @@ def new_session_text(provider: str) -> str:
         "gemini": "Gemini",
         "antigravity": "Antigravity",
         "grok": "Grok Build",
+        "omp": "Oh My Pi",
     }.get(provider.lower(), provider)
     return fmt(
         t("session.reset_header"),

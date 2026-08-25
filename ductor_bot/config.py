@@ -208,6 +208,7 @@ class CLIParametersConfig(BaseModel):
     gemini: list[str] = Field(default_factory=list)
     antigravity: list[str] = Field(default_factory=list)
     grok: list[str] = Field(default_factory=list)
+    omp: list[str] = Field(default_factory=list)
 
 
 class MatrixConfig(BaseModel):
@@ -408,6 +409,7 @@ class SkillSyncProviders(BaseModel):
     codex: bool = True
     gemini: bool = True
     grok: bool = True
+    omp: bool = True
 
 
 class SkillsConfig(BaseModel):
@@ -635,10 +637,30 @@ GROK_SUPPORTED_EFFORTS: tuple[str, ...] = (
     "max",
 )
 
+# Oh My Pi models. Fallback when discovery is unavailable.
+OMP_MODELS_ORDERED: tuple[str, ...] = (
+    "anthropic/claude-opus-5",
+    "anthropic/claude-sonnet-5",
+)
+OMP_MODELS: frozenset[str] = frozenset(OMP_MODELS_ORDERED)
+# Omp thinking levels: off/minimal/low/medium/high/xhigh/max/auto
+OMP_SUPPORTED_EFFORTS: tuple[str, ...] = (
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "auto",
+)
+
 _runtime_gemini: list[frozenset[str]] = [frozenset()]
 _runtime_antigravity: list[frozenset[str]] = [frozenset()]
 _runtime_grok: list[frozenset[str]] = [frozenset()]
 _runtime_grok_ordered: list[tuple[str, ...]] = [()]
+_runtime_omp: list[frozenset[str]] = [frozenset()]
+_runtime_omp_ordered: list[tuple[str, ...]] = [()]
 
 
 class ModelRegistry:
@@ -673,6 +695,8 @@ class ModelRegistry:
             return "antigravity"
         if model_id in GROK_MODELS or model_id in _runtime_grok[0] or model_id.startswith("grok-"):
             return "grok"
+        if model_id in OMP_MODELS or model_id in _runtime_omp[0] or "/" in model_id:
+            return "omp"
         return "codex"
 
 
@@ -751,3 +775,40 @@ def reset_grok_models() -> None:
     """Clear runtime Grok models. For test teardown only."""
     _runtime_grok[0] = frozenset()
     _runtime_grok_ordered[0] = ()
+
+
+def get_omp_models() -> frozenset[str]:
+    """Return dynamically discovered Omp models (may be empty)."""
+    return _runtime_omp[0]
+
+
+def get_omp_models_ordered() -> tuple[str, ...]:
+    """Return Omp models in discovery order, or the hardcoded fallback list."""
+    ordered = _runtime_omp_ordered[0]
+    if ordered:
+        return ordered
+    return OMP_MODELS_ORDERED
+
+
+def set_omp_models(models: tuple[str, ...] | frozenset[str] | list[str]) -> None:
+    """Set runtime Omp models discovered from ``omp models --json``.
+
+    Refuses to overwrite with an empty set to prevent cache wipe.
+    Preserves discovery order when a sequence is provided.
+    """
+    if not models:
+        return
+    if isinstance(models, frozenset):
+        ordered = tuple(sorted(models))
+    else:
+        ordered = tuple(dict.fromkeys(models))
+    if not ordered:
+        return
+    _runtime_omp_ordered[0] = ordered
+    _runtime_omp[0] = frozenset(ordered)
+
+
+def reset_omp_models() -> None:
+    """Clear runtime Omp models. For test teardown only."""
+    _runtime_omp[0] = frozenset()
+    _runtime_omp_ordered[0] = ()

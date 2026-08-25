@@ -14,9 +14,11 @@ from ductor_bot.config import (
     CLAUDE_SUPPORTED_EFFORTS,
     CODEX_SUPPORTED_EFFORTS_FALLBACK,
     GROK_SUPPORTED_EFFORTS,
+    OMP_SUPPORTED_EFFORTS,
     get_antigravity_models,
     get_gemini_models,
     get_grok_models_ordered,
+    get_omp_models_ordered,
     update_config_file_async,
 )
 from ductor_bot.i18n import t
@@ -107,15 +109,16 @@ def _build_switch_summary(ctx: _SwitchSummaryContext) -> str:
 def _supported_efforts(orch: Orchestrator, model_id: str) -> tuple[str, ...]:
     """Return the reasoning-effort levels supported by *model_id*'s provider.
 
-    Claude accepts a fixed set (incl. ``max``). Codex uses the live model
-    cache when available, else a fallback constant so ``max`` is still
-    rejected. Other providers don't use reasoning effort.
+    Codex delegates to the live Codex cache (per-model); Claude and Grok
+    use static tuples; others have no notion of effort.
     """
     provider = orch.models.provider_for(model_id)
     if provider == "claude":
         return CLAUDE_SUPPORTED_EFFORTS
     if provider == "grok":
         return GROK_SUPPORTED_EFFORTS
+    if provider == "omp":
+        return OMP_SUPPORTED_EFFORTS
     if provider == "codex":
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
@@ -140,7 +143,7 @@ def _validate_reasoning_effort(
     """
     if not reasoning_effort:
         return None
-    if orch.models.provider_for(model_id) not in ("codex", "claude", "grok"):
+    if orch.models.provider_for(model_id) not in ("codex", "claude", "grok", "omp"):
         return None
 
     supported = _supported_efforts(orch, model_id)
@@ -252,6 +255,8 @@ async def model_selector_start(
         buttons.append(Button(text="ANTIGRAVITY", callback_data="ms:p:antigravity"))
     if "grok" in authed:
         buttons.append(Button(text="GROK BUILD", callback_data="ms:p:grok"))
+    if "omp" in authed:
+        buttons.append(Button(text="OH MY PI", callback_data="ms:p:omp"))
 
     provider_rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     keyboard = ButtonGrid(rows=provider_rows)
@@ -502,7 +507,7 @@ async def switch_model(
             # Codex and Claude both use reasoning_effort — only drop it when
             # switching to a provider that has no notion of effort.
             if (
-                new_provider not in {"codex", "claude", "grok"}
+                new_provider not in {"codex", "claude", "grok", "omp"}
                 and "reasoning_effort" not in registry_updates
             ):
                 registry_updates["reasoning_effort"] = None
@@ -548,7 +553,7 @@ async def _status_line(orch: Orchestrator, key: SessionKey) -> str:
         model, provider = orch.resolve_runtime_target(orch._config.model)
         effort = orch._config.reasoning_effort
 
-    if provider in ("codex", "claude", "grok") and effort and effort != "default":
+    if provider in ("codex", "claude", "grok", "omp") and effort and effort != "default":
         current = (
             f"{t('model.header')}\n{t('model.current_with_effort', model=model, effort=effort)}"
         )
@@ -569,15 +574,18 @@ async def _build_model_step(
     codex_cache: CodexModelCache | None = None,
 ) -> SelectorResponse:
     """Build the model selection keyboard for a provider."""
-    if provider in ("claude", "grok"):
+    if provider in ("claude", "grok", "omp"):
         if provider == "claude":
             buttons = [
                 Button(text=m.upper(), callback_data=f"ms:m:{m}") for m in CLAUDE_MODELS_ORDERED
             ]
             prompt = t("model.select_claude")
-        else:
+        elif provider == "grok":
             buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in get_grok_models_ordered()]
             prompt = t("model.select_grok")
+        else:
+            buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in get_omp_models_ordered()]
+            prompt = t("model.select_omp")
         keyboard = ButtonGrid(
             rows=[
                 *_rows_of(buttons),

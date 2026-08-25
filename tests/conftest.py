@@ -7,7 +7,12 @@ from unittest.mock import patch
 
 import pytest
 
-from ductor_bot.config import reset_antigravity_models, reset_gemini_models
+from ductor_bot.config import (
+    reset_antigravity_models,
+    reset_gemini_models,
+    reset_grok_models,
+    reset_omp_models,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -83,6 +88,10 @@ def _reset_runtime_model_registries() -> Iterator[None]:
     """
     reset_gemini_models()
     reset_antigravity_models()
+    reset_grok_models()
+    reset_omp_models()
     yield
     reset_gemini_models()
     reset_antigravity_models()
+    reset_grok_models()
+    reset_omp_models()

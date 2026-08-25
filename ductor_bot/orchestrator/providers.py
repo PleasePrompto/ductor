@@ -11,14 +11,18 @@ from ductor_bot.config import (
     ANTIGRAVITY_MODELS,
     CLAUDE_MODELS,
     GROK_MODELS,
+    OMP_MODELS,
     ModelRegistry,
     get_antigravity_models,
     get_gemini_models,
     get_grok_models,
     get_grok_models_ordered,
+    get_omp_models,
+    get_omp_models_ordered,
     set_antigravity_models,
     set_gemini_models,
     set_grok_models,
+    set_omp_models,
 )
 
 if TYPE_CHECKING:
@@ -84,6 +88,8 @@ class ProviderManager:
             return "Antigravity"
         if provider == "grok":
             return "Grok Build"
+        if provider == "omp":
+            return "Oh My Pi"
         return "Codex"
 
     # -- Auth / init ----------------------------------------------------------
@@ -140,6 +146,11 @@ class ProviderManager:
         set_grok_models(models)
         self.refresh_known_model_ids()
 
+    def on_omp_models_refresh(self, models: tuple[str, ...]) -> None:
+        """Callback for OmpCacheObserver: update model registry."""
+        set_omp_models(models)
+        self.refresh_known_model_ids()
+
     def refresh_gemini_api_key_mode(self) -> bool:
         """Re-read ``~/.gemini/settings.json`` and update the cache.
 
@@ -157,10 +168,12 @@ class ProviderManager:
             CLAUDE_MODELS
             | ANTIGRAVITY_MODELS
             | GROK_MODELS
+            | OMP_MODELS
             | _GEMINI_ALIASES
             | get_gemini_models()
             | get_antigravity_models()
             | get_grok_models()
+            | get_omp_models()
         )
 
     def resolve_runtime_target(self, requested_model: str | None = None) -> tuple[str, str]:
@@ -181,6 +194,10 @@ class ProviderManager:
             return self._config.model if self._config.provider == "claude" else "sonnet"
         if provider == "grok":
             return self._config.model if self._config.provider == "grok" else "grok-4.5"
+        if provider == "omp":
+            return (
+                self._config.model if self._config.provider == "omp" else "anthropic/claude-opus-5"
+            )
         if provider == "codex":
             codex = self._codex_cache_fn() if self._codex_cache_fn else None
             if codex:
@@ -199,7 +216,7 @@ class ProviderManager:
         - known model   (``@opus``)  -> (inferred_provider, model)
         - unknown                    -> None
         """
-        if key in ("claude", "codex", "gemini", "antigravity", "grok"):
+        if key in ("claude", "codex", "gemini", "antigravity", "grok", "omp"):
             return key, self.default_model_for_provider(key)
         if self.is_known_model(key):
             provider = self._models.provider_for(key)
@@ -222,6 +239,7 @@ class ProviderManager:
             "codex": ("Codex", "#10B981"),
             "antigravity": ("Antigravity", "#3B82F6"),
             "grok": ("Grok Build", "#111827"),
+            "omp": ("Oh My Pi", "#EC4899"),
         }
         providers: list[dict[str, object]] = []
         for pid in sorted(self._available_providers):
@@ -240,6 +258,8 @@ class ProviderManager:
                 models = sorted(antigravity) if antigravity else sorted(ANTIGRAVITY_MODELS)
             elif pid == "grok":
                 models = list(get_grok_models_ordered())
+            elif pid == "omp":
+                models = list(get_omp_models_ordered())
             else:
                 models = []
             providers.append({"id": pid, "name": name, "color": color, "models": models})

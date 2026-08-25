@@ -122,11 +122,13 @@ def _build_auth_block(auth_results: dict[str, AuthResult], config: AgentConfig) 
     codex = auth_results.get("codex")
     gemini = auth_results.get("gemini")
     grok = auth_results.get("grok")
+    omp = auth_results.get("omp")
 
     claude_ok = claude is not None and claude.is_authenticated
     codex_ok = codex is not None and codex.is_authenticated
     gemini_ok = gemini is not None and gemini.is_authenticated
     grok_ok = grok is not None and grok.is_authenticated
+    omp_ok = omp is not None and omp.is_authenticated
 
     providers: list[str] = []
     if claude_ok:
@@ -137,6 +139,8 @@ def _build_auth_block(auth_results: dict[str, AuthResult], config: AgentConfig) 
         providers.append("Gemini")
     if grok_ok:
         providers.append("Grok Build")
+    if omp_ok:
+        providers.append("Oh My Pi")
 
     if not providers:
         return t("welcome.no_auth")
