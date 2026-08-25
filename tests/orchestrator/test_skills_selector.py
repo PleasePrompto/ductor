@@ -128,13 +128,72 @@ def test_detail_unknown_skill() -> None:
 
 
 def test_config_dir_honours_env(tmp_path: Path) -> None:
-    """Discovery must follow CLAUDE_CONFIG_DIR, as the CLI does."""
+    """Discovery must follow CLAUDE_CONFIG_DIR, as the CLI does.
+
+    Asserted on the group page rather than the root view: the root only shows
+    group names and counts, so an assertion there passes even when the override
+    is ignored.
+    """
     from ductor_bot.orchestrator.selectors import skills_selector
 
-    (tmp_path / "skills" / "x").mkdir(parents=True)
-    (tmp_path / "skills" / "x" / "SKILL.md").write_text("---\nname: x\ndescription: d\n---\n")
+    (tmp_path / "skills" / "only-here").mkdir(parents=True)
+    (tmp_path / "skills" / "only-here" / "SKILL.md").write_text(
+        "---\nname: only-here\ndescription: proves the override was used\n---\n"
+    )
     (tmp_path / "settings.json").write_text(json.dumps({}))
 
     with patch.dict("os.environ", {"CLAUDE_CONFIG_DIR": str(tmp_path)}):
-        resp = skills_selector.skills_root(_orch())
-    assert "x" not in resp.text or resp.buttons is not None  # catalog was read from tmp_path
+        root = skills_selector.skills_root(_orch())
+        group = skills_selector.skills_group(_orch(), 0)
+
+    assert "personal (1)" in [b.text for b in _buttons(root)]
+    assert "/only-here" in group.text
+    assert any(b.copy_text == "/only-here " for b in _buttons(group))
+
+
+# -- per-skill callbacks (transports without clipboard buttons) ----------------
+
+
+def test_each_skill_button_has_distinct_callback_data() -> None:
+    """Matrix renders buttons as reactions and Slack drops copy_text, so shared
+    callback_data would make every skill in a group do the same thing."""
+    with _patch_catalog():
+        resp = skills_group(_orch(), 1)  # superpowers
+    skill_buttons = [b for b in _buttons(resp) if b.copy_text is not None]
+    payloads = [b.callback_data for b in skill_buttons]
+    assert len(set(payloads)) == len(payloads)
+    assert payloads == [f"{SK_PREFIX}s:1:0", f"{SK_PREFIX}s:1:1"]
+
+
+def test_per_skill_callback_opens_that_skills_detail() -> None:
+    with _patch_catalog():
+        resp = handle_skills_callback(_orch(), f"{SK_PREFIX}s:1:1")
+    assert "Turn a spec into a plan" in resp.text  # writing-plans, not brainstorming
+
+
+def test_per_skill_callback_data_stays_within_telegram_limit() -> None:
+    long_name = "z" * 300
+    skills = [Skill(long_name, "d", "superpowers", False, Path("/s/SKILL.md"))]
+    with _patch_catalog(skills):
+        resp = skills_group(_orch(), 0)
+    for b in _buttons(resp):
+        assert len(b.callback_data.encode()) <= 64
+
+
+def test_out_of_range_skill_index_falls_back_to_the_group() -> None:
+    with _patch_catalog():
+        resp = handle_skills_callback(_orch(), f"{SK_PREFIX}s:1:99")
+    assert "superpowers" in resp.text
+
+
+def test_out_of_range_group_in_skill_payload_falls_back_to_root() -> None:
+    with _patch_catalog():
+        resp = handle_skills_callback(_orch(), f"{SK_PREFIX}s:99:0")
+    assert [b.text for b in _buttons(resp)] == ["personal (1)", "superpowers (2)"]
+
+
+def test_malformed_skill_payload_falls_back_to_root() -> None:
+    with _patch_catalog():
+        for bad in (f"{SK_PREFIX}s:", f"{SK_PREFIX}s:1", f"{SK_PREFIX}s:a:b"):
+            resp = handle_skills_callback(_orch(), bad)
+            assert [b.text for b in _buttons(resp)] == ["personal (1)", "superpowers (2)"]

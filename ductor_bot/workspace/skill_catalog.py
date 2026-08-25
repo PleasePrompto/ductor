@@ -1,10 +1,11 @@
 """Discovery of the skills a Claude Code session will actually load.
 
 Globbing the plugin cache over-reports badly: several versions of the same
-plugin can sit side by side (superpowers 6.2.0 and 6.3.0), some plugins ship the
-same skill under two paths (``skills/`` and ``.openclaw/skills/``), and disabled
-plugins stay on disk. On one real setup that is 92 ``SKILL.md`` files for 67
-actually-loadable skills.
+plugin can sit side by side (e.g. superpowers 6.2.0 alongside 6.3.0), some
+plugins ship the same skill under two paths (``skills/`` and
+``.openclaw/skills/``), and disabled plugins stay on disk. A real installation
+can therefore hold substantially more ``SKILL.md`` files than it has loadable
+skills.
 
 So the catalog follows the same two files Claude Code does:
 
