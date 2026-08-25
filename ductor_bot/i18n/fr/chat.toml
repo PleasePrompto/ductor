@@ -461,3 +461,18 @@ async_task_received = "📥 **Tâche asynchrone reçue** de `{sender}`\nSession 
 [effort]
 select = "Choisir l'effort de raisonnement pour {model} :"
 unsupported = "L'effort de raisonnement n'est pas configurable pour le fournisseur `{provider}`."
+
+[skills]
+builtin_note = "_Les skills intégrés de Claude ne figurent pas ici : ils sont dans le binaire et se chargent automatiquement._"
+header = "**Skills** — {total} disponibles dans {groups} groupes"
+pick_group = "Choisissez un groupe :"
+group_header = "**{group}** — {count} skills"
+tap_hint = "Touchez un skill pour copier sa commande, puis collez-la et ajoutez votre demande."
+personal_label = "personnel"
+btn_back = "◀︎ Groupes"
+btn_copy = "📋 Copier /{name}"
+none_found = "Aucun skill trouvé. Vérifiez que les plugins sont installés et activés."
+not_found = "Aucun skill nommé `{name}`. Utilisez /skills pour parcourir."
+no_description = "(pas de description)"
+detail_header = "**{name}** — {group}"
+slash_only_note = "🔒 Slash uniquement : ce skill doit être invoqué explicitement ; le modèle ne peut pas le charger seul."
