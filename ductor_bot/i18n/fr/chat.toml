@@ -115,6 +115,7 @@ tokens_line = "Tokens : {tokens}"
 cost_line = "Coût : ${cost}"
 bg_header = "Tâches en arrière-plan : {count} en cours"
 auth_header = "Auth :"
+account_line = "Compte Claude : {account}"
 agents_header = "Agents :"
 
 # -- Pied de page technique ----------------------------------------------------

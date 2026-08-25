@@ -114,6 +114,7 @@ tokens_line = "Token: {tokens}"
 cost_line = "Biaya: ${cost}"
 bg_header = "Tugas latar: {count} berjalan"
 auth_header = "Autentikasi:"
+account_line = "Akun Claude: {account}"
 agents_header = "Agen:"
 
 # -- Technical footer ----------------------------------------------------------

@@ -115,6 +115,7 @@ tokens_line = "Tokens: {tokens}"
 cost_line = "Kosten: ${cost}"
 bg_header = "Achtergrondtaken: {count} actief"
 auth_header = "Auth:"
+account_line = "Claude-account: {account}"
 agents_header = "Agents:"
 
 # -- Technische voettekst ---------------------------------------------------------

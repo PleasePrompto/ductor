@@ -115,6 +115,7 @@ tokens_line = "Токены: {tokens}"
 cost_line = "Стоимость: ${cost}"
 bg_header = "Фоновые задачи: {count} работают"
 auth_header = "Auth:"
+account_line = "Аккаунт Claude: {account}"
 agents_header = "Агенты:"
 
 # -- Технический футер ---------------------------------------------------------

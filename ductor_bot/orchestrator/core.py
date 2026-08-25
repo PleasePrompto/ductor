@@ -797,6 +797,13 @@ class Orchestrator:
                     codex_cli_parameters=tuple(config.cli_parameters.codex),
                     gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                     antigravity_cli_parameters=tuple(config.cli_parameters.antigravity),
+                    # grok_cli_parameters, agent_name and interagent_port were
+                    # omitted here while being set at construction, so any hot
+                    # reload silently cleared the Grok flags and demoted a
+                    # sub-agent to "main" on the default inter-agent port.
+                    grok_cli_parameters=tuple(config.cli_parameters.grok),
+                    agent_name=self._cli_service._config.agent_name,
+                    interagent_port=self._cli_service._config.interagent_port,
                     transcribe_command=config.transcription.audio_command,
                     video_transcribe_command=config.transcription.video_command,
                 )

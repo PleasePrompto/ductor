@@ -513,6 +513,13 @@ class AgentConfig(BaseModel):
         store, which is the opposite of what someone switching accounts wants
         to happen — clear it loudly instead.
         """
+        # An entry mapped to a blank path resolves to the default store, so it
+        # would show as active while other credentials are actually in use.
+        blank = [n for n, path in self.claude_accounts.items() if not path or not path.strip()]
+        for name in blank:
+            logger.warning("claude_accounts[%r] has an empty path; ignoring it", name)
+            del self.claude_accounts[name]
+
         if self.claude_account and self.claude_account not in self.claude_accounts:
             logger.warning(
                 "claude_account %r is not in claude_accounts; using the default store",

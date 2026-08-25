@@ -115,6 +115,7 @@ tokens_line = "Tokens: {tokens}"
 cost_line = "Custo: ${cost}"
 bg_header = "Tarefas em segundo plano: {count} rodando"
 auth_header = "Auth:"
+account_line = "Conta Claude: {account}"
 agents_header = "Agentes:"
 
 # -- Rodapé técnico ------------------------------------------------------------

@@ -122,3 +122,117 @@ def test_service_updates_account_dir_at_runtime() -> None:
     )
     service.update_claude_account_dir("/opt/creds/personal")
     assert service._config.claude_account_dir == "/opt/creds/personal"
+
+
+# -- one-shot path (cron / webhook / heartbeat / background) --------------------
+
+
+def test_oneshot_claude_cmd_sets_account_dir() -> None:
+    """These runs bypass CLIService entirely and would otherwise ignore /account."""
+    from ductor_bot.cli.param_resolver import TaskExecutionConfig
+    from ductor_bot.cron.execution import _build_claude_cmd
+
+    cfg = TaskExecutionConfig(
+        provider="claude",
+        model="sonnet",
+        reasoning_effort="medium",
+        cli_parameters=[],
+        permission_mode="bypassPermissions",
+        working_dir="/w",
+        file_access="all",
+        claude_account_dir="/opt/creds/work",
+    )
+    with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
+        one_shot = _build_claude_cmd(cfg, "hi")
+
+    assert one_shot is not None
+    assert one_shot.env_overrides[ENV_VAR] == "/opt/creds/work"
+    assert ENV_VAR not in one_shot.env_unset
+
+
+def test_oneshot_claude_cmd_unsets_for_default_account() -> None:
+    """Setting the variable to empty would mean ~/.claude, not 'the default'."""
+    from ductor_bot.cli.param_resolver import TaskExecutionConfig
+    from ductor_bot.cron.execution import _build_claude_cmd
+
+    cfg = TaskExecutionConfig(
+        provider="claude",
+        model="sonnet",
+        reasoning_effort="medium",
+        cli_parameters=[],
+        permission_mode="bypassPermissions",
+        working_dir="/w",
+        file_access="all",
+    )
+    with patch("ductor_bot.cron.execution.which", return_value="/usr/bin/claude"):
+        one_shot = _build_claude_cmd(cfg, "hi")
+
+    assert one_shot is not None
+    assert ENV_VAR in one_shot.env_unset
+    assert ENV_VAR not in one_shot.env_overrides
+
+
+def test_apply_to_env_clears_rather_than_blanks() -> None:
+    from ductor_bot.cli.claude_accounts import apply_to_env
+
+    assert apply_to_env({ENV_VAR: "/old"}, None) == {}
+    assert apply_to_env({}, "/new")[ENV_VAR] == "/new"
+
+
+def test_usable_accounts_drops_blank_paths() -> None:
+    from ductor_bot.cli.claude_accounts import usable_accounts
+
+    assert usable_accounts({"a": "/p", "b": "  ", "c": ""}) == {"a": "/p"}
+
+
+# -- auth detection scoped to the selected account -----------------------------
+
+
+def test_auth_reads_the_selected_store(tmp_path: Path) -> None:
+    """Without this, a setup whose only logged-in store is the non-default one
+    reports Claude as unauthenticated and drops it from available providers."""
+    from ductor_bot.cli.auth import AuthStatus, check_claude_auth
+
+    alt = tmp_path / "auth2"
+    alt.mkdir()
+    (alt / ".credentials.json").write_text("{}")
+
+    result = check_claude_auth(str(alt))
+    assert result.status is AuthStatus.AUTHENTICATED
+    assert result.auth_file == alt / ".credentials.json"
+
+
+def test_auth_cli_fallback_runs_with_the_account_env() -> None:
+    """The `claude auth status` probe must see the same store the agent will use."""
+    from ductor_bot.cli import auth as auth_mod
+
+    captured: dict[str, str] = {}
+
+    class _Proc:
+        stdout = '{"loggedIn": false}'
+
+    def _fake_run(_cmd, **kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs.get("env") or {})
+        return _Proc()
+
+    with patch.object(auth_mod.subprocess, "run", _fake_run):
+        auth_mod._claude_cli_logged_in("/opt/creds/work")
+    assert captured.get(ENV_VAR) == "/opt/creds/work"
+
+    captured.clear()
+    with (
+        patch.object(auth_mod.subprocess, "run", _fake_run),
+        patch.dict(os.environ, {ENV_VAR: "/leaked"}),
+    ):
+        auth_mod._claude_cli_logged_in(None)
+    assert ENV_VAR not in captured
+
+
+def test_active_claude_account_dir_helper() -> None:
+    from types import SimpleNamespace
+
+    from ductor_bot.cli.claude_accounts import active_claude_account_dir
+
+    cfg = SimpleNamespace(claude_accounts={"work": "/opt/creds/work"}, claude_account="work")
+    assert active_claude_account_dir(cfg) == "/opt/creds/work"
+    assert active_claude_account_dir(SimpleNamespace()) == ""

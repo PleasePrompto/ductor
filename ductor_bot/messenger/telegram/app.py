@@ -683,7 +683,11 @@ class TelegramBot:
         thread_id = get_thread_id(message)
         user_name = message.from_user.first_name if message.from_user else ""
 
-        auth_results = await asyncio.to_thread(check_all_auth)
+        from ductor_bot.cli.claude_accounts import active_claude_account_dir
+
+        auth_results = await asyncio.to_thread(
+            check_all_auth, active_claude_account_dir(self._config)
+        )
         text = build_welcome_text(user_name, auth_results, self._config)
         keyboard = build_welcome_keyboard()
 

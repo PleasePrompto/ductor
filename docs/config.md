@@ -162,9 +162,22 @@ Behavior:
 - Takes effect on the next CLI invocation; the running session is not reset.
 - An unknown `claude_account` is cleared on load with a warning rather than
   silently falling back to the default store.
+- Applies to cron, webhook, heartbeat and background runs as well as chat turns:
+  the resolved directory is carried on `TaskExecutionConfig`, not only through
+  `CLIService`.
+- Auth detection is scoped to the selected store, so a setup whose only
+  logged-in account is a non-default one is still reported as authenticated.
+- Entries with an empty or whitespace path are dropped at load with a warning:
+  they would resolve to the default store while displaying as active.
 - **Not supported in Docker sandbox mode** — the credential directory is not
   mounted into the container, so the default account is used. Configuring both
-  logs a warning at startup and when switching.
+  logs a warning at startup, and switching warns when a container is actually in
+  use (not merely configured).
+
+Known limitation: for sub-agents the selection is persisted only in the
+agent-local `config.json`. The supervisor rebuilds sub-agent runtime config from
+`agents.json`, which has no account field, so a sub-agent restart reverts to the
+main account.
 
 ### `project_roots`
 

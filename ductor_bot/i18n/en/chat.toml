@@ -116,6 +116,7 @@ tokens_line = "Tokens: {tokens}"
 cost_line = "Cost: ${cost}"
 bg_header = "Background tasks: {count} running"
 auth_header = "Auth:"
+account_line = "Claude account: {account}"
 agents_header = "Agents:"
 
 # -- Technical footer ----------------------------------------------------------
