@@ -12,6 +12,7 @@ from ductor_bot.background import (
     BackgroundSubmit,
     BackgroundTask,
 )
+from ductor_bot.cli.claude_accounts import resolve_account_dir
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
@@ -29,6 +30,7 @@ from ductor_bot.errors import (
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
+    cmd_account,
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
@@ -155,6 +157,10 @@ class Orchestrator:
                 reasoning_effort=config.reasoning_effort,
                 gemini_api_key=config.gemini_api_key,
                 docker_container=docker_container,
+                claude_account_dir=resolve_account_dir(
+                    config.claude_accounts, config.claude_account
+                )
+                or "",
                 claude_cli_parameters=tuple(config.cli_parameters.claude),
                 codex_cli_parameters=tuple(config.cli_parameters.codex),
                 gemini_cli_parameters=tuple(config.cli_parameters.gemini),
@@ -448,6 +454,8 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/account", cmd_account)
+        reg.register_async("/account ", cmd_account)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
@@ -766,6 +774,8 @@ class Orchestrator:
                 "permission_mode",
                 "reasoning_effort",
                 "cli_parameters",
+                "claude_accounts",
+                "claude_account",
             )
         ):
             self._cli_service.update_config(
@@ -779,10 +789,21 @@ class Orchestrator:
                     reasoning_effort=config.reasoning_effort,
                     gemini_api_key=config.gemini_api_key,
                     docker_container=self._cli_service._config.docker_container,
+                    claude_account_dir=resolve_account_dir(
+                        config.claude_accounts, config.claude_account
+                    )
+                    or "",
                     claude_cli_parameters=tuple(config.cli_parameters.claude),
                     codex_cli_parameters=tuple(config.cli_parameters.codex),
                     gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                     antigravity_cli_parameters=tuple(config.cli_parameters.antigravity),
+                    # grok_cli_parameters, agent_name and interagent_port were
+                    # omitted here while being set at construction, so any hot
+                    # reload silently cleared the Grok flags and demoted a
+                    # sub-agent to "main" on the default inter-agent port.
+                    grok_cli_parameters=tuple(config.cli_parameters.grok),
+                    agent_name=self._cli_service._config.agent_name,
+                    interagent_port=self._cli_service._config.interagent_port,
                     transcribe_command=config.transcription.audio_command,
                     video_transcribe_command=config.transcription.video_command,
                 )

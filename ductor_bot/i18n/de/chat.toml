@@ -115,6 +115,7 @@ tokens_line = "Tokens: {tokens}"
 cost_line = "Kosten: ${cost}"
 bg_header = "Hintergrund-Aufgaben: {count} laufend"
 auth_header = "Auth:"
+account_line = "Claude-Konto: {account}"
 agents_header = "Agents:"
 
 # -- Technischer Footer --------------------------------------------------------
@@ -461,3 +462,12 @@ async_task_received = "📥 **Async-Aufgabe empfangen** von `{sender}`\nSession:
 [effort]
 select = "Denkaufwand für {model} wählen:"
 unsupported = "Denkaufwand ist für den Anbieter `{provider}` nicht einstellbar."
+
+[account]
+default_label = "Standard"
+active_line = "**Claude-Konto:** {account}"
+none_configured = "Keine Claude-Konten konfiguriert. Füge eine `claude_accounts`-Map in config.json hinzu, z. B. `{\"work\": \"~/.claude-work\"}`."
+select = "Wähle den Anmeldespeicher für die Authentifizierung:"
+switched = "Zu Claude-Konto **{account}** gewechselt. Gilt ab der nächsten Nachricht — die aktuelle Sitzung bleibt fortsetzbar."
+switched_docker_warning = "Zu Claude-Konto **{account}** gewechselt, aber der Docker-Sandbox-Modus ist aktiv und bindet den Anmeldespeicher nicht in den Container ein."
+unknown = "Unbekanntes Claude-Konto `{account}`. Konfiguriert: {known}"

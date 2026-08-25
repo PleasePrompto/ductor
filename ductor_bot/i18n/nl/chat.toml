@@ -115,6 +115,7 @@ tokens_line = "Tokens: {tokens}"
 cost_line = "Kosten: ${cost}"
 bg_header = "Achtergrondtaken: {count} actief"
 auth_header = "Auth:"
+account_line = "Claude-account: {account}"
 agents_header = "Agents:"
 
 # -- Technische voettekst ---------------------------------------------------------
@@ -461,3 +462,12 @@ async_task_received = "📥 **Async taak ontvangen** van `{sender}`\nSessie: `{s
 [effort]
 select = "Kies de redeneerinzet voor {model}:"
 unsupported = "Redeneerinzet is niet instelbaar voor provider `{provider}`."
+
+[account]
+default_label = "standaard"
+active_line = "**Claude-account:** {account}"
+none_configured = "Geen Claude-accounts geconfigureerd. Voeg een `claude_accounts`-map toe aan config.json, bijv. `{\"work\": \"~/.claude-work\"}`."
+select = "Kies de inloggegevens om mee te authenticeren:"
+switched = "Overgeschakeld naar Claude-account **{account}**. Geldt vanaf het volgende bericht — de huidige sessie blijft hervatbaar."
+switched_docker_warning = "Overgeschakeld naar Claude-account **{account}**, maar de Docker-sandboxmodus is ingeschakeld en koppelt de inloggegevens niet in de container."
+unknown = "Onbekend Claude-account `{account}`. Geconfigureerd: {known}"

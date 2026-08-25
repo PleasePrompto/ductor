@@ -116,6 +116,7 @@ tokens_line = "Tokens: {tokens}"
 cost_line = "Cost: ${cost}"
 bg_header = "Background tasks: {count} running"
 auth_header = "Auth:"
+account_line = "Claude account: {account}"
 agents_header = "Agents:"
 
 # -- Technical footer ----------------------------------------------------------
@@ -462,3 +463,12 @@ async_task_received = "📥 **Async task received** from `{sender}`\nSession: `{
 [effort]
 select = "Select reasoning effort for {model}:"
 unsupported = "Reasoning effort is not configurable for the `{provider}` provider."
+
+[account]
+default_label = "default"
+active_line = "**Claude account:** {account}"
+none_configured = "No Claude accounts configured. Add a `claude_accounts` map to config.json, e.g. `{\"work\": \"~/.claude-work\"}`."
+select = "Select the credential store to authenticate with:"
+switched = "Switched to Claude account **{account}**. It applies from the next message — the current session stays resumable."
+switched_docker_warning = "Switched to Claude account **{account}**, but Docker sandbox mode is enabled and does not map the credential store into the container."
+unknown = "Unknown Claude account `{account}`. Configured: {known}"

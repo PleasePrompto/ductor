@@ -115,6 +115,7 @@ tokens_line = "Tokens : {tokens}"
 cost_line = "Coût : ${cost}"
 bg_header = "Tâches en arrière-plan : {count} en cours"
 auth_header = "Auth :"
+account_line = "Compte Claude : {account}"
 agents_header = "Agents :"
 
 # -- Pied de page technique ----------------------------------------------------
@@ -461,3 +462,12 @@ async_task_received = "📥 **Tâche asynchrone reçue** de `{sender}`\nSession 
 [effort]
 select = "Choisir l'effort de raisonnement pour {model} :"
 unsupported = "L'effort de raisonnement n'est pas configurable pour le fournisseur `{provider}`."
+
+[account]
+default_label = "par défaut"
+active_line = "**Compte Claude :** {account}"
+none_configured = "Aucun compte Claude configuré. Ajoutez une table `claude_accounts` à config.json, par ex. `{\"work\": \"~/.claude-work\"}`."
+select = "Choisissez le magasin d'identifiants à utiliser :"
+switched = "Basculé sur le compte Claude **{account}**. Effectif dès le prochain message — la session en cours reste reprenable."
+switched_docker_warning = "Basculé sur le compte Claude **{account}**, mais le mode bac à sable Docker est activé et ne monte pas le magasin d'identifiants dans le conteneur."
+unknown = "Compte Claude `{account}` inconnu. Configurés : {known}"

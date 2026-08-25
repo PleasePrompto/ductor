@@ -115,6 +115,7 @@ tokens_line = "Токены: {tokens}"
 cost_line = "Стоимость: ${cost}"
 bg_header = "Фоновые задачи: {count} работают"
 auth_header = "Auth:"
+account_line = "Аккаунт Claude: {account}"
 agents_header = "Агенты:"
 
 # -- Технический футер ---------------------------------------------------------
@@ -461,3 +462,12 @@ async_task_received = "📥 **Async-задача получена** от `{sende
 [effort]
 select = "Выберите уровень рассуждения для {model}:"
 unsupported = "Уровень рассуждения недоступен для провайдера `{provider}`."
+
+[account]
+default_label = "по умолчанию"
+active_line = "**Аккаунт Claude:** {account}"
+none_configured = "Аккаунты Claude не настроены. Добавьте карту `claude_accounts` в config.json, например `{\"work\": \"~/.claude-work\"}`."
+select = "Выберите хранилище учётных данных для авторизации:"
+switched = "Переключено на аккаунт Claude **{account}**. Применится со следующего сообщения — текущую сессию по-прежнему можно продолжить."
+switched_docker_warning = "Переключено на аккаунт Claude **{account}**, но включён режим Docker-песочницы, который не пробрасывает хранилище учётных данных в контейнер."
+unknown = "Неизвестный аккаунт Claude `{account}`. Настроены: {known}"

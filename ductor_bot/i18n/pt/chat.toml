@@ -115,6 +115,7 @@ tokens_line = "Tokens: {tokens}"
 cost_line = "Custo: ${cost}"
 bg_header = "Tarefas em segundo plano: {count} rodando"
 auth_header = "Auth:"
+account_line = "Conta Claude: {account}"
 agents_header = "Agentes:"
 
 # -- Rodapé técnico ------------------------------------------------------------
@@ -461,3 +462,12 @@ async_task_received = "📥 **Tarefa assíncrona recebida** de `{sender}`\nSess�
 [effort]
 select = "Selecione o esforco de raciocinio para {model}:"
 unsupported = "O esforco de raciocinio nao e configuravel para o provedor `{provider}`."
+
+[account]
+default_label = "padrão"
+active_line = "**Conta Claude:** {account}"
+none_configured = "Nenhuma conta Claude configurada. Adicione um mapa `claude_accounts` ao config.json, por ex. `{\"work\": \"~/.claude-work\"}`."
+select = "Escolha o armazenamento de credenciais para autenticar:"
+switched = "Alterado para a conta Claude **{account}**. Vale a partir da próxima mensagem — a sessão atual continua retomável."
+switched_docker_warning = "Alterado para a conta Claude **{account}**, mas o modo sandbox do Docker está ativo e não monta o armazenamento de credenciais no contêiner."
+unknown = "Conta Claude `{account}` desconhecida. Configuradas: {known}"

@@ -8,9 +8,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.auth import check_all_auth
+from ductor_bot.cli.claude_accounts import active_claude_account_dir
 from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
+from ductor_bot.orchestrator.selectors.account_selector import (
+    account_selector_start,
+    switch_account,
+)
 from ductor_bot.orchestrator.selectors.cron_selector import cron_selector_start
 from ductor_bot.orchestrator.selectors.model_selector import (
     effort_selector_start,
@@ -72,6 +77,16 @@ async def cmd_effort(orch: Orchestrator, key: SessionKey, _text: str) -> Orchest
     logger.info("Effort requested")
     resp = await effort_selector_start(orch, key)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_account(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /account [name]: show or switch the Claude credential store."""
+    logger.info("Account requested")
+    parts = text.split(None, 1)
+    if len(parts) < 2:
+        resp = account_selector_start(orch)
+        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+    return OrchestratorResult(text=await switch_account(orch, parts[1].strip()))
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
@@ -356,11 +371,17 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             bg_lines.append(f"  `{bg_t.task_id}` {bg_t.prompt[:40]}... ({age:.0f}s)")
         bg_block = "\n".join(bg_lines)
 
-    auth = await asyncio.to_thread(check_all_auth)
+    auth = await asyncio.to_thread(check_all_auth, active_claude_account_dir(orch._config))
     auth_lines: list[str] = []
     for provider, result in auth.items():
         age_label = f" ({result.age_human})" if result.age_human else ""
         auth_lines.append(f"  [{provider}] {result.status.value}{age_label}")
+    # Which Claude subscription the next turn will spend. Only shown when more
+    # than one credential store is configured, since otherwise there is nothing
+    # to disambiguate.
+    if orch._config.claude_accounts:
+        active = orch._config.claude_account or t("account.default_label")
+        auth_lines.append(f"  {t('status.account_line', account=active)}")
     auth_block = t("status.auth_header") + "\n" + "\n".join(auth_lines)
 
     streaming_cfg = orch._config.streaming

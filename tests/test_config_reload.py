@@ -240,3 +240,43 @@ class TestConfigReloader:
 
         await reloader._check()
         on_hot.assert_not_called()
+
+
+class TestHotReloadPreservesServiceConfig:
+    """A hot reload rebuilds CLIServiceConfig; fields omitted there are silently
+    lost. Editing an account field enters that same branch, so these guard the
+    two regressions that shipped alongside it."""
+
+    def test_account_fields_are_hot_reloadable(self) -> None:
+        old = _make_config()
+        new = _make_config(claude_accounts={"work": "~/.claude-work"}, claude_account="work")
+        hot, restart = classify_changes(diff_configs(old, new))
+        assert "claude_accounts" in hot
+        assert "claude_account" in hot
+        assert not restart
+
+    def test_rebuild_sets_every_field_the_initial_construction_sets(self) -> None:
+        """Compares the two CLIServiceConfig call sites structurally.
+
+        The hot-reload rebuild had been missing grok_cli_parameters, agent_name
+        and interagent_port, so editing any hot field silently cleared the Grok
+        flags and demoted a sub-agent to "main" on the default port. Any future
+        field added to construction but not to the rebuild fails here.
+        """
+        import ast
+
+        from ductor_bot.orchestrator import core
+
+        tree = ast.parse(Path(core.__file__).read_text(encoding="utf-8"))
+        call_sites = [
+            {kw.arg for kw in node.keywords if kw.arg}
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "CLIServiceConfig"
+        ]
+        assert len(call_sites) == 2, "expected construction + hot-reload rebuild"
+
+        initial, rebuild = call_sites
+        missing = initial - rebuild
+        assert not missing, f"hot reload drops: {sorted(missing)}"
