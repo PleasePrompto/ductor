@@ -111,13 +111,17 @@ def skills_group(_orch: Orchestrator, index: int) -> SelectorResponse:
         if s.description:
             lines.append(f"  {_short(s.description)}")
 
+    # Telegram uses copy_text (the Bot API makes the two mutually exclusive), but
+    # Matrix renders buttons as reactions and Slack has no clipboard button at
+    # all. Those transports fall back to callback_data, so each button needs its own
+    # payload or every skill in the group would trigger the same action.
     buttons = [
         Button(
             text=f"{s.name}{' 🔒' if s.slash_only else ''}",
-            callback_data=f"{SK_PREFIX}g:{index}",  # unused; copy_text takes precedence
+            callback_data=f"{SK_PREFIX}s:{index}:{i}",
             copy_text=f"{s.command} ",
         )
-        for s in members
+        for i, s in enumerate(members)
     ]
     rows = [buttons[i : i + _SKILLS_PER_ROW] for i in range(0, len(buttons), _SKILLS_PER_ROW)]
     rows.append([Button(text=t("skills.btn_back"), callback_data=f"{SK_PREFIX}{_ROOT}")])
@@ -161,13 +165,44 @@ def skill_detail(_orch: Orchestrator, name: str) -> SelectorResponse:
     return SelectorResponse(text="\n".join(lines), buttons=buttons)
 
 
+def skill_detail_at(_orch: Orchestrator, group_index: int, skill_index: int) -> SelectorResponse:
+    """Detail view for one skill, addressed by group and position.
+
+    Indexes rather than names keep callback_data well inside Telegram's 64-byte
+    limit regardless of how long a skill is called.
+    """
+    skills = _catalog()
+    groups = list(group_counts(skills))
+    if not 0 <= group_index < len(groups):
+        return skills_root(_orch)
+    members = [s for s in skills if s.group == groups[group_index]]
+    if not 0 <= skill_index < len(members):
+        return skills_group(_orch, group_index)
+    return skill_detail(_orch, members[skill_index].name)
+
+
 def handle_skills_callback(orch: Orchestrator, data: str) -> SelectorResponse:
-    """Route an ``sk:*`` callback."""
+    """Route an ``sk:*`` callback.
+
+    ``sk:g:<group>`` opens a group, ``sk:s:<group>:<skill>`` opens one skill.
+    Malformed or out-of-range payloads fall back rather than raising.
+    """
     payload = data[len(SK_PREFIX) :]
+
+    if payload.startswith("s:"):
+        parts = payload[2:].split(":")
+        try:
+            group_index, skill_index = int(parts[0]), int(parts[1])
+        except (IndexError, ValueError):
+            logger.debug("Bad skills payload: %r", payload)
+            return skills_root(orch)
+        return skill_detail_at(orch, group_index, skill_index)
+
     if payload.startswith("g:"):
         raw = payload[2:]
         try:
             return skills_group(orch, int(raw))
         except ValueError:
             logger.debug("Bad skills group index: %r", raw)
+
     return skills_root(orch)
