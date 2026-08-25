@@ -141,7 +141,8 @@ def _build_help_text() -> str:
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
-        f"{_help_line('showfiles')}\n{_help_line('info')}\n{_help_line('help')}",
+        f"{_help_line('showfiles')}\n{_help_line('skills')}\n"
+        f"{_help_line('info')}\n{_help_line('help')}",
         f"{t('help.cat_maintenance')}\n{_help_line('diagnose')}\n{_help_line('upgrade')}\n{_help_line('restart')}",
         SEP,
         t("help.footer"),
@@ -412,6 +413,7 @@ class TelegramBot:
             "model",
             "effort",
             "account",
+            "skills",
             "cron",
             "diagnose",
             "upgrade",
@@ -1222,11 +1224,19 @@ class TelegramBot:
             else:
                 await self._handle_non_streaming(msg, key, data, thread_id=thread_id)
 
-    async def _route_special_callback(
+    async def _route_special_callback(  # noqa: PLR0911
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> bool:
         """Handle known callback namespaces. Returns True when handled."""
         if await self._route_prefix_callback(key, message_id, data, thread_id=thread_id):
+            return True
+
+        from ductor_bot.orchestrator.selectors.skills_selector import (
+            is_skills_selector_callback,
+        )
+
+        if is_skills_selector_callback(data):
+            await self._handle_skills_selector(key, message_id, data)
             return True
 
         from ductor_bot.orchestrator.selectors.account_selector import (
@@ -1291,6 +1301,13 @@ class TelegramBot:
 
         async with self._sequential.get_lock(key.lock_key):
             resp = await handle_model_callback(self._orch, key, data)
+        await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+
+    async def _handle_skills_selector(self, key: SessionKey, message_id: int, data: str) -> None:
+        """Handle the skills browser by editing the message in-place."""
+        from ductor_bot.orchestrator.selectors.skills_selector import handle_skills_callback
+
+        resp = handle_skills_callback(self._orch, data)
         await edit_selector_response(self._bot, key.chat_id, message_id, resp)
 
     async def _handle_account_selector(self, key: SessionKey, message_id: int, data: str) -> None:

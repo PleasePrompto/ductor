@@ -39,6 +39,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_reset,
     cmd_reset_current,
     cmd_sessions,
+    cmd_skills,
     cmd_status,
     cmd_tasks,
     cmd_upgrade,
@@ -454,6 +455,8 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/skills", cmd_skills)
+        reg.register_async("/skills ", cmd_skills)
         reg.register_async("/account", cmd_account)
         reg.register_async("/account ", cmd_account)
         reg.register_async("/memory", cmd_memory)

@@ -24,6 +24,7 @@ from ductor_bot.orchestrator.selectors.model_selector import (
 )
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
+from ductor_bot.orchestrator.selectors.skills_selector import skill_detail, skills_root
 from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
 from ductor_bot.text.response_format import SEP, fmt, new_session_text
 from ductor_bot.workspace.loader import read_mainmemory
@@ -87,6 +88,14 @@ async def cmd_account(orch: Orchestrator, _key: SessionKey, text: str) -> Orches
         resp = account_selector_start(orch)
         return OrchestratorResult(text=resp.text, buttons=resp.buttons)
     return OrchestratorResult(text=await switch_account(orch, parts[1].strip()))
+
+
+async def cmd_skills(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /skills [name]: browse skills by plugin, or show one in full."""
+    logger.info("Skills requested")
+    parts = text.split(None, 1)
+    resp = skill_detail(orch, parts[1]) if len(parts) > 1 else skills_root(orch)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
 async def cmd_memory(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:

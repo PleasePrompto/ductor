@@ -39,6 +39,7 @@ async def route_callback(  # noqa: PLR0911
 
     Shared prefixes (handled here):
 
+    * ``sk:``  -- skills browser
     * ``acc:`` -- Claude account selector
     * ``ms:`` -- model selector
     * ``crn:`` -- cron selector
@@ -71,10 +72,18 @@ async def route_callback(  # noqa: PLR0911
         handle_session_callback,
         is_session_selector_callback,
     )
+    from ductor_bot.orchestrator.selectors.skills_selector import (
+        handle_skills_callback,
+        is_skills_selector_callback,
+    )
     from ductor_bot.orchestrator.selectors.task_selector import (
         handle_task_callback,
         is_task_selector_callback,
     )
+
+    if is_skills_selector_callback(callback_data):
+        resp = handle_skills_callback(orch, callback_data)
+        return CallbackResult(text=resp.text, buttons=resp.buttons)
 
     if is_account_selector_callback(callback_data):
         resp = await handle_account_callback(orch, callback_data)
