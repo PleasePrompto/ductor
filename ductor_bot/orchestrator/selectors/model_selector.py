@@ -14,9 +14,11 @@ from ductor_bot.config import (
     CLAUDE_SUPPORTED_EFFORTS,
     CODEX_SUPPORTED_EFFORTS_FALLBACK,
     GROK_SUPPORTED_EFFORTS,
+    OMP_SUPPORTED_EFFORTS,
     get_antigravity_models,
     get_gemini_models,
     get_grok_models_ordered,
+    get_omp_models_ordered,
     update_config_file_async,
 )
 from ductor_bot.i18n import t
@@ -107,22 +109,24 @@ def _build_switch_summary(ctx: _SwitchSummaryContext) -> str:
 def _supported_efforts(orch: Orchestrator, model_id: str) -> tuple[str, ...]:
     """Return the reasoning-effort levels supported by *model_id*'s provider.
 
-    Claude accepts a fixed set (incl. ``max``). Codex uses the live model
-    cache when available, else a fallback constant so ``max`` is still
-    rejected. Other providers don't use reasoning effort.
+    Codex delegates to the live Codex cache (per-model); Claude and Grok
+    use static tuples; others have no notion of effort.
     """
-    provider = orch.models.provider_for(model_id)
+    provider = orch._providers.models.provider_for(model_id)
     if provider == "claude":
         return CLAUDE_SUPPORTED_EFFORTS
     if provider == "grok":
         return GROK_SUPPORTED_EFFORTS
+    if provider == "omp":
+        return OMP_SUPPORTED_EFFORTS
     if provider == "codex":
         codex_cache = (
             orch._observers.codex_cache_obs.get_cache() if orch._observers.codex_cache_obs else None
         )
-        model_info = codex_cache.get_model(model_id) if codex_cache else None
-        if model_info is not None:
-            return tuple(model_info.supported_efforts)
+        if codex_cache:
+            info = codex_cache.get_model(model_id)
+            if info and info.supported_efforts:
+                return info.supported_efforts
         return CODEX_SUPPORTED_EFFORTS_FALLBACK
     return ()
 
@@ -252,6 +256,8 @@ async def model_selector_start(
         buttons.append(Button(text="ANTIGRAVITY", callback_data="ms:p:antigravity"))
     if "grok" in authed:
         buttons.append(Button(text="GROK BUILD", callback_data="ms:p:grok"))
+    if "omp" in authed:
+        buttons.append(Button(text="OH MY PI", callback_data="ms:p:omp"))
 
     provider_rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     keyboard = ButtonGrid(rows=provider_rows)
@@ -569,15 +575,18 @@ async def _build_model_step(
     codex_cache: CodexModelCache | None = None,
 ) -> SelectorResponse:
     """Build the model selection keyboard for a provider."""
-    if provider in ("claude", "grok"):
+    if provider in ("claude", "grok", "omp"):
         if provider == "claude":
             buttons = [
                 Button(text=m.upper(), callback_data=f"ms:m:{m}") for m in CLAUDE_MODELS_ORDERED
             ]
             prompt = t("model.select_claude")
-        else:
+        elif provider == "grok":
             buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in get_grok_models_ordered()]
             prompt = t("model.select_grok")
+        else:
+            buttons = [Button(text=m, callback_data=f"ms:m:{m}") for m in get_omp_models_ordered()]
+            prompt = t("model.select_omp")
         keyboard = ButtonGrid(
             rows=[
                 *_rows_of(buttons),

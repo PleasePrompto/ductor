@@ -113,6 +113,7 @@ class CLIServiceConfig:
     gemini_cli_parameters: tuple[str, ...] = ()
     antigravity_cli_parameters: tuple[str, ...] = ()
     grok_cli_parameters: tuple[str, ...] = ()
+    omp_cli_parameters: tuple[str, ...] = ()
     agent_name: str = "main"
     interagent_port: int = 8799
     # External transcription hooks (#66) — empty strings keep built-in strategies.
@@ -129,6 +130,8 @@ class CLIServiceConfig:
             return list(self.antigravity_cli_parameters)
         if provider == "grok":
             return list(self.grok_cli_parameters)
+        if provider == "omp":
+            return list(self.omp_cli_parameters)
         return list(self.claude_cli_parameters)
 
 

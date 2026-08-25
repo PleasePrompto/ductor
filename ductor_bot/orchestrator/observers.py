@@ -23,12 +23,14 @@ from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_cache_observer import CodexCacheObserver
 from ductor_bot.cli.gemini_cache_observer import GeminiCacheObserver
 from ductor_bot.cli.grok_cache_observer import GrokCacheObserver
+from ductor_bot.cli.omp_cache_observer import OmpCacheObserver
 from ductor_bot.cli.service import CLIService
 from ductor_bot.config import (
     AgentConfig,
     get_antigravity_models,
     get_gemini_models,
     get_grok_models,
+    get_omp_models,
 )
 from ductor_bot.config_reload import ConfigReloader
 from ductor_bot.cron.manager import CronManager
@@ -61,6 +63,7 @@ class ObserverManager:
         self.gemini_cache_obs: GeminiCacheObserver | None = None
         self.antigravity_cache_obs: AntigravityCacheObserver | None = None
         self.grok_cache_obs: GrokCacheObserver | None = None
+        self.omp_cache_obs: OmpCacheObserver | None = None
 
         self._config_reloader: ConfigReloader | None = None
         self._rule_sync_task: asyncio.Task[None] | None = None
@@ -68,15 +71,16 @@ class ObserverManager:
 
     # -- Model cache initialization -------------------------------------------
 
-    async def init_model_caches(
+    async def init_model_caches(  # noqa: C901, PLR0912
         self,
         *,
         installed_providers: frozenset[str],
         on_gemini_refresh: Callable[[tuple[str, ...]], None],
         on_antigravity_refresh: Callable[[tuple[str, ...]], None],
         on_grok_refresh: Callable[[tuple[str, ...]], None],
+        on_omp_refresh: Callable[[tuple[str, ...]], None],
     ) -> CodexModelCache:
-        """Start Gemini, Antigravity, Grok, and Codex cache observers, return Codex cache.
+        """Start Gemini, Antigravity, Grok, Omp and Codex cache observers, return Codex cache.
 
         *installed_providers* comes from the startup auth detection, which is
         fallback-aware (e.g. finds a Gemini CLI installed under NVM that plain
@@ -117,6 +121,17 @@ class ObserverManager:
                 logger.warning("Grok cache is empty after startup")
         else:
             logger.debug("Grok CLI not found; cache observer disabled")
+
+        if "omp" in installed_providers:
+            omp_cache_path = self._paths.config_path.parent / "omp_models.json"
+            omp_observer = OmpCacheObserver(omp_cache_path, on_refresh=on_omp_refresh)
+            await omp_observer.start()
+            self.omp_cache_obs = omp_observer
+
+            if not get_omp_models():
+                logger.warning("Omp cache is empty after startup")
+        else:
+            logger.debug("Omp CLI not found; cache observer disabled")
 
         codex_cache: CodexModelCache | None = None
         if "codex" in installed_providers:
@@ -208,6 +223,7 @@ class ObserverManager:
             "gemini_cache_obs",
             "antigravity_cache_obs",
             "grok_cache_obs",
+            "omp_cache_obs",
         )
         for attr in cache_observer_attrs:
             observer = getattr(self, attr)

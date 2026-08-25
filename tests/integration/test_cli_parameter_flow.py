@@ -62,9 +62,11 @@ def test_main_agent_claude_parameters() -> None:
     assert cmd[separator_idx + 1] == "test prompt"
 
 
-def test_main_agent_codex_parameters() -> None:
+def test_main_agent_codex_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
     """Should pass Codex-specific CLI parameters to Codex provider."""
     from ductor_bot.cli.codex_provider import CodexCLI
+
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
 
     config = CLIConfig(
         provider="codex",
@@ -98,8 +100,9 @@ def test_main_agent_codex_parameters() -> None:
     assert "test prompt" not in cmd
 
 
-def test_parameter_isolation() -> None:
+def test_parameter_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Should not leak Claude parameters to Codex and vice versa."""
+    monkeypatch.setattr("ductor_bot.cli.codex_provider.which", lambda _: "/usr/bin/codex")
     from ductor_bot.cli.claude_provider import ClaudeCodeCLI
     from ductor_bot.cli.codex_provider import CodexCLI
 

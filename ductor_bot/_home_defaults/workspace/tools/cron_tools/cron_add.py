@@ -56,7 +56,7 @@ OPTIONAL:
                   If config has no user_timezone either, falls back to UTC.
 
 EXECUTION OVERRIDES (optional, override global config for this specific job):
-  --provider          CLI provider: 'claude', 'codex', or 'gemini' (defaults to global config)
+  --provider          CLI provider: 'claude', 'codex', 'gemini', 'antigravity', 'grok', or 'omp' (defaults to global config)
   --model             Model name (e.g. 'opus', 'sonnet', 'gpt-5.4')
   --reasoning-effort  Thinking level for Codex: 'low', 'medium', 'high', 'xhigh'
   --cli-parameters    Additional CLI flags as JSON array (e.g. '["--chrome"]' for Claude only)

@@ -38,7 +38,7 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 
 _SKILL_SYNC_INTERVAL = 30.0
 _MANAGED_MARKER = ".ductor_managed"
-_SYNCABLE_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok"})
+_SYNCABLE_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok", "omp"})
 
 
 def _load_skill_sync_config(config_path: Path) -> tuple[bool, frozenset[str]]:

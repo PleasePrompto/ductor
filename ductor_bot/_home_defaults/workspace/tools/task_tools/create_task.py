@@ -10,7 +10,7 @@ Usage:
 
 Options:
     --name NAME        Human-readable task name (e.g. "Flugsuche Paris")
-    --provider PROV    Override provider (claude, codex, gemini, antigravity)
+    --provider PROV    Override provider (claude, codex, gemini, antigravity, grok, omp)
     --model MODEL      Override model (opus, sonnet, flash, etc.)
     --thinking LEVEL   Reasoning effort for codex (low, medium, high)
     --priority LEVEL   Scheduling priority (interactive|background|batch)

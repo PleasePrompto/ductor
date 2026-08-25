@@ -517,12 +517,86 @@ def _grok_cli_logged_in(binary: str) -> bool:
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
+def _omp_cli_logged_in(binary: str) -> bool:
+    """Run ``omp models --json`` and return True when it lists models."""
+    try:
+        proc = subprocess.run(
+            [binary, "models", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=_CREATION_FLAGS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.debug("Omp CLI auth probe failed: %s", exc)
+        return False
+
+    if proc.returncode != 0:
+        return False
+    try:
+        import json as _json
+
+        data = _json.loads(proc.stdout)
+    except Exception:
+        return False
+    models = data.get("models") if isinstance(data, dict) else None
+    return isinstance(models, list) and len(models) > 0
+
+
+def check_omp_auth() -> AuthResult:
+    """Check Oh My Pi CLI auth via ``~/.omp/agent/agent.db`` or CLI probe."""
+    try:
+        default_home = str(Path.home())
+    except (RuntimeError, OSError):
+        logger.debug("Omp auth: home directory unresolvable; treating as NOT_FOUND")
+        return AuthResult("omp", AuthStatus.NOT_FOUND)
+
+    binary = shutil.which("omp")
+    # Primary marker: agent.db exists and is non-empty
+    omp_agent_db = Path(default_home) / ".omp" / "agent" / "agent.db"
+    if omp_agent_db.is_file() and omp_agent_db.stat().st_size > 0:
+        mtime = datetime.fromtimestamp(omp_agent_db.stat().st_mtime, tz=UTC)
+        result = AuthResult("omp", AuthStatus.AUTHENTICATED, omp_agent_db, mtime)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    # Env-key fallback: any known provider key suggests an authenticated stack
+    if any(
+        _has_nonempty_env(k)
+        for k in (
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENROUTER_API_KEY",
+        )
+    ):
+        result = AuthResult("omp", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (env key)", result.provider, result.status)
+        return result
+
+    if binary is not None and _omp_cli_logged_in(binary):
+        result = AuthResult("omp", AuthStatus.AUTHENTICATED)
+        logger.debug("Auth check provider=%s status=%s (cli)", result.provider, result.status)
+        return result
+
+    if binary is not None:
+        result = AuthResult("omp", AuthStatus.INSTALLED)
+        logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+        return result
+
+    result = AuthResult("omp", AuthStatus.NOT_FOUND)
+    logger.debug("Auth check provider=%s status=%s", result.provider, result.status)
+    return result
+
+
 _CHECKERS: dict[str, Callable[[], AuthResult]] = {
     "claude": check_claude_auth,
     "codex": check_codex_auth,
     "gemini": check_gemini_auth,
     "antigravity": check_antigravity_auth,
     "grok": check_grok_auth,
+    "omp": check_omp_auth,
 }
 
 

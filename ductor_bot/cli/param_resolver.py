@@ -17,10 +17,12 @@ from ductor_bot.config import (
     CLAUDE_SUPPORTED_EFFORTS,
     GROK_MODELS,
     GROK_SUPPORTED_EFFORTS,
+    OMP_MODELS,
+    OMP_SUPPORTED_EFFORTS,
     get_gemini_models,
 )
 
-_TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok"})
+_TASK_PROVIDERS: frozenset[str] = frozenset({"claude", "codex", "gemini", "grok", "omp"})
 
 
 def _looks_like_gemini_model(model: str) -> bool:
@@ -119,6 +121,10 @@ def _resolve_reasoning_effort(
         return _static_effort(
             requested_effort, GROK_SUPPORTED_EFFORTS, "Grok", model, explicit=explicit
         )
+    if provider == "omp":
+        return _static_effort(
+            requested_effort, OMP_SUPPORTED_EFFORTS, "Omp", model, explicit=explicit
+        )
 
     if provider == "codex" and codex_cache:
         model_info = codex_cache.get_model(model)
@@ -189,6 +195,17 @@ def resolve_cli_config(
             msg = (
                 f"Invalid Grok model: {model}. Must be one of {sorted(known)} or a grok-* model ID"
             )
+            raise DuctorError(msg)
+    elif provider == "omp":
+        from ductor_bot.config import get_omp_models
+
+        known_omp = OMP_MODELS | get_omp_models()
+        if (
+            model not in known_omp
+            and "/" not in model
+            and not model.startswith(("claude-", "gpt-", "gemini-", "openai/"))
+        ):
+            msg = f"Invalid Omp model: {model}. Must be one of {sorted(known_omp)} or a selector like provider/model"
             raise DuctorError(msg)
     else:  # codex
         if codex_cache is None:

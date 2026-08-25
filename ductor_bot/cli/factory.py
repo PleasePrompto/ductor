@@ -32,6 +32,11 @@ def create_cli(config: CLIConfig) -> BaseCLI:
 
         return GrokCLI(config)
 
+    if config.provider == "omp":
+        from ductor_bot.cli.omp_provider import OmpCLI
+
+        return OmpCLI(config)
+
     from ductor_bot.cli.claude_provider import ClaudeCodeCLI
 
     return ClaudeCodeCLI(config)

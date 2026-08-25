@@ -43,7 +43,7 @@ CHANGES:
   --description "<text>"     Update metadata description
   --schedule "<cron-expr>"   Update execution schedule
   --timezone "<iana>"        Set per-job timezone override (e.g. 'Europe/Berlin')
-  --provider "<name>"        Set provider override ('claude', 'codex', 'gemini')
+  --provider "<name>"        Set provider override ('claude', 'codex', 'gemini', 'antigravity', 'grok', or 'omp')
   --model "<model-id>"       Set model override (e.g. 'opus', 'gpt-5.4')
   --reasoning-effort <lvl>   Set Codex thinking level (low, medium, high, xhigh)
   --cli-parameters "<json>"  Set extra CLI flags as JSON array
