@@ -130,7 +130,7 @@ class TestDirectoryNavigation:
 
     @pytest.mark.asyncio
     async def test_navigation_row_is_identical_at_every_depth(self, paths: DuctorPaths) -> None:
-        """Back and Locations both show everywhere, including at a root.
+        """Back and Home both show everywhere, including at a root.
 
         They lead to the same place at a root, which is a cheaper cost than a
         row whose buttons move around depending on how deep you are.
@@ -139,7 +139,7 @@ class TestDirectoryNavigation:
             action = await _open(paths, target)
             labels = [b.text for b in _buttons(action.keyboard)]
             assert sum("Back" in x for x in labels) == 1
-            assert sum("Locations" in x for x in labels) == 1
+            assert sum("Home" in x for x in labels) == 1
 
     @pytest.mark.asyncio
     async def test_nonexistent_directory_falls_back_to_roots(self, paths: DuctorPaths) -> None:
