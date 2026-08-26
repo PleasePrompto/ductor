@@ -1543,9 +1543,10 @@ class TelegramBot:
         resp = persona_selector(self._orch, key, asking=True)
         await self._bot.send_message(
             key.chat_id,
-            resp.text,
+            markdown_to_telegram_html(resp.text),
             reply_markup=button_grid_to_markup(resp.buttons),
             message_thread_id=thread_id,
+            parse_mode=ParseMode.HTML,
         )
         return True
 
@@ -1572,7 +1573,8 @@ class TelegramBot:
             await self._bot.edit_message_text(
                 chat_id=key.chat_id,
                 message_id=message_id,
-                text=t("persona.selected", persona=label),
+                text=markdown_to_telegram_html(t("persona.selected", persona=label)),
+                parse_mode=ParseMode.HTML,
             )
 
         held = self._orch.personas.take(key.storage_key)
