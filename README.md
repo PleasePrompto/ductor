@@ -200,7 +200,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Quoted-reply context** — replying to a message (Telegram) carries the cited text into the agent prompt, so follow-ups like "expand on this" keep their reference
 - **Five coding agents** — Claude Code, Codex CLI, Gemini CLI (API key / Code Assist license; Google ended free individual-account access on 2026-06-18), Antigravity (`agy`), and Grok Build (`grok`), switchable per chat/topic with `/model` (never blocks, even during active processes)
 - **Per-topic project roots** — map a forum topic to its own working directory (`project_roots`) so the agent runs inside that repo instead of the shared workspace
-- **Personas** — when `persona_prompt` is on, a new conversation asks which of your Claude Code agents should handle it and holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`. Nothing is inferred and there is no default; installations without agents never see the prompt
+- **Personas** — when `persona_prompt` is on, a conversation that has not chosen a persona asks which of your Claude Code agents should handle it, holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`; `/new` and `/reset` clear it. Nothing is inferred and there is no default; installations without agents never see the prompt
 - **Persistent memory** — plain Markdown files that survive across sessions
 - **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
 - **Cron jobs** — in-process scheduler with timezone support, per-job overrides, optional silent-on-success, result routing to originating chat

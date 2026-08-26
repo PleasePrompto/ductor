@@ -129,10 +129,14 @@ they stay consistent.
 A persona is a Claude Code agent — a Markdown file in `<config>/agents/` — and
 `--agent <name>` is what loads its definition for a run.
 
-With `persona_prompt` enabled, the first message of a new conversation is held,
-the available personas are offered as buttons, and the held message runs once
-one is chosen. `/persona` changes it at any point; `/new` and `/reset` clear it,
-so the next conversation chooses again.
+With `persona_prompt` enabled, the first message of a conversation that has not
+yet chosen a persona is held, the available personas are offered as buttons, and
+the held message runs once one is chosen. `/persona` changes it at any point;
+`/new` and `/reset` clear it, so the next conversation chooses again.
+
+Having answered is the only thing that stops the question, so conversations that
+predate the setting are asked once as you return to them rather than being left
+without a persona forever.
 
 ```json
 { "persona_prompt": true }
