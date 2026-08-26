@@ -27,6 +27,16 @@ from typing import TYPE_CHECKING
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from ductor_bot.files.browser import list_directory
+from ductor_bot.files.git_status import (
+    pending_commits,
+    read_state,
+)
+from ductor_bot.files.git_status import (
+    pull as git_pull,
+)
+from ductor_bot.files.git_status import (
+    push as git_push,
+)
 from ductor_bot.files.path_tokens import path_for, token_for
 from ductor_bot.files.roots import browsable_roots, contains, label_for
 from ductor_bot.i18n import t
@@ -41,6 +51,11 @@ SF_PREFIX = "sf:"
 SF_FILE_PREFIX = "sf!"
 SF_ZIP_PREFIX = "sf@"
 SF_ASK_PREFIX = "sf?"
+SF_PULL_PREFIX = "sf<"
+SF_PUSH_PREFIX = "sf>"
+#: Push is confirmed before it runs: the tap that authorises it should be made
+#: against a list of what will be published, not a bare count.
+SF_PUSH_CONFIRM_PREFIX = "sf!!"
 
 _MAX_BUTTONS_PER_ROW = 3
 #: Telegram refuses bot uploads past 50 MB; stop before building the archive
@@ -62,7 +77,17 @@ class BrowserAction:
 
 def is_file_browser_callback(data: str) -> bool:
     """Return True if *data* belongs to the file browser."""
-    return data.startswith((SF_PREFIX, SF_FILE_PREFIX, SF_ZIP_PREFIX, SF_ASK_PREFIX))
+    return data.startswith(
+        (
+            SF_PREFIX,
+            SF_FILE_PREFIX,
+            SF_ZIP_PREFIX,
+            SF_ASK_PREFIX,
+            SF_PULL_PREFIX,
+            SF_PUSH_PREFIX,
+            SF_PUSH_CONFIRM_PREFIX,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +118,16 @@ async def handle_file_browser_callback(
 
 def _parse(data: str) -> tuple[str, str] | None:
     """Split callback data into ``(prefix, token)``."""
-    for prefix in (SF_FILE_PREFIX, SF_ZIP_PREFIX, SF_ASK_PREFIX, SF_PREFIX):
+    # SF_PUSH_CONFIRM_PREFIX starts with SF_FILE_PREFIX, so it must be tried first.
+    for prefix in (
+        SF_PUSH_CONFIRM_PREFIX,
+        SF_FILE_PREFIX,
+        SF_ZIP_PREFIX,
+        SF_ASK_PREFIX,
+        SF_PULL_PREFIX,
+        SF_PUSH_PREFIX,
+        SF_PREFIX,
+    ):
         if data.startswith(prefix):
             return prefix, data[len(prefix) :]
     return None
@@ -134,11 +168,78 @@ def _open_action(
     return BrowserAction(text=text, keyboard=kb)
 
 
+def _pull_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
+) -> BrowserAction:
+    state = read_state(target)
+    if state is None or not state.has_upstream:
+        return _open_action(paths, project_roots, target)
+    ok, output = git_pull(state)
+    key = "file_browser.pull_ok" if ok else "file_browser.pull_failed"
+    return _with_notice(paths, project_roots, target, t(key, output=_trim(output)))
+
+
+def _push_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
+) -> BrowserAction:
+    """Show what a push would publish and ask for confirmation."""
+    state = read_state(target)
+    if state is None or not state.has_upstream:
+        return _open_action(paths, project_roots, target)
+    if not state.can_push:
+        return _with_notice(paths, project_roots, target, t("file_browser.push_nothing"))
+
+    commits = "\n".join(f"  {line}" for line in pending_commits(state))
+    text, _ = _build_dir_view(paths, project_roots, target)
+    confirm = [
+        InlineKeyboardButton(
+            text=t("file_browser.btn_push_confirm", count=state.ahead),
+            callback_data=f"{SF_PUSH_CONFIRM_PREFIX}{token_for(target)}",
+        ),
+        InlineKeyboardButton(
+            text=t("file_browser.btn_cancel"),
+            callback_data=f"{SF_PREFIX}{token_for(target)}",
+        ),
+    ]
+    body = t("file_browser.push_confirm", branch=state.branch, count=state.ahead)
+    return BrowserAction(
+        text=f"{text}\n\n{body}\n{commits}",
+        keyboard=InlineKeyboardMarkup(inline_keyboard=[confirm]),
+    )
+
+
+def _push_confirmed_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
+) -> BrowserAction:
+    state = read_state(target)
+    if state is None or not state.can_push:
+        return _open_action(paths, project_roots, target)
+    ok, output = git_push(state)
+    key = "file_browser.push_ok" if ok else "file_browser.push_failed"
+    return _with_notice(paths, project_roots, target, t(key, output=_trim(output)))
+
+
+def _with_notice(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, notice: str
+) -> BrowserAction:
+    """Re-render the directory with a result line appended."""
+    text, kb = _build_dir_view(paths, project_roots, target)
+    return BrowserAction(text=f"{text}\n\n{notice}", keyboard=kb)
+
+
+def _trim(output: str, limit: int = 400) -> str:
+    output = output.strip()
+    return output if len(output) <= limit else output[: limit - 1] + "…"
+
+
 _ACTIONS = {
     SF_ASK_PREFIX: _ask_action,
     SF_FILE_PREFIX: _send_file_action,
     SF_ZIP_PREFIX: _zip_action,
     SF_PREFIX: _open_action,
+    SF_PULL_PREFIX: _pull_action,
+    SF_PUSH_PREFIX: _push_action,
+    SF_PUSH_CONFIRM_PREFIX: _push_confirmed_action,
 }
 
 
@@ -246,7 +347,61 @@ def _build_dir_view(
             ),
         ]
     )
+
+    git_row, git_line = _git_row(target)
+    if git_row:
+        rows.append(git_row)
+        text = f"{text}\n{git_line}"
+
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _git_row(target: Path) -> tuple[list[InlineKeyboardButton], str]:
+    """Pull/push controls for the repository containing *target*.
+
+    Telegram has no disabled button, so an unavailable action is rendered with
+    a label saying so and a tap that explains rather than acts. Hiding it
+    instead would make the row move around between directories, which is worse
+    to aim at than a button that is present but inert.
+    """
+    state = read_state(target)
+    if state is None:
+        return [], ""
+
+    token = token_for(target)
+    dirty = t("file_browser.git_dirty", count=state.dirty) if state.dirty else ""
+    line = t(
+        "file_browser.git_line",
+        branch=state.branch,
+        ahead=state.ahead,
+        behind=state.known_behind,
+        dirty=dirty,
+    )
+
+    if not state.has_upstream:
+        return [
+            InlineKeyboardButton(
+                text=t("file_browser.btn_no_upstream"),
+                callback_data=f"{SF_PREFIX}{token}",
+            )
+        ], t("file_browser.git_no_upstream", branch=state.branch)
+
+    # behind is only as fresh as the last fetch, so pull stays available and
+    # does the fetching itself; ahead is exact, so push can be inert honestly.
+    pull_label = (
+        t("file_browser.btn_pull_n", count=state.known_behind)
+        if state.known_behind
+        else t("file_browser.btn_pull")
+    )
+    push_label = (
+        t("file_browser.btn_push_n", count=state.ahead)
+        if state.can_push
+        else t("file_browser.btn_push_none")
+    )
+    return [
+        InlineKeyboardButton(text=pull_label, callback_data=f"{SF_PULL_PREFIX}{token}"),
+        InlineKeyboardButton(text=push_label, callback_data=f"{SF_PUSH_PREFIX}{token}"),
+    ], line
 
 
 def _rows(buttons: list[InlineKeyboardButton]) -> list[list[InlineKeyboardButton]]:
