@@ -1533,11 +1533,10 @@ class TelegramBot:
 
         if not self._config.persona_prompt:
             return False
+        # Having answered is the only thing that stops the question. Gating on
+        # "no active session" as well left every conversation that predates the
+        # feature unable to ever be asked, and /new already clears the choice.
         if self._orch.personas.has_choice(key.storage_key):
-            return False
-        # Only at the start of a conversation. Mid-conversation switching is
-        # done deliberately through /persona.
-        if await self._orch._sessions.get_active(key) is not None:
             return False
 
         self._orch.personas.hold(key.storage_key, text)
