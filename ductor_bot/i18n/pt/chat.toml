@@ -424,6 +424,16 @@ explicit = "`/session @provider model <prompt>` — explícito"
 # -- Navegador de arquivos -----------------------------------------------------
 
 [file_browser]
+pick_root = "Escolha um local:"
+no_roots = "Nenhum diretório navegável configurado."
+tap_hint = "Toque numa pasta para abrir, ou num ficheiro para o receber."
+btn_up = "⬆︎ Subir"
+btn_roots = "🏠 Locais"
+btn_zip = "🗜 Enviar pasta como zip"
+btn_ask = "💬 Perguntar ao agente sobre esta pasta"
+too_large = "`{name}` tem {mb} MB — acima do limite de 50 MB do Telegram para bots. Peça ao agente para dividir ou resumir."
+zip_too_large = "Essa pasta é grande demais para enviar como zip. Abra uma subpasta e tente de novo."
+send_failed = "Não foi possível enviar `{name}`."
 header = "**Navegador de Arquivos**"
 directory_not_found = "Diretório não encontrado."
 empty = "(vazio)"

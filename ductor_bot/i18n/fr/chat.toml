@@ -424,6 +424,16 @@ explicit = "`/session @provider model <prompt>` — explicite"
 # -- Explorateur de fichiers ---------------------------------------------------
 
 [file_browser]
+pick_root = "Choisissez un emplacement :"
+no_roots = "Aucun répertoire consultable configuré."
+tap_hint = "Touchez un dossier pour l'ouvrir, ou un fichier pour vous le faire envoyer."
+btn_up = "⬆︎ Remonter"
+btn_roots = "🏠 Emplacements"
+btn_zip = "🗜 Envoyer le dossier en zip"
+btn_ask = "💬 Interroger l'agent sur ce dossier"
+too_large = "`{name}` fait {mb} Mo — au-delà de la limite de 50 Mo de Telegram pour les bots. Demandez à l'agent de le découper ou de le résumer."
+zip_too_large = "Ce dossier est trop volumineux pour un zip. Ouvrez un sous-dossier et réessayez."
+send_failed = "Impossible d'envoyer `{name}`."
 header = "**Explorateur de fichiers**"
 directory_not_found = "Répertoire introuvable."
 empty = "(vide)"

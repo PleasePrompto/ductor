@@ -425,6 +425,16 @@ explicit = "`/session @provider model <prompt>` — explicit"
 # -- File browser --------------------------------------------------------------
 
 [file_browser]
+pick_root = "Choose a location:"
+no_roots = "No browsable directories configured."
+tap_hint = "Tap a folder to open it, or a file to have it sent to you."
+btn_up = "⬆︎ Up"
+btn_roots = "🏠 Locations"
+btn_zip = "🗜 Send folder as zip"
+btn_ask = "💬 Ask the agent about this folder"
+too_large = "`{name}` is {mb} MB — past Telegram's 50 MB limit for bots. Ask the agent to split or summarise it."
+zip_too_large = "That folder is too large to send as a zip. Open a subfolder and try again."
+send_failed = "Could not send `{name}`."
 header = "**File Browser**"
 directory_not_found = "Directory not found."
 empty = "(empty)"
