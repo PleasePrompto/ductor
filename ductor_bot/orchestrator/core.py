@@ -34,6 +34,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_effort,
     cmd_memory,
     cmd_model,
+    cmd_persona,
     cmd_reset,
     cmd_reset_current,
     cmd_sessions,
@@ -61,6 +62,7 @@ from ductor_bot.orchestrator.memory_flush import MemoryFlusher
 from ductor_bot.orchestrator.observers import ObserverManager
 from ductor_bot.orchestrator.providers import ProviderManager
 from ductor_bot.orchestrator.registry import CommandRegistry, OrchestratorResult
+from ductor_bot.personas.store import PersonaStore
 from ductor_bot.security import detect_suspicious_patterns
 from ductor_bot.session import SessionKey, SessionManager
 from ductor_bot.session.manager import SessionData
@@ -169,7 +171,9 @@ class Orchestrator:
             available_providers=frozenset(),
             process_registry=self._process_registry,
         )
+        self._personas = PersonaStore(paths.ductor_home / "personas.json")
         self._cli_service.set_working_dir_resolver(self._resolve_request_working_dir)
+        self._cli_service.set_persona_resolver(self._resolve_request_persona)
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
         self._webhook_manager = WebhookManager(hooks_path=paths.webhooks_path)
         self._observers = ObserverManager(config, paths)
@@ -231,6 +235,20 @@ class Orchestrator:
             topic_id=request.topic_id,
             topic_name=self._sessions.resolve_topic_name(request.chat_id, request.topic_id),
         )
+
+    def _resolve_request_persona(self, request: AgentRequest) -> str:
+        """The persona chosen for this conversation, or "" for none.
+
+        Never inferred: an unanswered conversation returns "" and the transport
+        is responsible for asking rather than picking something plausible.
+        """
+        key = SessionKey.for_transport(request.transport, request.chat_id, request.topic_id)
+        return self._personas.get(key.storage_key) or ""
+
+    @property
+    def personas(self) -> PersonaStore:
+        """Per-conversation persona choices."""
+        return self._personas
 
     @property
     def paths(self) -> DuctorPaths:
@@ -449,6 +467,7 @@ class Orchestrator:
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
         reg.register_async("/memory", cmd_memory)
+        reg.register_async("/persona", cmd_persona)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)

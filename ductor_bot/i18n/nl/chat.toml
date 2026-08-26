@@ -461,3 +461,10 @@ async_task_received = "📥 **Async taak ontvangen** van `{sender}`\nSessie: `{s
 [effort]
 select = "Kies de redeneerinzet voor {model}:"
 unsupported = "Redeneerinzet is niet instelbaar voor provider `{provider}`."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Welke persona moet dit doen?**"
+none_defined = "Geen persona's gedefinieerd. Voeg agentbestanden toe aan je Claude Code-configuratie."
+default_label = "Standaard"
+selected = "Persona: **{persona}**"

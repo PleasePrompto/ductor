@@ -461,3 +461,10 @@ async_task_received = "📥 **Tarea asíncrona recibida** de `{sender}`\nSesión
 [effort]
 select = "Selecciona el esfuerzo de razonamiento para {model}:"
 unsupported = "El esfuerzo de razonamiento no es configurable para el proveedor `{provider}`."
+
+[persona]
+header = "**Persona**"
+ask_header = "**¿Qué persona debe encargarse?**"
+none_defined = "No hay personas definidas. Añade archivos de agente a tu configuración de Claude Code."
+default_label = "Predeterminada"
+selected = "Persona: **{persona}**"

@@ -461,3 +461,10 @@ async_task_received = "📥 **Tarefa assíncrona recebida** de `{sender}`\nSess�
 [effort]
 select = "Selecione o esforco de raciocinio para {model}:"
 unsupported = "O esforco de raciocinio nao e configuravel para o provedor `{provider}`."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Que persona deve tratar disto?**"
+none_defined = "Nenhuma persona definida. Adicione ficheiros de agente à sua configuração do Claude Code."
+default_label = "Padrão"
+selected = "Persona: **{persona}**"
