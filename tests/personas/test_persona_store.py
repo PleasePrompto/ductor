@@ -78,3 +78,20 @@ def test_unreadable_store_degrades_to_asking_again(tmp_path: Path) -> None:
     path = tmp_path / "personas.json"
     path.write_text('["not", "a", "mapping"]')
     assert PersonaStore(path).get("tg:1:2") is None
+
+
+def test_only_an_answer_stops_the_question(tmp_path: Path) -> None:
+    """The recorded answer is the sole gate.
+
+    An earlier version also required "no active session", which meant every
+    conversation that predated the feature could never be asked and so ran
+    without a persona forever.
+    """
+    store = PersonaStore(tmp_path / "personas.json")
+    key = "tg:-100123"
+
+    assert not store.has_choice(key)  # long-running conversation, never asked
+    store.set(key, "coder")
+    assert store.has_choice(key)  # asked once
+    store.clear(key)  # /new
+    assert not store.has_choice(key)  # asked again
