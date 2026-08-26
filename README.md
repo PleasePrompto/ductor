@@ -201,7 +201,8 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Five coding agents** — Claude Code, Codex CLI, Gemini CLI (API key / Code Assist license; Google ended free individual-account access on 2026-06-18), Antigravity (`agy`), and Grok Build (`grok`), switchable per chat/topic with `/model` (never blocks, even during active processes)
 - **Per-topic project roots** — map a forum topic to its own working directory (`project_roots`) so the agent runs inside that repo instead of the shared workspace
 - **File browser over your projects** — `/showfiles` lists `~/.ductor` alongside every directory in `project_roots`, with tap-to-navigate, `Back`/`Home`, breadcrumbs, tap-a-file-to-receive-it, and folder-as-zip. Nested roots collapse into their parent so the picker stays short
-- **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder
+- **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder, and the bot replies with where it put it
+- **Upload into any folder you can browse** — `⬆️ Upload here` opens an upload for the directory you are looking at. Files are staged and listed, overwrites are flagged, and nothing is written until you confirm; `📦 Send a folder (.zip)` unpacks an archive into that listing first. Archives are validated before extraction (no path traversal, no symlink entries, size and entry ceilings), and staging is discarded on cancel and swept daily
 - **Pull and push from the browser** — a directory inside a git repository gains `⤓ Pull` and `⤒ Push`. Push is inert when the branch matches its upstream, and asks for confirmation against the list of commits it would publish. Pull is `--ff-only`, so a divergence is reported rather than merged unnoticed
 - **Persistent memory** — plain Markdown files that survive across sessions
 - **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
@@ -389,7 +390,7 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/sessions` | View/manage active sessions |
 | `/tasks` | View/manage background tasks |
 | `/cron` | Interactive cron management |
-| `/showfiles` | Browse `~/.ductor/` and your configured `project_roots`; send files and folders |
+| `/showfiles` | Browse `~/.ductor/` and your configured `project_roots`; send files and folders, upload into them, pull/push git |
 | `/diagnose` | Runtime diagnostics |
 | `/upgrade` | Check/apply updates |
 | `/agents` | Multi-agent status |

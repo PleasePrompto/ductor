@@ -13,6 +13,11 @@ Callback data:
     ``sf!<token>``     -- send that file
     ``sf@<token>``     -- send that directory as a zip
     ``sf?<token>``     -- ask the agent about that directory
+    ``sf+<token>``     -- open the upload menu for that directory
+    ``sf#<token>``     -- start a file upload into it
+    ``sf%<token>``     -- start a folder (.zip) upload into it
+    ``sf=<token>``     -- move what is staged into it
+    ``sf-<token>``     -- abandon the upload and discard staging
 """
 
 from __future__ import annotations
@@ -39,11 +44,12 @@ from ductor_bot.files.git_status import (
 )
 from ductor_bot.files.path_tokens import path_for, token_for
 from ductor_bot.files.roots import browsable_roots, contains, label_for
+from ductor_bot.files.uploads import Mode, UploadSession, UploadStore, plan
 from ductor_bot.i18n import t
 from ductor_bot.text.response_format import SEP, fmt
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from ductor_bot.workspace.paths import DuctorPaths
 
@@ -56,6 +62,11 @@ SF_PUSH_PREFIX = "sf>"
 #: Push is confirmed before it runs: the tap that authorises it should be made
 #: against a list of what will be published, not a bare count.
 SF_PUSH_CONFIRM_PREFIX = "sf!!"
+SF_UPLOAD_PREFIX = "sf+"
+SF_UPLOAD_FILES_PREFIX = "sf#"
+SF_UPLOAD_FOLDER_PREFIX = "sf%"
+SF_UPLOAD_CONFIRM_PREFIX = "sf="
+SF_UPLOAD_CANCEL_PREFIX = "sf-"
 
 _MAX_BUTTONS_PER_ROW = 3
 #: Telegram refuses bot uploads past 50 MB; stop before building the archive
@@ -73,6 +84,8 @@ class BrowserAction:
     send_path: Path | None = None
     zip_dir: Path | None = None
     agent_prompt: str | None = None
+    #: True when the edited message becomes the one staging is reported into.
+    upload_message: bool = False
 
 
 def is_file_browser_callback(data: str) -> bool:
@@ -86,6 +99,11 @@ def is_file_browser_callback(data: str) -> bool:
             SF_PULL_PREFIX,
             SF_PUSH_PREFIX,
             SF_PUSH_CONFIRM_PREFIX,
+            SF_UPLOAD_PREFIX,
+            SF_UPLOAD_FILES_PREFIX,
+            SF_UPLOAD_FOLDER_PREFIX,
+            SF_UPLOAD_CONFIRM_PREFIX,
+            SF_UPLOAD_CANCEL_PREFIX,
         )
     )
 
@@ -106,9 +124,17 @@ async def handle_file_browser_callback(
     paths: DuctorPaths,
     project_roots: Mapping[str, str],
     data: str,
+    *,
+    uploads: UploadStore | None = None,
+    session_key: str | None = None,
 ) -> BrowserAction:
-    """Route an ``sf`` callback."""
-    return await asyncio.to_thread(_handle, paths, project_roots, data)
+    """Route an ``sf`` callback.
+
+    *uploads* and *session_key* are only needed by the upload actions, which
+    are the sole stateful ones: everything else is a pure function of the path
+    in the callback.
+    """
+    return await asyncio.to_thread(_handle, paths, project_roots, data, uploads, session_key)
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +152,11 @@ def _parse(data: str) -> tuple[str, str] | None:
         SF_ASK_PREFIX,
         SF_PULL_PREFIX,
         SF_PUSH_PREFIX,
+        SF_UPLOAD_PREFIX,
+        SF_UPLOAD_FILES_PREFIX,
+        SF_UPLOAD_FOLDER_PREFIX,
+        SF_UPLOAD_CONFIRM_PREFIX,
+        SF_UPLOAD_CANCEL_PREFIX,
         SF_PREFIX,
     ):
         if data.startswith(prefix):
@@ -253,7 +284,13 @@ _ACTIONS = {
 }
 
 
-def _handle(paths: DuctorPaths, project_roots: Mapping[str, str], data: str) -> BrowserAction:
+def _handle(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    data: str,
+    uploads: UploadStore | None = None,
+    session_key: str | None = None,
+) -> BrowserAction:
     parsed = _parse(data)
     if parsed is None or not parsed[1]:
         return _root_action(paths, project_roots)
@@ -267,6 +304,12 @@ def _handle(paths: DuctorPaths, project_roots: Mapping[str, str], data: str) -> 
     if target is None or not contains(roots, target):
         return _root_action(paths, project_roots)
 
+    if prefix in _UPLOAD_ACTIONS:
+        # Without a session there is nowhere to keep the upload; fall back to
+        # plain navigation rather than opening a mode that cannot work.
+        if uploads is None or session_key is None:
+            return _open_action(paths, project_roots, target)
+        return _UPLOAD_ACTIONS[prefix](paths, project_roots, target, uploads, session_key)
     return _ACTIONS[prefix](paths, project_roots, target)
 
 
@@ -352,6 +395,16 @@ def _build_dir_view(
                 callback_data=f"{SF_ZIP_PREFIX}{token_for(target)}",
             ),
             InlineKeyboardButton(
+                text=t("upload.btn_upload"),
+                callback_data=f"{SF_UPLOAD_PREFIX}{token_for(target)}",
+            ),
+        ]
+    )
+    # "Ask" gets its own row: three long labels on one row squeeze each other
+    # down to a few characters on a phone.
+    rows.append(
+        [
+            InlineKeyboardButton(
                 text=t("file_browser.btn_ask"),
                 callback_data=f"{SF_ASK_PREFIX}{token_for(target)}",
             ),
@@ -412,6 +465,186 @@ def _git_row(target: Path) -> tuple[list[InlineKeyboardButton], str]:
         InlineKeyboardButton(text=pull_label, callback_data=f"{SF_PULL_PREFIX}{token}"),
         InlineKeyboardButton(text=push_label, callback_data=f"{SF_PUSH_PREFIX}{token}"),
     ], line
+
+
+# ---------------------------------------------------------------------------
+# Upload
+# ---------------------------------------------------------------------------
+
+#: Telegram messages die at 4096 characters, and a listing is worth reading
+#: only while it fits on a phone screen anyway.
+_MAX_LISTED_ITEMS = 20
+
+
+
+def _upload_menu_action(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    target: Path,
+    _uploads: UploadStore,
+    _key: str,
+) -> BrowserAction:
+    """Ask what kind of upload this is, rather than guessing from the file.
+
+    A zip meant to be stored and a zip meant to be unpacked are the same bytes;
+    only the sender knows which, so the choice is made before anything arrives.
+    """
+    if not target.is_dir():
+        return _root_action(paths, project_roots)
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("upload.btn_files"),
+                callback_data=f"{SF_UPLOAD_FILES_PREFIX}{token_for(target)}",
+            ),
+            InlineKeyboardButton(
+                text=t("upload.btn_folder"),
+                callback_data=f"{SF_UPLOAD_FOLDER_PREFIX}{token_for(target)}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=t("file_browser.btn_back"),
+                callback_data=f"{SF_PREFIX}{token_for(target)}",
+            )
+        ],
+    ]
+    text = fmt(
+        t("file_browser.header"),
+        SEP,
+        t("upload.menu", dir=_display(paths, project_roots, target)),
+    )
+    return BrowserAction(text=text, keyboard=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def _upload_starter(
+    mode: Mode,
+) -> Callable[[DuctorPaths, Mapping[str, str], Path, UploadStore, str], BrowserAction]:
+    """Build the action that opens an upload in *mode*."""
+
+    def action(
+        paths: DuctorPaths,
+        project_roots: Mapping[str, str],
+        target: Path,
+        uploads: UploadStore,
+        key: str,
+    ) -> BrowserAction:
+        if not target.is_dir():
+            return _root_action(paths, project_roots)
+        uploads.begin(key, target, mode)
+        body = t(
+            "upload.await_files" if mode == "files" else "upload.await_folder",
+            dir=_display(paths, project_roots, target),
+        )
+        return BrowserAction(
+            text=fmt(t("file_browser.header"), SEP, body),
+            keyboard=_staging_keyboard(target, count=0),
+            upload_message=True,
+        )
+
+    return action
+
+
+def _upload_confirm_action(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    target: Path,
+    uploads: UploadStore,
+    key: str,
+) -> BrowserAction:
+    session = uploads.get(key)
+    if session is None:
+        return _open_action(paths, project_roots, target)
+    dest = session.dest
+    moved = uploads.commit(key)
+    notice = (
+        t("upload.moved", count=moved, dir=_display(paths, project_roots, dest))
+        if moved
+        else t("upload.nothing")
+    )
+    # Confirming ends the upload, so this lands back on the folder itself.
+    return _with_notice(paths, project_roots, dest, notice)
+
+
+def _upload_cancel_action(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    target: Path,
+    uploads: UploadStore,
+    key: str,
+) -> BrowserAction:
+    session = uploads.get(key)
+    dest = session.dest if session is not None else target
+    uploads.end(key)
+    return _with_notice(paths, project_roots, dest, t("upload.cancelled"))
+
+
+def build_staging_view(
+    paths: DuctorPaths, project_roots: Mapping[str, str], session: UploadSession
+) -> tuple[str, InlineKeyboardMarkup]:
+    """The list of what is waiting, edited in place as more arrives."""
+    items = plan(session)
+    dest = _display(paths, project_roots, session.dest)
+
+    lines = [
+        "  {}{}".format(
+            item.name,
+            f"  {t('upload.overwrite_marker')}" if item.overwrites else "",
+        )
+        for item in items[:_MAX_LISTED_ITEMS]
+    ]
+    if len(items) > _MAX_LISTED_ITEMS:
+        lines.append(f"  {t('upload.more', count=len(items) - _MAX_LISTED_ITEMS)}")
+    if not items:
+        lines.append(f"  {t('upload.nothing')}")
+
+    body = [t("upload.staging_header", dir=dest), "", *lines]
+    overwrites = sum(1 for item in items if item.overwrites)
+    if overwrites:
+        body += ["", t("upload.overwrite_note", count=overwrites)]
+    if session.errors:
+        body += ["", *session.errors]
+
+    text = fmt(t("file_browser.header"), SEP, "\n".join(body))
+    return text, _staging_keyboard(session.dest, count=len(items))
+
+
+def _staging_keyboard(dest: Path, *, count: int) -> InlineKeyboardMarkup:
+    token = token_for(dest)
+    row = []
+    if count:
+        row.append(
+            InlineKeyboardButton(
+                text=t("upload.btn_confirm", count=count),
+                callback_data=f"{SF_UPLOAD_CONFIRM_PREFIX}{token}",
+            )
+        )
+    row.append(
+        InlineKeyboardButton(
+            text=t("upload.btn_cancel"),
+            callback_data=f"{SF_UPLOAD_CANCEL_PREFIX}{token}",
+        )
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[row])
+
+
+def _display(paths: DuctorPaths, project_roots: Mapping[str, str], target: Path) -> str:
+    """``Label/sub/dir`` for a path, falling back to its name."""
+    owner = label_for(browsable_roots(paths.ductor_home, project_roots), target)
+    if owner is None:
+        return target.name
+    label, root = owner
+    rel = target.relative_to(root)
+    return f"{label}/" if str(rel) == "." else f"{label}/{rel}"
+
+
+_UPLOAD_ACTIONS = {
+    SF_UPLOAD_PREFIX: _upload_menu_action,
+    SF_UPLOAD_FILES_PREFIX: _upload_starter("files"),
+    SF_UPLOAD_FOLDER_PREFIX: _upload_starter("folder"),
+    SF_UPLOAD_CONFIRM_PREFIX: _upload_confirm_action,
+    SF_UPLOAD_CANCEL_PREFIX: _upload_cancel_action,
+}
 
 
 def _rows(buttons: list[InlineKeyboardButton]) -> list[list[InlineKeyboardButton]]:

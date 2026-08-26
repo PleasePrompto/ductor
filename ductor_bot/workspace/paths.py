@@ -84,6 +84,15 @@ class DuctorPaths:
         return self.workspace / "telegram_files"
 
     @property
+    def uploads_staging_dir(self) -> Path:
+        """Where browser uploads wait for confirmation.
+
+        Outside ``workspace`` on purpose: these files are not the agent's to
+        see until the user has confirmed where they belong.
+        """
+        return self.ductor_home / "uploads_staging"
+
+    @property
     def matrix_files_dir(self) -> Path:
         return self.workspace / "matrix_files"
 
