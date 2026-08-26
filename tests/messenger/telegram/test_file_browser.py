@@ -103,9 +103,37 @@ class TestDirectoryNavigation:
         assert "empty" in action.text.lower()
 
     @pytest.mark.asyncio
-    async def test_subdirectory_offers_a_way_back_up(self, paths: DuctorPaths) -> None:
+    async def test_subdirectory_offers_a_way_back(self, paths: DuctorPaths) -> None:
         action = await _open(paths, paths.ductor_home / "workspace")
-        assert any("Up" in b.text for b in _buttons(action.keyboard))
+        back = [b for b in _buttons(action.keyboard) if "Back" in b.text]
+        assert len(back) == 1
+
+    @pytest.mark.asyncio
+    async def test_back_is_present_at_a_root_too(self, paths: DuctorPaths) -> None:
+        """A button that vanishes at certain depths reads as a broken screen."""
+        action = await _open(paths, paths.ductor_home)
+        back = [b for b in _buttons(action.keyboard) if "Back" in b.text]
+        assert len(back) == 1
+
+    @pytest.mark.asyncio
+    async def test_back_at_a_root_returns_to_the_location_picker(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, paths.ductor_home)
+        back = next(b for b in _buttons(action.keyboard) if "Back" in b.text)
+        assert back.callback_data == SF_PREFIX
+
+    @pytest.mark.asyncio
+    async def test_back_inside_a_tree_goes_to_the_parent(self, paths: DuctorPaths) -> None:
+        target = paths.ductor_home / "workspace"
+        action = await _open(paths, target)
+        back = next(b for b in _buttons(action.keyboard) if "Back" in b.text)
+        assert path_tokens.path_for(back.callback_data[len(SF_PREFIX) :]) == target.parent
+
+    @pytest.mark.asyncio
+    async def test_no_duplicate_navigation_button_at_a_root(self, paths: DuctorPaths) -> None:
+        """Back and Locations do the same thing at a root; only one should show."""
+        action = await _open(paths, paths.ductor_home)
+        nav = [b for b in _buttons(action.keyboard) if b.callback_data == SF_PREFIX]
+        assert len(nav) == 1
 
     @pytest.mark.asyncio
     async def test_nonexistent_directory_falls_back_to_roots(self, paths: DuctorPaths) -> None:
