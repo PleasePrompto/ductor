@@ -231,7 +231,7 @@ def _build_dir_view(
     rows.append(
         [
             InlineKeyboardButton(text=t("file_browser.btn_back"), callback_data=back_target),
-            InlineKeyboardButton(text=t("file_browser.btn_roots"), callback_data=SF_PREFIX),
+            InlineKeyboardButton(text=t("file_browser.btn_home"), callback_data=SF_PREFIX),
         ]
     )
     rows.append(
