@@ -176,7 +176,7 @@ def _pull_action(
         return _open_action(paths, project_roots, target)
     ok, output = git_pull(state)
     key = "file_browser.pull_ok" if ok else "file_browser.pull_failed"
-    return _with_notice(paths, project_roots, target, t(key, output=_trim(output)))
+    return _with_notice(paths, project_roots, target, _result(t(key), output))
 
 
 def _push_action(
@@ -216,7 +216,7 @@ def _push_confirmed_action(
         return _open_action(paths, project_roots, target)
     ok, output = git_push(state)
     key = "file_browser.push_ok" if ok else "file_browser.push_failed"
-    return _with_notice(paths, project_roots, target, t(key, output=_trim(output)))
+    return _with_notice(paths, project_roots, target, _result(t(key), output))
 
 
 def _with_notice(
@@ -225,6 +225,16 @@ def _with_notice(
     """Re-render the directory with a result line appended."""
     text, kb = _build_dir_view(paths, project_roots, target)
     return BrowserAction(text=f"{text}\n\n{notice}", keyboard=kb)
+
+
+def _result(headline: str, output: str) -> str:
+    """Headline plus the command output in a fenced block.
+
+    The fence is built here rather than embedded in the translation: a code
+    block written inside a TOML string has to survive two layers of escaping,
+    and getting that wrong renders as a literal backslash-n in the chat.
+    """
+    return f"{headline}\n```\n{_trim(output)}\n```"
 
 
 def _trim(output: str, limit: int = 400) -> str:
