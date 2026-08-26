@@ -424,11 +424,18 @@ explicit = "`/session @provider model <prompt>` — explícito"
 # -- Navegador de arquivos -----------------------------------------------------
 
 [file_browser]
+pick_root = "Escolha um local:"
+no_roots = "Nenhum diretório navegável configurado."
+tap_hint = "Toque numa pasta para abrir, ou num ficheiro para o receber."
+btn_home = "🏠 Início"
+btn_zip = "🗜 Enviar pasta como zip"
+btn_ask = "💬 Perguntar ao agente sobre esta pasta"
+too_large = "`{name}` tem {mb} MB — acima do limite de 50 MB do Telegram para bots. Peça ao agente para dividir ou resumir."
+zip_too_large = "Essa pasta é grande demais para enviar como zip. Abra uma subpasta e tente de novo."
+send_failed = "Não foi possível enviar `{name}`."
 header = "**Navegador de Arquivos**"
-directory_not_found = "Diretório não encontrado."
 empty = "(vazio)"
-btn_back = "<< Voltar"
-btn_request_files = "Me envie um arquivo desta pasta"
+btn_back = "◀︎ Voltar"
 file_request_prompt = "Liste todos os arquivos em {dir}/ e me envie o que eu pedir. Entregue os arquivos usando file tags."
 
 # Variante Matrix
