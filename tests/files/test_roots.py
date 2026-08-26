@@ -20,11 +20,36 @@ def _tree(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     }
 
 
-def test_home_and_projects_are_browsable(tmp_path: Path) -> None:
+def test_home_and_top_level_projects_are_browsable(tmp_path: Path) -> None:
     home, roots = _tree(tmp_path)
     result = browsable_roots(home, roots)
     assert "~/.ductor" in result
-    assert set(result) >= {"IT", "EMR", "Phoenix-MT5"}
+    assert "IT" in result
+
+
+def test_nested_roots_collapse_into_their_ancestor(tmp_path: Path) -> None:
+    """Mapping IT, IT/EMR and IT/Phoenix/Phoenix-MT5 should offer one entry.
+
+    Listing all three at the top level flattens the tree into the root view and
+    makes navigation pointless — the nested ones are reachable by opening IT.
+    """
+    home, roots = _tree(tmp_path)
+    result = browsable_roots(home, roots)
+    assert "EMR" not in result
+    assert "Phoenix-MT5" not in result
+    assert set(result) == {"~/.ductor", "IT"}
+
+
+def test_unnested_projects_all_appear(tmp_path: Path) -> None:
+    """Collapsing must not hide roots that are genuinely separate."""
+    home = tmp_path / ".ductor"
+    home.mkdir()
+    (tmp_path / "alpha").mkdir()
+    (tmp_path / "beta").mkdir()
+    result = browsable_roots(
+        home, {"alpha": str(tmp_path / "alpha"), "beta": str(tmp_path / "beta")}
+    )
+    assert set(result) == {"~/.ductor", "alpha", "beta"}
 
 
 def test_missing_directories_are_dropped(tmp_path: Path) -> None:
@@ -35,10 +60,13 @@ def test_missing_directories_are_dropped(tmp_path: Path) -> None:
 
 def test_duplicate_directories_collapse(tmp_path: Path) -> None:
     """Two topic names mapped at one folder should not list it twice."""
-    home, roots = _tree(tmp_path)
-    roots["EMR-alias"] = roots["EMR"]
-    result = browsable_roots(home, roots)
-    assert sum(1 for p in result.values() if p == Path(roots["EMR"]).resolve()) == 1
+    home = tmp_path / ".ductor"
+    home.mkdir()
+    (tmp_path / "solo").mkdir()
+    result = browsable_roots(
+        home, {"solo": str(tmp_path / "solo"), "solo-alias": str(tmp_path / "solo")}
+    )
+    assert sum(1 for p in result.values() if p == (tmp_path / "solo").resolve()) == 1
 
 
 def test_contains_rejects_paths_outside_every_root(tmp_path: Path) -> None:
@@ -55,9 +83,9 @@ def test_traversal_outside_a_root_is_refused(tmp_path: Path) -> None:
     assert not contains(result, tmp_path / "IT" / "EMR" / ".." / ".." / ".." / "etc")
 
 
-def test_label_prefers_the_deepest_matching_root(tmp_path: Path) -> None:
-    """EMR sits inside IT; the more specific name is the useful one."""
+def test_label_names_the_owning_root(tmp_path: Path) -> None:
+    """A path inside IT is labelled with IT, so breadcrumbs read IT/EMR/src."""
     home, roots = _tree(tmp_path)
     result = browsable_roots(home, roots)
-    label, _ = label_for(result, tmp_path / "IT" / "EMR")
-    assert label == "EMR"
+    label, _ = label_for(result, tmp_path / "IT" / "EMR" / "src")
+    assert label == "IT"

@@ -22,23 +22,34 @@ def browsable_roots(ductor_home: Path, project_roots: Mapping[str, str]) -> dict
     the same folder does not list it twice. Non-existent paths are dropped:
     showing a root that cannot be opened reads as a broken browser.
     """
-    roots: dict[str, Path] = {}
-    seen: set[Path] = set()
+    candidates: list[tuple[str, Path]] = []
 
     home = ductor_home.expanduser().resolve()
     if home.is_dir():
-        roots["~/.ductor"] = home
-        seen.add(home)
+        candidates.append(("~/.ductor", home))
 
     for label, raw in sorted(project_roots.items()):
         try:
             path = Path(raw).expanduser().resolve()
         except (OSError, RuntimeError):
             continue
-        if not path.is_dir() or path in seen:
+        if path.is_dir():
+            candidates.append((label, path))
+
+    # Shallowest first, so an ancestor is always considered before anything it
+    # contains.
+    candidates.sort(key=lambda item: len(item[1].parts))
+
+    roots: dict[str, Path] = {}
+    kept: list[Path] = []
+    for label, path in candidates:
+        # A root reachable by navigating into another root does not belong at the
+        # top level: mapping both "IT" and "IT/EMR" should offer one entry, not a
+        # flattened tree. Duplicates collapse for the same reason.
+        if any(path == k or path.is_relative_to(k) for k in kept):
             continue
         roots[label] = path
-        seen.add(path)
+        kept.append(path)
 
     return roots
 
