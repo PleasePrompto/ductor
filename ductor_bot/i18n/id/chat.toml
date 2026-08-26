@@ -460,3 +460,10 @@ async_task_received = "📥 **Tugas async diterima** dari `{sender}`\nSesi: `{se
 [effort]
 select = "Pilih upaya penalaran untuk {model}:"
 unsupported = "Upaya penalaran tidak dapat diatur untuk penyedia `{provider}`."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Persona mana yang menangani ini?**"
+none_defined = "Belum ada persona. Tambahkan berkas agent ke konfigurasi Claude Code-mu."
+default_label = "Bawaan"
+selected = "Persona: **{persona}**"

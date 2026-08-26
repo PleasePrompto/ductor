@@ -29,6 +29,7 @@ from ductor_bot.infra.version import VersionInfo, get_current_version
 from ductor_bot.log_context import set_log_context
 from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.messenger.telegram.callbacks import (
+    button_grid_to_markup,
     edit_selector_response,
     mark_button_choice,
     parse_ns_callback,
@@ -136,7 +137,8 @@ def _build_help_text() -> str:
         SEP,
         f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('reset')}\n{_help_line('stop')}\n"
         f"{_help_line('interrupt')}\n{_help_line('stop_all')}\n"
-        f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('status')}\n{_help_line('memory')}",
+        f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('persona')}\n"
+        f"{_help_line('status')}\n{_help_line('memory')}",
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
@@ -405,7 +407,17 @@ class TelegramBot:
         r.message(Command("tasks", ignore_case=True))(self._on_tasks)
         r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
-        base_cmds = ["status", "memory", "model", "effort", "cron", "diagnose", "upgrade", "reset"]
+        base_cmds = [
+            "status",
+            "memory",
+            "model",
+            "effort",
+            "persona",
+            "cron",
+            "diagnose",
+            "upgrade",
+            "reset",
+        ]
         if self._agent_name == "main":
             base_cmds += ["agents", "agent_start", "agent_stop", "agent_restart"]
         for cmd in base_cmds:
@@ -1214,6 +1226,14 @@ class TelegramBot:
         if await self._route_prefix_callback(key, message_id, data, thread_id=thread_id):
             return True
 
+        from ductor_bot.orchestrator.selectors.persona_selector import (
+            is_persona_selector_callback,
+        )
+
+        if is_persona_selector_callback(data):
+            await self._handle_persona_selector(key, message_id, data, thread_id=thread_id)
+            return True
+
         from ductor_bot.orchestrator.selectors.model_selector import is_model_selector_callback
 
         if is_model_selector_callback(data):
@@ -1385,6 +1405,12 @@ class TelegramBot:
         thread_id = get_thread_id(message)
         logger.debug("Message text=%s", text[:80])
 
+        # A new conversation picks its persona before any work happens. The
+        # message is held rather than discarded, so answering the question does
+        # not cost the user their prompt.
+        if await self._ask_persona_if_needed(key, text, thread_id=thread_id):
+            return
+
         # #63: status_reaction (stage-based) wins over seen_reaction (one-shot).
         # Both enabled would fight over the same Telegram emoji slot.
         if self._config.scene.seen_reaction and not self._config.scene.status_reaction:
@@ -1394,6 +1420,73 @@ class TelegramBot:
             await self._handle_streaming(message, key, text, thread_id=thread_id)
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
+
+    async def _ask_persona_if_needed(
+        self, key: SessionKey, text: str, *, thread_id: int | None = None
+    ) -> bool:
+        """Ask which persona should govern a new conversation.
+
+        Returns True when the message was held and the question asked, in which
+        case the caller must not process it yet.
+        """
+        from ductor_bot.orchestrator.selectors.persona_selector import persona_selector
+
+        if not self._config.persona_prompt:
+            return False
+        if self._orch.personas.has_choice(key.storage_key):
+            return False
+        # Only at the start of a conversation. Mid-conversation switching is
+        # done deliberately through /persona.
+        if await self._orch._sessions.get_active(key) is not None:
+            return False
+
+        self._orch.personas.hold(key.storage_key, text)
+        resp = persona_selector(self._orch, key, asking=True)
+        await self._bot.send_message(
+            key.chat_id,
+            resp.text,
+            reply_markup=button_grid_to_markup(resp.buttons),
+            message_thread_id=thread_id,
+        )
+        return True
+
+    async def _handle_persona_selector(
+        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
+        """Apply a persona choice and run whatever message was waiting on it."""
+        from ductor_bot.orchestrator.selectors.persona_selector import (
+            parse_callback,
+            persona_selector,
+            resolve_choice,
+        )
+
+        index = parse_callback(data)
+        chosen = resolve_choice(index) if index is not None else None
+        if chosen is None:
+            resp = persona_selector(self._orch, key)
+            await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+            return
+
+        self._orch.personas.set(key.storage_key, chosen)
+        label = chosen or t("persona.default_label")
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                chat_id=key.chat_id,
+                message_id=message_id,
+                text=t("persona.selected", persona=label),
+            )
+
+        held = self._orch.personas.take(key.storage_key)
+        if not held:
+            return
+        async with self._sequential.get_lock(key.lock_key):
+            if self._config.streaming.enabled:
+                sent = await self._bot.send_message(
+                    key.chat_id, held, parse_mode=None, message_thread_id=thread_id
+                )
+                await self._handle_streaming(sent, key, held, thread_id=thread_id)
+            else:
+                await self._handle_non_streaming(None, key, held, thread_id=thread_id)
 
     async def _set_seen_reaction(self, message: Message) -> None:
         """Set a seen reaction on the user message. Graceful degradation on failure."""

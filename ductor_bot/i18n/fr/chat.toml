@@ -461,3 +461,10 @@ async_task_received = "📥 **Tâche asynchrone reçue** de `{sender}`\nSession 
 [effort]
 select = "Choisir l'effort de raisonnement pour {model} :"
 unsupported = "L'effort de raisonnement n'est pas configurable pour le fournisseur `{provider}`."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Quelle persona doit s'en charger ?**"
+none_defined = "Aucune persona définie. Ajoutez des fichiers d'agent à votre configuration Claude Code."
+default_label = "Par défaut"
+selected = "Persona : **{persona}**"

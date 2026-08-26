@@ -462,3 +462,10 @@ async_task_received = "📥 **Async task received** from `{sender}`\nSession: `{
 [effort]
 select = "Select reasoning effort for {model}:"
 unsupported = "Reasoning effort is not configurable for the `{provider}` provider."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Which persona should handle this?**"
+none_defined = "No personas are defined. Add agent files to your Claude Code config to use this."
+default_label = "Default"
+selected = "Persona: **{persona}**"

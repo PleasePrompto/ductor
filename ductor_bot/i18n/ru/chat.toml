@@ -461,3 +461,10 @@ async_task_received = "📥 **Async-задача получена** от `{sende
 [effort]
 select = "Выберите уровень рассуждения для {model}:"
 unsupported = "Уровень рассуждения недоступен для провайдера `{provider}`."
+
+[persona]
+header = "**Персона**"
+ask_header = "**Какая персона возьмётся за это?**"
+none_defined = "Персоны не заданы. Добавьте файлы агентов в конфигурацию Claude Code."
+default_label = "По умолчанию"
+selected = "Персона: **{persona}**"
