@@ -151,6 +151,15 @@ class CLIService:
         self._available_providers = available_providers
         self._process_registry = process_registry
         self._working_dir_resolver: Callable[[AgentRequest], str | None] | None = None
+        self._persona_resolver: Callable[[AgentRequest], str] | None = None
+
+    def set_persona_resolver(self, resolver: Callable[[AgentRequest], str] | None) -> None:
+        """Install the callback that decides which persona a request runs under.
+
+        Kept as a callback so the service stays unaware of where choices live,
+        exactly as the working-directory override does.
+        """
+        self._persona_resolver = resolver
 
     def set_working_dir_resolver(self, resolver: Callable[[AgentRequest], str | None]) -> None:
         """Register a callback that maps a request to a per-request working dir.
@@ -414,6 +423,7 @@ class CLIService:
                 topic_id=request.topic_id,
                 transport=request.transport,
                 process_label=request.process_label,
+                persona=self._persona_resolver(request) if self._persona_resolver else "",
                 cli_parameters=self._config.cli_parameters_for_provider(provider),
                 agent_name=self._config.agent_name,
                 interagent_port=self._config.interagent_port,

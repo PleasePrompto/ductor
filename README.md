@@ -204,6 +204,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Skill browser** — `/skills` groups every loadable skill by plugin and copies `/name ` to your clipboard on tap, which is the only way to reach skills marked `disable-model-invocation`. Discovery follows `enabledPlugins` and the plugin registry, so stale versions and disabled plugins are not listed
 - **File browser over your projects** — `/showfiles` lists `~/.ductor` alongside every directory in `project_roots`, with tap-to-navigate, `Back`/`Home`, breadcrumbs, tap-a-file-to-receive-it, and folder-as-zip. Nested roots collapse into their parent so the picker stays short
 - **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder
+- **Personas** — when `persona_prompt` is on, a new conversation asks which of your Claude Code agents should handle it and holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`. Nothing is inferred and there is no default; installations without agents never see the prompt
 - **Persistent memory** — plain Markdown files that survive across sessions
 - **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
 - **Cron jobs** — in-process scheduler with timezone support, per-job overrides, optional silent-on-success, result routing to originating chat
@@ -380,6 +381,7 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/model` | Interactive model/provider selector |
 | `/effort` | Reasoning effort for the current chat/topic (Claude & Codex) |
 | `/account` | Switch the Claude credential store (see `claude_accounts` in docs/config.md) |
+| `/persona` | Choose which Claude Code agent governs this chat/topic |
 | `/skills` | Browse available skills by plugin; tap one to copy its command |
 | `/new` | Reset the configured default-provider session for this chat/topic |
 | `/reset` | Reset the currently active provider session for this chat/topic |

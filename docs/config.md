@@ -84,6 +84,7 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `project_roots` | `dict[str, str]` | `{}` | Per-topic working-directory override: maps a topic key to a directory the CLI runs in instead of the shared workspace (see below) |
 | `claude_accounts` | `dict[str, str]` | `{}` | Claude credential stores: account name -> directory used as `CLAUDE_SECURESTORAGE_CONFIG_DIR` (see below) |
 | `claude_account` | `str` | `""` | Active entry of `claude_accounts`; empty means the default store. Switched at runtime with `/account` |
+| `persona_prompt` | `bool` | `false` | Ask which persona (Claude Code agent) should govern a new conversation (see below) |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
 | `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"` or `"matrix"` |
@@ -178,6 +179,38 @@ Known limitation: for sub-agents the selection is persisted only in the
 agent-local `config.json`. The supervisor rebuilds sub-agent runtime config from
 `agents.json`, which has no account field, so a sub-agent restart reverts to the
 main account.
+
+### `persona_prompt`
+
+A persona is a Claude Code agent — a Markdown file in `<config>/agents/` — and
+`--agent <name>` is what loads its definition for a run.
+
+With `persona_prompt` enabled, the first message of a new conversation is held,
+the available personas are offered as buttons, and the held message runs once
+one is chosen. `/persona` changes it at any point; `/new` and `/reset` clear it,
+so the next conversation chooses again.
+
+```json
+{ "persona_prompt": true }
+```
+
+Deliberate limits:
+
+- **Nothing is inferred.** Personas are never guessed from the topic name, the
+  directory, or the wording of a message. A persona changes how the agent
+  behaves, so the choice belongs to the user.
+- **There is no default and no fallback.** An unanswered conversation runs
+  under no persona rather than a plausible one.
+- **`Default` appears only when no personas are defined**, so an installation
+  without agents is not left with a dead menu. Where personas exist the escape
+  hatch is omitted: it would quietly become the path of least resistance.
+- **Off by default.** It adds a prompt before the first reply, which should be
+  opted into rather than arriving with an upgrade.
+
+The choice is stored per conversation in `personas.json` and survives a restart.
+A held message is not persisted: if the bot restarts between the question and
+the answer, the message is dropped and asked for again, rather than a queued
+instruction executing later unwatched.
 
 ### `project_roots`
 
@@ -640,6 +673,7 @@ Hot-reloadable top-level fields:
 - `permission_mode`, `file_access`, `user_timezone`
 - `streaming`, `heartbeat`, `cleanup`, `cli_parameters`, `scene`, `image`, `language`
 - `project_roots` (per-topic working-dir overrides take effect on the next turn)
+- `persona_prompt`
 - `claude_accounts`, `claude_account` (credential store applies on the next CLI call)
 - `allowed_user_ids`, `allowed_group_ids`, `group_mention_only`
 

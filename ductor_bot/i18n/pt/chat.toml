@@ -493,3 +493,10 @@ not_found = "Nenhum skill chamado `{name}`. Use /skills para navegar."
 no_description = "(sem descrição)"
 detail_header = "**{name}** — {group}"
 slash_only_note = "🔒 Apenas por slash: este skill tem de ser invocado explicitamente; o modelo não o carrega sozinho."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Que persona deve tratar disto?**"
+none_defined = "Nenhuma persona definida. Adicione ficheiros de agente à sua configuração do Claude Code."
+default_label = "Padrão"
+selected = "Persona: **{persona}**"

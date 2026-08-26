@@ -493,3 +493,10 @@ not_found = "Навык `{name}` не найден. Используйте /skil
 no_description = "(без описания)"
 detail_header = "**{name}** — {group}"
 slash_only_note = "🔒 Только через слэш: этот навык вызывается явно; модель не может загрузить его сама."
+
+[persona]
+header = "**Персона**"
+ask_header = "**Какая персона возьмётся за это?**"
+none_defined = "Персоны не заданы. Добавьте файлы агентов в конфигурацию Claude Code."
+default_label = "По умолчанию"
+selected = "Персона: **{persona}**"

@@ -23,6 +23,7 @@ from ductor_bot.orchestrator.selectors.model_selector import (
     switch_model,
 )
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
+from ductor_bot.orchestrator.selectors.persona_selector import persona_selector
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
 from ductor_bot.orchestrator.selectors.skills_selector import skill_detail, skills_root
 from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
@@ -42,6 +43,7 @@ logger = logging.getLogger(__name__)
 async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /new: kill processes and reset only active provider session."""
     logger.info("Reset requested")
+    orch.personas.clear(key.storage_key)
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     provider = await orch.reset_active_provider_session(key)
     return OrchestratorResult(text=new_session_text(provider))
@@ -50,6 +52,7 @@ async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
 async def cmd_reset_current(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /reset: kill processes and reset the *current* provider session."""
     logger.info("Reset (current) requested")
+    orch.personas.clear(key.storage_key)
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     provider = await orch.reset_current_provider_session(key)
     return OrchestratorResult(text=new_session_text(provider))
@@ -95,6 +98,13 @@ async def cmd_skills(orch: Orchestrator, _key: SessionKey, text: str) -> Orchest
     logger.info("Skills requested")
     parts = text.split(None, 1)
     resp = skill_detail(orch, parts[1]) if len(parts) > 1 else skills_root(orch)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_persona(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /persona: choose which agent governs this conversation."""
+    logger.info("Persona requested")
+    resp = persona_selector(orch, key)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
