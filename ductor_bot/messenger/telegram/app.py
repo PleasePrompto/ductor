@@ -846,7 +846,7 @@ class TelegramBot:
 
     async def _on_showfiles(self, message: Message) -> None:
         """Handle /showfiles: interactive file browser for ~/.ductor."""
-        text, keyboard = await file_browser_start(self._orch.paths)
+        text, keyboard = await file_browser_start(self._orch.paths, self._config.project_roots)
         await send_rich(
             self._bot,
             message.chat.id,
@@ -1374,12 +1374,73 @@ class TelegramBot:
                     ),
                 )
 
+    async def _send_browser_file(
+        self, chat_id: int, path: Path, *, thread_id: int | None = None
+    ) -> None:
+        """Send a file the user tapped in the browser."""
+        from aiogram.types import FSInputFile
+
+        try:
+            await self._bot.send_document(
+                chat_id=chat_id,
+                document=FSInputFile(path),
+                message_thread_id=thread_id,
+            )
+        except TelegramAPIError:
+            logger.exception("Failed to send browsed file %s", path)
+            await self._bot.send_message(
+                chat_id, t("file_browser.send_failed", name=path.name), message_thread_id=thread_id
+            )
+
+    async def _send_browser_zip(
+        self, chat_id: int, directory: Path, *, thread_id: int | None = None
+    ) -> None:
+        """Zip a directory and send it, or explain why it cannot be sent."""
+        import shutil
+        from functools import partial
+
+        from aiogram.types import FSInputFile
+
+        from ductor_bot.messenger.telegram.file_browser import build_zip
+
+        archive, error_key = await asyncio.to_thread(build_zip, directory)
+        if archive is None:
+            await self._bot.send_message(chat_id, t(error_key), message_thread_id=thread_id)
+            return
+        try:
+            await self._bot.send_document(
+                chat_id=chat_id,
+                document=FSInputFile(archive),
+                message_thread_id=thread_id,
+            )
+        except TelegramAPIError:
+            logger.exception("Failed to send archive of %s", directory)
+            await self._bot.send_message(
+                chat_id,
+                t("file_browser.send_failed", name=archive.name),
+                message_thread_id=thread_id,
+            )
+        finally:
+            await asyncio.to_thread(partial(shutil.rmtree, archive.parent, ignore_errors=True))
+
     async def _handle_file_browser(
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> None:
         """Handle file browser navigation or file request."""
         chat_id = key.chat_id
-        text, keyboard, prompt = await handle_file_browser_callback(self._orch.paths, data)
+        action = await handle_file_browser_callback(
+            self._orch.paths, self._config.project_roots, data
+        )
+
+        if action.send_path is not None:
+            await self._send_browser_file(chat_id, action.send_path, thread_id=thread_id)
+            return
+
+        if action.zip_dir is not None:
+            await self._send_browser_zip(chat_id, action.zip_dir, thread_id=thread_id)
+            return
+
+        text, keyboard, prompt = action.text, action.keyboard, action.agent_prompt
 
         if prompt:
             # File request: remove the keyboard and send prompt to orchestrator
@@ -1468,9 +1529,11 @@ class TelegramBot:
 
         if has_media(message):
             paths = self._orch.paths
-            media_prompt = await resolve_media_text(
-                self._bot, message, paths.telegram_files_dir, paths.workspace
-            )
+            # Land the upload in the topic's project directory when one is
+            # configured, so "send a file to this topic" puts it where the agent
+            # is working instead of a shared media folder it then has to copy from.
+            dest = self._orch.resolve_topic_media_dir(message) or paths.telegram_files_dir
+            media_prompt = await resolve_media_text(self._bot, message, dest, paths.workspace)
             if media_prompt is None:
                 return None
             return prepend_reply_to_media(message, media_prompt)

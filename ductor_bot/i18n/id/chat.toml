@@ -424,6 +424,16 @@ explicit = "`/session @provider model <prompt>` — eksplisit"
 # -- File browser --------------------------------------------------------------
 
 [file_browser]
+pick_root = "Pilih lokasi:"
+no_roots = "Tidak ada direktori yang bisa dijelajahi."
+tap_hint = "Ketuk folder untuk membuka, atau berkas untuk dikirimkan kepadamu."
+btn_up = "⬆︎ Naik"
+btn_roots = "🏠 Lokasi"
+btn_zip = "🗜 Kirim folder sebagai zip"
+btn_ask = "💬 Tanya agen tentang folder ini"
+too_large = "`{name}` berukuran {mb} MB — melebihi batas 50 MB Telegram untuk bot. Minta agen memecah atau meringkasnya."
+zip_too_large = "Folder itu terlalu besar untuk dikirim sebagai zip. Buka subfolder lalu coba lagi."
+send_failed = "Gagal mengirim `{name}`."
 header = "**Penjelajah File**"
 directory_not_found = "Direktori tidak ditemukan."
 empty = "(kosong)"

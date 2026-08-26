@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.background import (
@@ -238,6 +239,33 @@ class Orchestrator:
             topic_id=request.topic_id,
             topic_name=self._sessions.resolve_topic_name(request.chat_id, request.topic_id),
         )
+
+    def resolve_topic_media_dir(self, message: object) -> Path | None:
+        """Where an upload from *message* should be stored.
+
+        Returns the topic's configured project root, or ``None`` to fall back to
+        the shared media directory. Uploads previously always went to the shared
+        folder, so a file sent to a project topic landed away from the work and
+        had to be copied by hand.
+        """
+        chat = getattr(message, "chat", None)
+        chat_id = getattr(chat, "id", None)
+        if chat_id is None:
+            return None
+        topic_id = getattr(message, "message_thread_id", None)
+        if topic_id is None:
+            return None
+
+        root = resolve_project_root(
+            self._config.project_roots,
+            chat_id=chat_id,
+            topic_id=topic_id,
+            topic_name=self._sessions.resolve_topic_name(chat_id, topic_id),
+        )
+        if not root:
+            return None
+        path = Path(root)
+        return path if path.is_dir() else None
 
     @property
     def paths(self) -> DuctorPaths:

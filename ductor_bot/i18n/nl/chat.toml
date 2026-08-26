@@ -425,6 +425,16 @@ explicit = "`/session @provider model <prompt>` — expliciet"
 # -- Bestandsbrowser ---------------------------------------------------------------
 
 [file_browser]
+pick_root = "Kies een locatie:"
+no_roots = "Geen doorzoekbare mappen geconfigureerd."
+tap_hint = "Tik op een map om te openen, of op een bestand om het toegestuurd te krijgen."
+btn_up = "⬆︎ Omhoog"
+btn_roots = "🏠 Locaties"
+btn_zip = "🗜 Map als zip sturen"
+btn_ask = "💬 Vraag de agent over deze map"
+too_large = "`{name}` is {mb} MB — boven Telegrams limiet van 50 MB voor bots. Vraag de agent het te splitsen of samen te vatten."
+zip_too_large = "Die map is te groot om als zip te sturen. Open een submap en probeer opnieuw."
+send_failed = "Kon `{name}` niet versturen."
 header = "**Bestandsbrowser**"
 directory_not_found = "Map niet gevonden."
 empty = "(leeg)"
