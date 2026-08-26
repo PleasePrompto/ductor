@@ -129,11 +129,17 @@ class TestDirectoryNavigation:
         assert path_tokens.path_for(back.callback_data[len(SF_PREFIX) :]) == target.parent
 
     @pytest.mark.asyncio
-    async def test_no_duplicate_navigation_button_at_a_root(self, paths: DuctorPaths) -> None:
-        """Back and Locations do the same thing at a root; only one should show."""
-        action = await _open(paths, paths.ductor_home)
-        nav = [b for b in _buttons(action.keyboard) if b.callback_data == SF_PREFIX]
-        assert len(nav) == 1
+    async def test_navigation_row_is_identical_at_every_depth(self, paths: DuctorPaths) -> None:
+        """Back and Locations both show everywhere, including at a root.
+
+        They lead to the same place at a root, which is a cheaper cost than a
+        row whose buttons move around depending on how deep you are.
+        """
+        for target in (paths.ductor_home, paths.ductor_home / "workspace"):
+            action = await _open(paths, target)
+            labels = [b.text for b in _buttons(action.keyboard)]
+            assert sum("Back" in x for x in labels) == 1
+            assert sum("Locations" in x for x in labels) == 1
 
     @pytest.mark.asyncio
     async def test_nonexistent_directory_falls_back_to_roots(self, paths: DuctorPaths) -> None:

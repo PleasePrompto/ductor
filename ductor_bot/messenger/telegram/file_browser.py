@@ -222,16 +222,18 @@ def _build_dir_view(
     ]
     rows = _rows(buttons)
 
-    # Back is always present. At a root there is no parent inside the allowed
-    # tree, so it returns to the location picker rather than vanishing — a
-    # button that disappears at certain depths reads as a broken screen.
+    # Both controls are always present. At a root they happen to lead to the
+    # same place, and that redundancy is the cheaper trade: a button that
+    # appears and disappears depending on depth reads as a broken screen, while
+    # a stable row is predictable to tap without looking.
     at_root = target == root
     back_target = SF_PREFIX if at_root else f"{SF_PREFIX}{token_for(target.parent)}"
-    nav = [InlineKeyboardButton(text=t("file_browser.btn_back"), callback_data=back_target)]
-    if not at_root:
-        # Would be a duplicate of Back at a root.
-        nav.append(InlineKeyboardButton(text=t("file_browser.btn_roots"), callback_data=SF_PREFIX))
-    rows.append(nav)
+    rows.append(
+        [
+            InlineKeyboardButton(text=t("file_browser.btn_back"), callback_data=back_target),
+            InlineKeyboardButton(text=t("file_browser.btn_roots"), callback_data=SF_PREFIX),
+        ]
+    )
     rows.append(
         [
             InlineKeyboardButton(
