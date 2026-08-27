@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
+import tempfile
 from collections.abc import Awaitable, Callable
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +25,13 @@ from ductor_bot.commands import BOT_COMMANDS as _COMMAND_DEFS
 from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
+from ductor_bot.files.archive import (
+    MAX_ENTRIES,
+    MAX_TOTAL_BYTES,
+    extract_archive,
+    inspect_archive,
+)
+from ductor_bot.files.uploads import UploadSession, UploadStore
 from ductor_bot.i18n import t
 from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
 from ductor_bot.infra.updater import UpdateObserver
@@ -35,6 +45,7 @@ from ductor_bot.messenger.telegram.callbacks import (
 )
 from ductor_bot.messenger.telegram.chat_tracker import ChatRecord, ChatTracker
 from ductor_bot.messenger.telegram.file_browser import (
+    build_staging_view,
     file_browser_start,
     handle_file_browser_callback,
     is_file_browser_callback,
@@ -51,6 +62,7 @@ from ductor_bot.messenger.telegram.handlers import (
     strip_mention,
 )
 from ductor_bot.messenger.telegram.media import (
+    download_media,
     has_media,
     is_command_for_others,
     is_message_addressed,
@@ -155,6 +167,20 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
             await task
 
 
+
+def _place(src: Path, dest: Path) -> None:
+    """Move *src* to *dest*, creating the parent. Blocking; call in a thread."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dest))
+
+
+def _short_path(target: Path, home: Path) -> str:
+    """A path the user can place at a glance, without the absolute prefix."""
+    try:
+        return str(target.relative_to(home))
+    except ValueError:
+        return str(target)
+
 class TelegramNotificationService:
     """NotificationService implementation for Telegram."""
 
@@ -219,6 +245,7 @@ class TelegramBot:
         self._chat_tracker: ChatTracker | None = None  # set in _on_startup
         self._topic_names = TopicNameCache()
         self._lock_pool = lock_pool or LockPool()
+        self._upload_store: UploadStore | None = None
         self._bus = bus or MessageBus(lock_pool=self._lock_pool)
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
@@ -829,7 +856,7 @@ class TelegramBot:
 
     async def _on_showfiles(self, message: Message) -> None:
         """Handle /showfiles: interactive file browser for ~/.ductor."""
-        text, keyboard = await file_browser_start(self._orch.paths)
+        text, keyboard = await file_browser_start(self._orch.paths, self._config.project_roots)
         await send_rich(
             self._bot,
             message.chat.id,
@@ -1326,12 +1353,84 @@ class TelegramBot:
                     ),
                 )
 
+    async def _send_browser_file(
+        self, chat_id: int, path: Path, *, thread_id: int | None = None
+    ) -> None:
+        """Send a file the user tapped in the browser."""
+        from aiogram.types import FSInputFile
+
+        try:
+            await self._bot.send_document(
+                chat_id=chat_id,
+                document=FSInputFile(path),
+                message_thread_id=thread_id,
+            )
+        except TelegramAPIError:
+            logger.exception("Failed to send browsed file %s", path)
+            await self._bot.send_message(
+                chat_id, t("file_browser.send_failed", name=path.name), message_thread_id=thread_id
+            )
+
+    async def _send_browser_zip(
+        self, chat_id: int, directory: Path, *, thread_id: int | None = None
+    ) -> None:
+        """Zip a directory and send it, or explain why it cannot be sent."""
+        import shutil
+        from functools import partial
+
+        from aiogram.types import FSInputFile
+
+        from ductor_bot.messenger.telegram.file_browser import build_zip
+
+        archive, error_key = await asyncio.to_thread(build_zip, directory)
+        if archive is None:
+            await self._bot.send_message(chat_id, t(error_key), message_thread_id=thread_id)
+            return
+        try:
+            await self._bot.send_document(
+                chat_id=chat_id,
+                document=FSInputFile(archive),
+                message_thread_id=thread_id,
+            )
+        except TelegramAPIError:
+            logger.exception("Failed to send archive of %s", directory)
+            await self._bot.send_message(
+                chat_id,
+                t("file_browser.send_failed", name=archive.name),
+                message_thread_id=thread_id,
+            )
+        finally:
+            await asyncio.to_thread(partial(shutil.rmtree, archive.parent, ignore_errors=True))
+
     async def _handle_file_browser(
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> None:
         """Handle file browser navigation or file request."""
         chat_id = key.chat_id
-        text, keyboard, prompt = await handle_file_browser_callback(self._orch.paths, data)
+        action = await handle_file_browser_callback(
+            self._orch.paths,
+            self._config.project_roots,
+            data,
+            uploads=self._uploads,
+            session_key=key.storage_key,
+        )
+
+        if action.upload_message:
+            # Staged files are reported by editing this message, so the upload
+            # has to know which one it owns.
+            session = self._uploads.get(key.storage_key)
+            if session is not None:
+                session.message_id = message_id
+
+        if action.send_path is not None:
+            await self._send_browser_file(chat_id, action.send_path, thread_id=thread_id)
+            return
+
+        if action.zip_dir is not None:
+            await self._send_browser_zip(chat_id, action.zip_dir, thread_id=thread_id)
+            return
+
+        text, keyboard, prompt = action.text, action.keyboard, action.agent_prompt
 
         if prompt:
             # File request: remove the keyboard and send prompt to orchestrator
@@ -1395,6 +1494,138 @@ class TelegramBot:
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
 
+    async def _report_landing(self, message: Message, dest: Path) -> None:
+        """Say where an attachment was saved.
+
+        Without this the file simply vanishes from the user's point of view:
+        the agent is told the path, the person who sent it never is.
+        """
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                message.chat.id,
+                markdown_to_telegram_html(
+                    t("upload.landed", dir=_short_path(dest, self._orch.paths.ductor_home))
+                ),
+                message_thread_id=get_thread_id(message),
+                parse_mode=ParseMode.HTML,
+            )
+
+    async def _stage_upload(self, message: Message, key: SessionKey) -> None:
+        """Take an attachment into the open upload for *key* and re-render it."""
+        session = self._uploads.get(key.storage_key)
+        if session is None:
+            return
+        session.errors.clear()
+
+        if session.mode == "folder":
+            await self._stage_archive(message, session)
+        else:
+            received = await self._receive_into(message, session.staging)
+            if received is None:
+                session.errors.append(t("upload.download_failed"))
+
+        await self._refresh_staging(message, key, session)
+
+    async def _stage_archive(self, message: Message, session: UploadSession) -> None:
+        """Unpack one archive into staging, refusing a second while one waits."""
+        if session.archive is not None:
+            session.errors.append(t("upload.zip_busy", name=session.archive))
+            return
+
+        scratch = Path(tempfile.mkdtemp(prefix="ductor_zip_in_"))
+        try:
+            received = await self._receive_into(message, scratch)
+            if received is None:
+                session.errors.append(t("upload.download_failed"))
+                return
+            if received.suffix.lower() != ".zip":
+                session.errors.append(t("upload.expect_zip", name=received.name))
+                return
+
+            entries, error_key = await asyncio.to_thread(inspect_archive, received)
+            if entries is None:
+                session.errors.append(t(error_key, count=MAX_ENTRIES, mb=MAX_TOTAL_BYTES // 1048576))
+                return
+
+            await asyncio.to_thread(extract_archive, received, session.staging)
+            session.archive = received.name
+        except (OSError, ValueError):
+            logger.exception("Failed to stage archive for %s", session.dest)
+            session.errors.append(t("upload.download_failed"))
+        finally:
+            await asyncio.to_thread(partial(shutil.rmtree, scratch, ignore_errors=True))
+
+    async def _receive_into(self, message: Message, target: Path) -> Path | None:
+        """Download the attachment and place it flat in *target*.
+
+        ``download_media`` files things under a dated subdirectory, which is
+        right for the shared media folder and wrong for a staging area whose
+        listing is shown to the user.
+        """
+        scratch = Path(tempfile.mkdtemp(prefix="ductor_recv_"))
+        try:
+            info = await download_media(self._bot, message, scratch)
+            if info is None:
+                return None
+            out = target / info.file_name
+            await asyncio.to_thread(_place, info.path, out)
+        except (TelegramAPIError, OSError):
+            logger.exception("Failed to receive attachment into %s", target)
+            return None
+        else:
+            return out
+        finally:
+            await asyncio.to_thread(partial(shutil.rmtree, scratch, ignore_errors=True))
+
+    async def _refresh_staging(
+        self, message: Message, key: SessionKey, session: UploadSession
+    ) -> None:
+        """Update the one message that reports what is staged."""
+        text, keyboard = await asyncio.to_thread(
+            build_staging_view, self._orch.paths, self._config.project_roots, session
+        )
+        html = markdown_to_telegram_html(text)
+        thread_id = get_thread_id(message)
+
+        if session.message_id is not None:
+            try:
+                await self._bot.edit_message_text(
+                    text=html,
+                    chat_id=message.chat.id,
+                    message_id=session.message_id,
+                    reply_markup=keyboard,
+                    parse_mode=ParseMode.HTML,
+                )
+            except TelegramBadRequest:
+                # Editing fails if the text is unchanged or the message is gone;
+                # a fresh one keeps the upload usable either way.
+                session.message_id = None
+            except TelegramAPIError:
+                logger.exception("Failed to update staging message")
+                return
+
+        if session.message_id is None:
+            with contextlib.suppress(TelegramAPIError):
+                sent = await self._bot.send_message(
+                    message.chat.id,
+                    html,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id,
+                    parse_mode=ParseMode.HTML,
+                )
+                session.message_id = sent.message_id
+
+    @property
+    def _uploads(self) -> UploadStore:
+        """Staging registry, built on first use.
+
+        The orchestrator — and therefore the paths — is not attached until
+        startup, so this cannot be constructed in ``__init__``.
+        """
+        if self._upload_store is None:
+            self._upload_store = UploadStore(self._orch.paths.uploads_staging_dir)
+        return self._upload_store
+
     async def _set_seen_reaction(self, message: Message) -> None:
         """Set a seen reaction on the user message. Graceful degradation on failure."""
         try:
@@ -1420,11 +1651,23 @@ class TelegramBot:
 
         if has_media(message):
             paths = self._orch.paths
-            media_prompt = await resolve_media_text(
-                self._bot, message, paths.telegram_files_dir, paths.workspace
-            )
+            key = get_session_key(message)
+
+            # An open upload claims the attachment: it goes to staging and is
+            # reported back, and the agent is not involved until the user has
+            # confirmed where the file belongs.
+            if self._uploads.get(key.storage_key) is not None:
+                await self._stage_upload(message, key)
+                return None
+
+            # Land the upload in the topic's project directory when one is
+            # configured, so "send a file to this topic" puts it where the agent
+            # is working instead of a shared media folder it then has to copy from.
+            dest = self._orch.resolve_topic_media_dir(message) or paths.telegram_files_dir
+            media_prompt = await resolve_media_text(self._bot, message, dest, paths.workspace)
             if media_prompt is None:
                 return None
+            await self._report_landing(message, dest)
             return prepend_reply_to_media(message, media_prompt)
         if not message.text:
             return None
