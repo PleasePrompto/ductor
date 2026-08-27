@@ -1860,6 +1860,18 @@ class TelegramBot:
             return False
 
         edit.name = message.text.strip()
+
+        # The name was an answer to a question, not a message in the
+        # conversation. Leaving it below the menu makes the exchange read
+        # backwards — the menu updates above while the input sits at the
+        # bottom — and it leaves folder names in the topic afterwards.
+        # Best effort: deletion needs can_delete_messages, which is a group
+        # setting the bot does not control.
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.delete_message(
+                chat_id=message.chat.id, message_id=message.message_id
+            )
+
         text, keyboard = await asyncio.to_thread(
             build_name_confirmation,
             self._orch.paths,
