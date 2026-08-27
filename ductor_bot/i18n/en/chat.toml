@@ -610,3 +610,7 @@ name_empty = "⚠️ A name is required."
 name_illegal = "⚠️ A name cannot contain a slash or a backslash."
 name_traversal = "⚠️ That name is not allowed."
 name_too_long = "⚠️ That name is too long."
+
+[menu]
+shown = "⌨️ Menu shown. Tap the grid beside the message box to collapse it."
+hidden = "Menu hidden."

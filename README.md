@@ -211,6 +211,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Multi-account Claude** — map several credential stores in `claude_accounts` and switch with `/account`; sessions and skills stay shared, so a rate-limited conversation continues on the other subscription via `--resume`
 - **Skill browser** — `/skills` groups every loadable skill by plugin and copies `/name ` to your clipboard on tap, which is the only way to reach skills marked `disable-model-invocation`. Discovery follows `enabledPlugins` and the plugin registry, so stale versions and disabled plugins are not listed
 - **File manager over your projects** — `/files` opens in the folder this conversation is bound to, or lists `~/.ductor` alongside every directory in `project_roots` when it is not bound, with tap-to-navigate, `Back`/`Home` and breadcrumbs. Only directories get a button; files are reached through `⬇️ Download`, which offers a single file or the whole folder as a zip, so a folder of any size stays a screen you can aim at. Nested roots collapse into their parent so the picker stays short
+- **Button menu** (`/menu`) — a persistent keyboard of the commands reached for most often, so they are one tap away instead of typed. Telegram supplies the collapse/expand toggle beside the input box once it exists; `/menu` again removes it. Buttons carry command text because that is all a reply keyboard can send, and they address the bot explicitly when `group_mention_only` is on
 - **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder, and the bot replies with where it put it
 - **Upload into any folder you can browse** — `⬆️ Upload here` opens an upload for the directory you are looking at. Files are staged and listed, overwrites are flagged, and nothing is written until you confirm; `📦 Send a folder (.zip)` unpacks an archive into that listing first. Archives are validated before extraction (no path traversal, no symlink entries, size and entry ceilings), and staging is discarded on cancel and swept daily
 - **Pull and push from the browser** — a directory inside a git repository gains `⤓ Pull` and `⤒ Push`. Push is inert when the branch matches its upstream, and asks for confirmation against the list of commits it would publish. Pull is `--ff-only`, so a divergence is reported rather than merged unnoticed
@@ -405,6 +406,7 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/tasks` | View/manage background tasks |
 | `/cron` | Interactive cron management |
 | `/files` | Browse `~/.ductor/` and your configured `project_roots`; download, upload, rename, create, delete, and pull/push git. `/showfiles` still works as an alias |
+| `/menu` | Show or hide a persistent keyboard of the commands used most often |
 | `/diagnose` | Runtime diagnostics |
 | `/upgrade` | Check/apply updates |
 | `/agents` | Multi-agent status |

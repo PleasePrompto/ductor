@@ -608,3 +608,7 @@ name_empty = "⚠️ Nama harus diisi."
 name_illegal = "⚠️ Nama tidak boleh mengandung garis miring."
 name_traversal = "⚠️ Nama itu tidak diizinkan."
 name_too_long = "⚠️ Nama itu terlalu panjang."
+
+[menu]
+shown = "⌨️ Menu ditampilkan. Ketuk ikon kisi di samping kotak pesan untuk melipatnya."
+hidden = "Menu disembunyikan."

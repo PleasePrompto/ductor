@@ -609,3 +609,7 @@ name_empty = "⚠️ Ein Name ist erforderlich."
 name_illegal = "⚠️ Ein Name darf keinen Schrägstrich enthalten."
 name_traversal = "⚠️ Dieser Name ist nicht erlaubt."
 name_too_long = "⚠️ Dieser Name ist zu lang."
+
+[menu]
+shown = "⌨️ Menü angezeigt. Tippe auf das Raster neben dem Eingabefeld, um es einzuklappen."
+hidden = "Menü ausgeblendet."

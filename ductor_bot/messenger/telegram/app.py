@@ -73,6 +73,11 @@ from ductor_bot.messenger.telegram.media import (
     resolve_media_text,
     should_drop_in_group,
 )
+from ductor_bot.messenger.telegram.menu_keyboard import (
+    MenuState,
+    build_menu_keyboard,
+    remove_menu_keyboard,
+)
 from ductor_bot.messenger.telegram.message_dispatch import (
     NonStreamingDispatch,
     StreamingDispatch,
@@ -158,7 +163,7 @@ def _build_help_text() -> str:
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
-        f"{_help_line('files')}\n{_help_line('skills')}\n"
+        f"{_help_line('files')}\n{_help_line('menu')}\n{_help_line('skills')}\n"
         f"{_help_line('info')}\n{_help_line('help')}",
         f"{t('help.cat_maintenance')}\n{_help_line('diagnose')}\n{_help_line('upgrade')}\n{_help_line('restart')}",
         SEP,
@@ -261,6 +266,7 @@ class TelegramBot:
         self._lock_pool = lock_pool or LockPool()
         self._upload_store: UploadStore | None = None
         self._edit_store = EditStore()
+        self._menu_state = MenuState()
         self._bus = bus or MessageBus(lock_pool=self._lock_pool)
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
@@ -448,6 +454,7 @@ class TelegramBot:
         # "showfiles" stays as an unlisted alias: renaming a command people
         # already type should not break their muscle memory.
         r.message(Command("files", "showfiles", ignore_case=True))(self._on_files)
+        r.message(Command("menu", ignore_case=True))(self._on_menu)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
         base_cmds = [
             "status",
@@ -887,6 +894,27 @@ class TelegramBot:
                 reply_markup=keyboard,
                 thread_id=get_thread_id(message),
             ),
+        )
+
+    async def _on_menu(self, message: Message) -> None:
+        """Handle /menu: show or hide the persistent command panel.
+
+        Telegram supplies the collapse/expand toggle beside the input box once
+        a keyboard exists, so this only decides whether there is one.
+        """
+        chat_id = message.chat.id
+        showing = self._menu_state.toggle(chat_id)
+        markup = (
+            build_menu_keyboard(self._bot_username, mention=self._config.group_mention_only)
+            if showing
+            else remove_menu_keyboard()
+        )
+        await self._bot.send_message(
+            chat_id,
+            markdown_to_telegram_html(t("menu.shown" if showing else "menu.hidden")),
+            reply_markup=markup,
+            message_thread_id=get_thread_id(message),
+            parse_mode=ParseMode.HTML,
         )
 
     async def _on_files(self, message: Message) -> None:

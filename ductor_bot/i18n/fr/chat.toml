@@ -609,3 +609,7 @@ name_empty = "⚠️ Un nom est requis."
 name_illegal = "⚠️ Un nom ne peut pas contenir de barre oblique."
 name_traversal = "⚠️ Ce nom n est pas autorisé."
 name_too_long = "⚠️ Ce nom est trop long."
+
+[menu]
+shown = "⌨️ Menu affiché. Touchez la grille à côté du champ de saisie pour le replier."
+hidden = "Menu masqué."

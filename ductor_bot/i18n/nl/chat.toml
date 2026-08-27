@@ -609,3 +609,7 @@ name_empty = "⚠️ Een naam is verplicht."
 name_illegal = "⚠️ Een naam mag geen schuine streep bevatten."
 name_traversal = "⚠️ Die naam is niet toegestaan."
 name_too_long = "⚠️ Die naam is te lang."
+
+[menu]
+shown = "⌨️ Menu getoond. Tik op het raster naast het berichtvak om het in te klappen."
+hidden = "Menu verborgen."
