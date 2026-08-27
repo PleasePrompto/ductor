@@ -117,6 +117,11 @@ class CLIConfig:
     process_label: str = "main"
     # Gemini-specific auth fallback:
     gemini_api_key: str | None = None
+    # Claude-specific: CLAUDE_SECURESTORAGE_CONFIG_DIR for the selected account.
+    # Empty string keeps the default credential store.
+    claude_account_dir: str = ""
+    # Claude Code agent governing this run (--agent). Empty means none.
+    persona: str = ""
     # Extra CLI parameters (provider-specific):
     cli_parameters: list[str] = field(default_factory=list)
     # Transport identification (for routing results back):

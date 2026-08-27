@@ -82,6 +82,9 @@ Changes take effect on the next CLI invocation (mtime-based cache invalidation, 
 | `reasoning_effort` | `str` | `"medium"` | Default reasoning effort for Claude (`--effort`) and Codex (`-c model_reasoning_effort`); per-session override via `/effort` |
 | `append_system_prompt_files` | `list[str]` | `[]` | Workspace-relative files appended to the system prompt on every agent-driven turn (chat, named sessions, inter-agent, tasks); paths escaping the workspace and files over 256 KiB are skipped |
 | `project_roots` | `dict[str, str]` | `{}` | Per-topic working-directory override: maps a topic key to a directory the CLI runs in instead of the shared workspace (see below) |
+| `claude_accounts` | `dict[str, str]` | `{}` | Claude credential stores: account name -> directory used as `CLAUDE_SECURESTORAGE_CONFIG_DIR` (see below) |
+| `claude_account` | `str` | `""` | Active entry of `claude_accounts`; empty means the default store. Switched at runtime with `/account` |
+| `persona_prompt` | `bool` | `false` | Ask which persona (Claude Code agent) should govern a new conversation (see below) |
 | `file_access` | `str` | `"all"` | File access scope (`all`, `home`, `workspace`) for file sends and API `GET /files`; unknown values fall back to workspace-only |
 | `gemini_api_key` | `str \| None` | `None` | Config fallback key injected for Gemini API-key mode |
 | `transport` | `str` | `"telegram"` | Messaging transport: `"telegram"` or `"matrix"` |
@@ -122,6 +125,96 @@ is used. When `transports` contains multiple entries (e.g.
 transports in parallel and `transport` is auto-set to the first
 entry. A model validator normalizes both fields at load time so
 they stay consistent.
+
+### `claude_accounts` / `claude_account`
+
+Claude Code reads its OAuth credentials from the directory named by
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`, falling back to the regular config dir. Only
+the *credential store* moves — `CLAUDE_CONFIG_DIR` is untouched, so sessions,
+projects, skills, MCP servers and settings stay shared between accounts.
+
+That split is the point: when one subscription hits its rate limit mid-task,
+switching accounts lets the same conversation continue via `--resume` instead of
+starting over.
+
+```json
+{
+  "claude_accounts": {
+    "work": "~/.claude-work",
+    "personal": "~/.claude-personal"
+  },
+  "claude_account": "work"
+}
+```
+
+Each directory needs its own login once:
+
+```bash
+CLAUDE_SECURESTORAGE_CONFIG_DIR=~/.claude-work claude   # then /login
+```
+
+Behavior:
+
+- `/account` shows the configured stores as buttons; `/account <name>` switches
+  directly. `/account` with no accounts configured explains how to add them.
+- The choice is global, not per-topic — the credential store is a property of
+  the CLI process, and a per-topic value would make it ambiguous which
+  subscription a background task or cron job spends.
+- Takes effect on the next CLI invocation; the running session is not reset.
+- An unknown `claude_account` is cleared on load with a warning rather than
+  silently falling back to the default store.
+- Applies to cron, webhook, heartbeat and background runs as well as chat turns:
+  the resolved directory is carried on `TaskExecutionConfig`, not only through
+  `CLIService`.
+- Auth detection is scoped to the selected store, so a setup whose only
+  logged-in account is a non-default one is still reported as authenticated.
+- Entries with an empty or whitespace path are dropped at load with a warning:
+  they would resolve to the default store while displaying as active.
+- **Not supported in Docker sandbox mode** — the credential directory is not
+  mounted into the container, so the default account is used. Configuring both
+  logs a warning at startup, and switching warns when a container is actually in
+  use (not merely configured).
+
+Known limitation: for sub-agents the selection is persisted only in the
+agent-local `config.json`. The supervisor rebuilds sub-agent runtime config from
+`agents.json`, which has no account field, so a sub-agent restart reverts to the
+main account.
+
+### `persona_prompt`
+
+A persona is a Claude Code agent — a Markdown file in `<config>/agents/` — and
+`--agent <name>` is what loads its definition for a run.
+
+With `persona_prompt` enabled, the first message of a conversation that has not
+yet chosen a persona is held, the available personas are offered as buttons, and
+the held message runs once one is chosen. `/persona` changes it at any point;
+`/new` and `/reset` clear it, so the next conversation chooses again.
+
+Having answered is the only thing that stops the question, so conversations that
+predate the setting are asked once as you return to them rather than being left
+without a persona forever.
+
+```json
+{ "persona_prompt": true }
+```
+
+Deliberate limits:
+
+- **Nothing is inferred.** Personas are never guessed from the topic name, the
+  directory, or the wording of a message. A persona changes how the agent
+  behaves, so the choice belongs to the user.
+- **There is no default and no fallback.** An unanswered conversation runs
+  under no persona rather than a plausible one.
+- **`Default` appears only when no personas are defined**, so an installation
+  without agents is not left with a dead menu. Where personas exist the escape
+  hatch is omitted: it would quietly become the path of least resistance.
+- **Off by default.** It adds a prompt before the first reply, which should be
+  opted into rather than arriving with an upgrade.
+
+The choice is stored per conversation in `personas.json` and survives a restart.
+A held message is not persisted: if the bot restarts between the question and
+the answer, the message is dropped and asked for again, rather than a queued
+instruction executing later unwatched.
 
 ### `project_roots`
 
@@ -584,6 +677,8 @@ Hot-reloadable top-level fields:
 - `permission_mode`, `file_access`, `user_timezone`
 - `streaming`, `heartbeat`, `cleanup`, `cli_parameters`, `scene`, `image`, `language`
 - `project_roots` (per-topic working-dir overrides take effect on the next turn)
+- `persona_prompt`
+- `claude_accounts`, `claude_account` (credential store applies on the next CLI call)
 - `allowed_user_ids`, `allowed_group_ids`, `group_mention_only`
 
 Current non-hot fields that often surprise people:
