@@ -314,3 +314,31 @@ def test_update_config_file_does_not_log_values(
 
     assert "SUPERSECRET-TOKEN" not in caplog.text
     assert "api" in caplog.text
+
+
+# -- Claude accounts -----------------------------------------------------------
+
+
+def test_claude_account_defaults_to_empty() -> None:
+    config = AgentConfig(telegram_token="t")
+    assert config.claude_accounts == {}
+    assert config.claude_account == ""
+
+
+def test_claude_account_kept_when_configured() -> None:
+    config = AgentConfig(
+        telegram_token="t",
+        claude_accounts={"work": "~/.claude-work"},
+        claude_account="work",
+    )
+    assert config.claude_account == "work"
+
+
+def test_unknown_claude_account_is_cleared() -> None:
+    """An unknown name must not silently fall back to the default store."""
+    config = AgentConfig(
+        telegram_token="t",
+        claude_accounts={"work": "~/.claude-work"},
+        claude_account="ghost",
+    )
+    assert config.claude_account == ""

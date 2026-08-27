@@ -20,6 +20,7 @@ DIRECT_COMMANDS: frozenset[str] = frozenset(
         "info",
         "agent_commands",
         "showfiles",
+        "files",
         "session",
     }
 )
@@ -30,6 +31,11 @@ ORCHESTRATOR_COMMANDS: frozenset[str] = frozenset(
         "status",
         "model",
         "effort",
+        "account",
+        "persona",
+        "folder",
+        "consult",
+        "skills",
         "memory",
         "cron",
         "diagnose",
