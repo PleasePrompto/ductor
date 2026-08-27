@@ -81,7 +81,7 @@ def store(tmp_path: Path) -> ManagedTopicStore:
     return ManagedTopicStore(tmp_path / "managed_topics.json")
 
 
-async def test_first_run_creates_the_topic_and_pins_both_notices(
+async def test_first_run_creates_the_topic_and_posts_both_notices(
     store: ManagedTopicStore, tmp_path: Path
 ) -> None:
     bot = FakeBot()
@@ -89,9 +89,37 @@ async def test_first_run_creates_the_topic_and_pins_both_notices(
 
     assert bot.created == ["Consult"]
     assert len(bot.sent) == 2, "one notice in Consult, one in General"
-    assert len(bot.pinned) == 2
     assert store.get(CHAT, CONSULT).topic_id is not None
     assert store.get(CHAT, GENERAL).notice_message_id is not None
+
+
+async def test_only_the_general_notice_is_pinned(
+    store: ManagedTopicStore, tmp_path: Path
+) -> None:
+    """pinChatMessage takes no message_thread_id. It pins chat-wide, and a
+    message inside a forum topic is accepted and then not pinned — the call
+    returns True and nothing appears. Calling it there claims something the
+    platform does not do."""
+    bot = FakeBot()
+    await ensure_managed_topics(bot, CHAT, store, tmp_path / "Consult")
+
+    general_notice = store.get(CHAT, GENERAL).notice_message_id
+    assert bot.pinned == [general_notice], bot.pinned
+
+    consult_notice = store.get(CHAT, CONSULT).notice_message_id
+    assert consult_notice not in bot.pinned
+
+
+async def test_the_consult_notice_is_the_first_message_in_its_topic(
+    store: ManagedTopicStore, tmp_path: Path
+) -> None:
+    """Position is what makes it visible, since it cannot be pinned."""
+    bot = FakeBot()
+    await ensure_managed_topics(bot, CHAT, store, tmp_path / "Consult")
+
+    topic_id = store.get(CHAT, CONSULT).topic_id
+    first_in_topic = next(thread for thread, _text in bot.sent if thread is not None)
+    assert first_in_topic == topic_id
 
 
 async def test_second_run_creates_nothing(store: ManagedTopicStore, tmp_path: Path) -> None:
@@ -119,7 +147,7 @@ async def test_an_unchanged_notice_counts_as_alive(
     await ensure_managed_topics(bot, CHAT, store, consult)
 
     assert bot.created == []
-    assert len(bot.pinned) == 2, "still re-pinned"
+    assert len(bot.pinned) == 1, "General is re-pinned; a topic notice cannot be"
 
 
 async def test_a_deleted_notice_is_recreated(store: ManagedTopicStore, tmp_path: Path) -> None:
