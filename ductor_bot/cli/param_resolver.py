@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.claude_accounts import resolve_account_dir
 from ductor_bot.errors import DuctorError
 
 if TYPE_CHECKING:
@@ -72,6 +73,8 @@ class TaskExecutionConfig:
     permission_mode: str
     working_dir: str
     file_access: str
+    # Resolved CLAUDE_SECURESTORAGE_CONFIG_DIR; empty means the default store.
+    claude_account_dir: str = ""
 
 
 def _static_effort(
@@ -221,4 +224,12 @@ def resolve_cli_config(
         permission_mode=base_config.permission_mode,
         working_dir=base_config.ductor_home,
         file_access=base_config.file_access,
+        # Cron, webhook, heartbeat and stateless background runs go through this
+        # path rather than CLIService, and would otherwise ignore /account and
+        # spend whichever subscription the parent process inherited.
+        claude_account_dir=resolve_account_dir(
+            getattr(base_config, "claude_accounts", {}) or {},
+            getattr(base_config, "claude_account", "") or "",
+        )
+        or "",
     )

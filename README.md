@@ -99,6 +99,10 @@ All chats share the same `~/.ductor/` workspace — same tools, same memory, sam
 > ductor learns topic names from `forum_topic_created` and `forum_topic_edited`
 > events — pre-existing topics show as "Topic #N" until renamed.
 > This is a Telegram limitation, not a ductor limitation.
+>
+> Folder bindings do not depend on those names: they are keyed by chat and
+> topic id, so a topic ductor cannot name still works, and renaming one never
+> changes where its work happens.
 
 ### 3. Named sessions (extra contexts within any chat)
 
@@ -199,7 +203,15 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Telegram reasoning + tool UX controls** — optional reasoning stream, live tool progress, and separate thinking indicator controls
 - **Quoted-reply context** — replying to a message (Telegram) carries the cited text into the agent prompt, so follow-ups like "expand on this" keep their reference
 - **Five coding agents** — Claude Code, Codex CLI, Gemini CLI (API key / Code Assist license; Google ended free individual-account access on 2026-06-18), Antigravity (`agy`), and Grok Build (`grok`), switchable per chat/topic with `/model` (never blocks, even during active processes)
-- **Per-topic project roots** — map a forum topic to its own working directory (`project_roots`) so the agent runs inside that repo instead of the shared workspace
+- **Per-conversation folders** — `project_roots` lists the directories you are willing to work in; a conversation is *bound* to one of them by tapping `📌 Use this folder for this topic` in `/showfiles`, or by answering the picker the first time you use it. Bindings are keyed by session, so renaming a topic cannot break them and a restart cannot forget them. Change one later with `/folder`
+- **Managed topics** (`managed_topics`, **off by default**) — when enabled, ductor creates a `Consult` topic in each configured group and keeps a pinned notice in it and in General, verifying both on every start. Consult gets its own working directory at `~/.ductor/Consult`, carrying a `CLAUDE.md` that tells the agent to stay inside it. That is an instruction the agent follows, **not a sandbox** — the CLI runs as your user and a working directory is not a boundary. Leave this off unless you want a bot that creates topics and pins messages in your group
+- **Multi-account Claude** — map several credential stores in `claude_accounts` and switch with `/account`; sessions and skills stay shared, so a rate-limited conversation continues on the other subscription via `--resume`
+- **Skill browser** — `/skills` groups every loadable skill by plugin and copies `/name ` to your clipboard on tap, which is the only way to reach skills marked `disable-model-invocation`. Discovery follows `enabledPlugins` and the plugin registry, so stale versions and disabled plugins are not listed
+- **File browser over your projects** — `/showfiles` lists `~/.ductor` alongside every directory in `project_roots`, with tap-to-navigate, `Back`/`Home` and breadcrumbs. Only directories get a button; files are reached through `⬇️ Download`, which offers a single file or the whole folder as a zip, so a folder of any size stays a screen you can aim at. Nested roots collapse into their parent so the picker stays short
+- **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder, and the bot replies with where it put it
+- **Upload into any folder you can browse** — `⬆️ Upload here` opens an upload for the directory you are looking at. Files are staged and listed, overwrites are flagged, and nothing is written until you confirm; `📦 Send a folder (.zip)` unpacks an archive into that listing first. Archives are validated before extraction (no path traversal, no symlink entries, size and entry ceilings), and staging is discarded on cancel and swept daily
+- **Pull and push from the browser** — a directory inside a git repository gains `⤓ Pull` and `⤒ Push`. Push is inert when the branch matches its upstream, and asks for confirmation against the list of commits it would publish. Pull is `--ff-only`, so a divergence is reported rather than merged unnoticed
+- **Personas** — when `persona_prompt` is on, a conversation that has not chosen a persona asks which of your Claude Code agents should handle it, holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`; `/new` and `/reset` clear it. Nothing is inferred and there is no default; installations without agents never see the prompt
 - **Persistent memory** — plain Markdown files that survive across sessions
 - **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
 - **Cron jobs** — in-process scheduler with timezone support, per-job overrides, optional silent-on-success, result routing to originating chat
@@ -375,6 +387,9 @@ This is **hot-reloadable** — change the language without restarting the bot.
 |---|---|
 | `/model` | Interactive model/provider selector |
 | `/effort` | Reasoning effort for the current chat/topic (Claude & Codex) |
+| `/account` | Switch the Claude credential store (see `claude_accounts` in docs/config.md) |
+| `/persona` | Choose which Claude Code agent governs this chat/topic |
+| `/skills` | Browse available skills by plugin; tap one to copy its command |
 | `/new` | Reset the configured default-provider session for this chat/topic |
 | `/reset` | Reset the currently active provider session for this chat/topic |
 | `/stop` | Stop current message and discard queued messages |
@@ -386,7 +401,7 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/sessions` | View/manage active sessions |
 | `/tasks` | View/manage background tasks |
 | `/cron` | Interactive cron management |
-| `/showfiles` | Browse `~/.ductor/` |
+| `/showfiles` | Browse `~/.ductor/` and your configured `project_roots`; send files and folders, upload into them, pull/push git |
 | `/diagnose` | Runtime diagnostics |
 | `/upgrade` | Check/apply updates |
 | `/agents` | Multi-agent status |
