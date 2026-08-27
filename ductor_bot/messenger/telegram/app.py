@@ -158,7 +158,7 @@ def _build_help_text() -> str:
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
-        f"{_help_line('showfiles')}\n{_help_line('skills')}\n"
+        f"{_help_line('files')}\n{_help_line('skills')}\n"
         f"{_help_line('info')}\n{_help_line('help')}",
         f"{t('help.cat_maintenance')}\n{_help_line('diagnose')}\n{_help_line('upgrade')}\n{_help_line('restart')}",
         SEP,
@@ -445,7 +445,9 @@ class TelegramBot:
         r.message(Command("session", ignore_case=True))(self._on_session)
         r.message(Command("sessions", ignore_case=True))(self._on_sessions)
         r.message(Command("tasks", ignore_case=True))(self._on_tasks)
-        r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
+        # "showfiles" stays as an unlisted alias: renaming a command people
+        # already type should not break their muscle memory.
+        r.message(Command("files", "showfiles", ignore_case=True))(self._on_files)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
         base_cmds = [
             "status",
@@ -887,8 +889,8 @@ class TelegramBot:
             ),
         )
 
-    async def _on_showfiles(self, message: Message) -> None:
-        """Handle /showfiles: interactive file browser for ~/.ductor."""
+    async def _on_files(self, message: Message) -> None:
+        """Handle /files: browse, transfer and manage files."""
         key = get_session_key(message)
         text, keyboard = await file_browser_start(
             self._orch.paths,
@@ -946,8 +948,8 @@ class TelegramBot:
         if text_lower.startswith("/leave"):
             await self._handle_leave(chat_id, message)
             return True
-        if text_lower.startswith("/showfiles") and self._orchestrator is not None:
-            await self._on_showfiles(message)
+        if text_lower.startswith(("/files", "/showfiles")) and self._orchestrator is not None:
+            await self._on_files(message)
             return True
         return None
 

@@ -20,6 +20,7 @@ DIRECT_COMMANDS: frozenset[str] = frozenset(
         "info",
         "agent_commands",
         "showfiles",
+        "files",
         "session",
     }
 )

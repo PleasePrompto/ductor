@@ -191,7 +191,7 @@ async def file_browser_start(
     project_roots: Mapping[str, str],
     start_dir: Path | None = None,
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Build the opening ``/showfiles`` view.
+    """Build the opening ``/files`` view.
 
     A conversation bound to a folder opens *in* it rather than at the list of
     every root: that folder is where its work happens, and the list is one tap

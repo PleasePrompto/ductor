@@ -35,7 +35,7 @@ def get_bot_commands() -> list[tuple[str, str]]:
         ("cron", t_cmd("bot.cron")),
         ("agent_commands", t_cmd("bot.agent_commands")),
         # Browse & info
-        ("showfiles", t_cmd("bot.showfiles")),
+        ("files", t_cmd("bot.files")),
         ("info", t_cmd("bot.info")),
         ("help", t_cmd("bot.help")),
         # Maintenance (rare)
