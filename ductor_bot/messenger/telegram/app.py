@@ -73,10 +73,16 @@ from ductor_bot.messenger.telegram.media import (
     resolve_media_text,
     should_drop_in_group,
 )
-from ductor_bot.messenger.telegram.menu_keyboard import (
-    MenuState,
-    build_menu_keyboard,
-    remove_menu_keyboard,
+from ductor_bot.messenger.telegram.menu import (
+    MENU_ITEMS,
+    MNU_CLOSE,
+    build_menu,
+    build_toggle_panel,
+    is_menu_callback,
+    state_subtitle,
+)
+from ductor_bot.messenger.telegram.menu import (
+    parse_callback as parse_menu_callback,
 )
 from ductor_bot.messenger.telegram.message_dispatch import (
     NonStreamingDispatch,
@@ -266,7 +272,6 @@ class TelegramBot:
         self._lock_pool = lock_pool or LockPool()
         self._upload_store: UploadStore | None = None
         self._edit_store = EditStore()
-        self._menu_state = MenuState()
         self._bus = bus or MessageBus(lock_pool=self._lock_pool)
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
@@ -897,29 +902,92 @@ class TelegramBot:
         )
 
     async def _on_menu(self, message: Message) -> None:
-        """Handle /menu: show or hide the persistent command panel.
+        """Handle /menu: open the inline menu, and install the toggle panel.
 
-        Telegram supplies the collapse/expand toggle beside the input box once
-        a keyboard exists, so this only decides whether there is one.
+        The command message is deleted straight away. It is the only text this
+        feature ever sends, and leaving a "/menu" in the topic every time the
+        toggle is tapped is the clutter the inline menu exists to avoid.
         """
         chat_id = message.chat.id
-        showing = self._menu_state.toggle(chat_id)
-        markup = (
-            build_menu_keyboard(self._bot_username, mention=self._config.group_mention_only)
-            if showing
-            else remove_menu_keyboard()
-        )
-        await self._bot.send_message(
-            chat_id,
-            markdown_to_telegram_html(t("menu.shown" if showing else "menu.hidden")),
-            reply_markup=markup,
-            message_thread_id=get_thread_id(message),
-            parse_mode=ParseMode.HTML,
+        thread_id = get_thread_id(message)
+
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.delete_message(chat_id=chat_id, message_id=message.message_id)
+
+        # Sent with the panel attached so the toggle exists from now on; after
+        # this the button sends /menu and the user never types it again.
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                chat_id,
+                markdown_to_telegram_html(t("menu.panel_ready")),
+                reply_markup=build_toggle_panel(),
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
+
+        await self._send_menu(get_session_key(message), thread_id)
+
+    async def _send_menu(self, key: SessionKey, thread_id: int | None) -> None:
+        text, keyboard = build_menu(self._menu_subtitle(key))
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                key.chat_id,
+                markdown_to_telegram_html(text),
+                reply_markup=keyboard,
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
+
+    def _menu_subtitle(self, key: SessionKey) -> str:
+        """Current bindings, shown in the header instead of hiding buttons."""
+        bound = self._orch.bindings.resolve(key.storage_key)
+        folder = bound.name if bound else ""
+        persona = self._orch.personas.get(key.storage_key) or ""
+        model = ""
+        with contextlib.suppress(AttributeError, KeyError, TypeError):
+            model = self._orch.resolve_session_directive(key).model or ""
+        return state_subtitle(folder, persona, model)
+
+    async def _handle_menu_callback(
+        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
+        """Run the command a menu button stands for.
+
+        Routed through the orchestrator's own registry rather than
+        re-implemented, so a menu item behaves exactly as typing the command
+        does and cannot drift from it.
+        """
+        if data == MNU_CLOSE:
+            with contextlib.suppress(TelegramAPIError):
+                await self._bot.delete_message(chat_id=key.chat_id, message_id=message_id)
+            return
+
+        index = parse_menu_callback(data)
+        if index is None or not 0 <= index < len(MENU_ITEMS):
+            return
+        command = MENU_ITEMS[index].command
+
+        # /files is a transport screen, not an orchestrator command.
+        if command == "/files":
+            await self._send_files_view(key, thread_id)
+            return
+
+        # handle_message routes a leading slash through the same registry the
+        # typed command uses, so a menu item cannot drift from its command.
+        result = await self._orch.handle_message(key, command)
+        if result is None or not result.text:
+            return
+        await send_rich(
+            self._bot,
+            key.chat_id,
+            result.text,
+            SendRichOpts(
+                reply_markup=button_grid_to_markup(result.buttons) if result.buttons else None,
+                thread_id=thread_id,
+            ),
         )
 
-    async def _on_files(self, message: Message) -> None:
-        """Handle /files: browse, transfer and manage files."""
-        key = get_session_key(message)
+    async def _send_files_view(self, key: SessionKey, thread_id: int | None) -> None:
         text, keyboard = await file_browser_start(
             self._orch.paths,
             self._config.project_roots,
@@ -927,14 +995,14 @@ class TelegramBot:
         )
         await send_rich(
             self._bot,
-            message.chat.id,
+            key.chat_id,
             text,
-            SendRichOpts(
-                reply_to_message_id=message.message_id,
-                reply_markup=keyboard,
-                thread_id=get_thread_id(message),
-            ),
+            SendRichOpts(reply_markup=keyboard, thread_id=thread_id),
         )
+
+    async def _on_files(self, message: Message) -> None:
+        """Handle /files: browse, transfer and manage files."""
+        await self._send_files_view(get_session_key(message), get_thread_id(message))
 
     # -- Interrupt, abort, commands, sessions ----------------------------------
 
@@ -1377,6 +1445,10 @@ class TelegramBot:
         from ductor_bot.messenger.telegram.file_browser import SF_EDIT_APPLY_PREFIX
 
         chat_id = key.chat_id
+        if is_menu_callback(data):
+            await self._handle_menu_callback(key, message_id, data, thread_id=thread_id)
+            return True
+
         if data == SF_EDIT_APPLY_PREFIX:
             await self._apply_pending_edit(key, message_id)
             return True
