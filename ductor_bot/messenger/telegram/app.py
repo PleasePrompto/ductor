@@ -976,9 +976,13 @@ class TelegramBot:
             return
         command = MENU_ITEMS[index].command
 
-        # /files is a transport screen, not an orchestrator command.
-        if command == "/files":
-            await self._send_files_view(key, thread_id)
+        # Some menu entries are transport screens rather than orchestrator
+        # commands. Sending those through handle_message routes them to the
+        # agent, which answers "that is not available in this environment" —
+        # a menu button producing a chat reply, with nothing to show it failed.
+        transport = self._transport_menu_actions()
+        if command in transport:
+            await transport[command](key, thread_id)
             return
 
         # handle_message routes a leading slash through the same registry the
@@ -996,10 +1000,53 @@ class TelegramBot:
             ),
         )
 
+    def _transport_menu_actions(self):  # noqa: ANN202
+        """Menu entries handled here rather than by the orchestrator registry."""
+        return {
+            "/files": self._send_files_view,
+            "/help": self._send_help_view,
+        }
+
+    async def _send_help_view(self, key: SessionKey, thread_id: int | None) -> None:
+        await send_rich(
+            self._bot,
+            key.chat_id,
+            _build_help_text(),
+            SendRichOpts(thread_id=thread_id),
+        )
+
+    def _is_consult(self, key: SessionKey) -> bool:
+        """True in the Consult topic this bot created for *key*'s chat."""
+        if key.topic_id is None or not self._config.managed_topics:
+            return False
+        from ductor_bot.messenger.telegram.managed_topics import CONSULT, ManagedTopicStore
+
+        store = ManagedTopicStore(self._orch.paths.managed_topics_path)
+        return store.get(key.chat_id, CONSULT).topic_id == key.topic_id
+
+    def _roots_for(self, key: SessionKey) -> dict[str, str]:
+        """The directories this conversation may see.
+
+        Everywhere else this is the configured catalogue. In Consult it is that
+        topic's own directory and nothing else — the file manager is our code,
+        so unlike the instruction in its CLAUDE.md this is actually enforced.
+        """
+        if self._is_consult(key):
+            from ductor_bot.messenger.telegram.file_browser import RESTRICTED
+
+            return {
+                "Consult": str(self._orch.paths.consult_dir),
+                # Without this the browser adds ~/.ductor, which contains
+                # Consult — and the nested-root rule would keep the ancestor,
+                # exposing everything the narrowing was for.
+                RESTRICTED: "1",
+            }
+        return dict(self._config.project_roots)
+
     async def _send_files_view(self, key: SessionKey, thread_id: int | None) -> None:
         text, keyboard = await file_browser_start(
             self._orch.paths,
-            self._config.project_roots,
+            self._roots_for(key),
             self._orch.bindings.resolve(key.storage_key),
         )
         await send_rich(
@@ -1621,7 +1668,7 @@ class TelegramBot:
         chat_id = key.chat_id
         action = await handle_file_browser_callback(
             self._orch.paths,
-            self._config.project_roots,
+            self._roots_for(key),
             data,
             session=BrowserSession(
                 uploads=self._uploads,
@@ -1796,11 +1843,12 @@ class TelegramBot:
         # Nothing configured means one possible answer, so there is nothing to
         # consent to; blocking here would lock out an installation that has
         # never defined a project.
-        if not self._config.project_roots:
+        catalogue = self._roots_for(key)
+        if not catalogue:
             return False
 
         self._orch.bindings.hold(key.storage_key, text)
-        resp = folder_selector(self._orch, key, asking=True)
+        resp = folder_selector(self._orch, key, asking=True, catalogue=catalogue)
         await self._bot.send_message(
             key.chat_id,
             markdown_to_telegram_html(resp.text),
@@ -1820,10 +1868,11 @@ class TelegramBot:
             resolve_choice,
         )
 
+        catalogue = self._roots_for(key)
         index = parse_callback(data)
-        chosen = resolve_choice(self._config.project_roots, index) if index is not None else None
+        chosen = resolve_choice(catalogue, index) if index is not None else None
         if chosen is None:
-            resp = folder_selector(self._orch, key)
+            resp = folder_selector(self._orch, key, catalogue=catalogue)
             await edit_selector_response(self._bot, key.chat_id, message_id, resp)
             return
 

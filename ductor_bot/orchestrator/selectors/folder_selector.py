@@ -50,10 +50,19 @@ def _catalogue(roots: Mapping[str, str]) -> list[tuple[str, str]]:
 
 
 def folder_selector(
-    orch: Orchestrator, key: SessionKey, *, asking: bool = False
+    orch: Orchestrator,
+    key: SessionKey,
+    *,
+    asking: bool = False,
+    catalogue: Mapping[str, str] | None = None,
 ) -> SelectorResponse:
-    """Build the picker. *asking* renders the gate's wording."""
-    roots = _catalogue(orch.config.project_roots)
+    """Build the picker. *asking* renders the gate's wording.
+
+    *catalogue* narrows what is offered. The Consult topic passes its own
+    directory alone: a topic whose whole purpose is to touch no project must
+    not present every project as a choice.
+    """
+    roots = _catalogue(orch.config.project_roots if catalogue is None else catalogue)
     current = orch.bindings.get(key.storage_key)
 
     header = t("folder.ask_header") if asking else t("folder.header")
