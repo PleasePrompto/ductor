@@ -87,3 +87,33 @@ def test_menu_is_registered_and_quick() -> None:
     assert "menu" in {name for name, _desc in BOT_COMMANDS}
     assert classify_command("menu") != "unknown"
     assert "/menu" in QUICK_COMMANDS, "showing a panel must not queue behind the agent"
+
+
+def test_every_quick_command_has_a_dispatch_path() -> None:
+    """A command in QUICK_COMMANDS is intercepted before the normal handlers.
+
+    If nothing then dispatches it, it is swallowed: no handler runs, no error
+    is logged, and the user sees nothing at all. That is exactly how /menu
+    failed — registered, wired, translated, and silently dead.
+    """
+    import inspect
+
+    from ductor_bot.messenger.telegram.app import TelegramBot
+    from ductor_bot.orchestrator import core
+
+    dispatch = inspect.getsource(TelegramBot._dispatch_direct_command)
+    quick = inspect.getsource(TelegramBot._on_quick_command)
+    # Anything not dispatched in the transport falls through to
+    # handle_command(), which looks the name up in the orchestrator registry.
+    registry = inspect.getsource(core)
+
+    for command in QUICK_COMMANDS:
+        handled = (
+            f'"{command}"' in dispatch
+            or f'"{command}"' in quick
+            or f'register_async("{command}"' in registry
+        )
+        assert handled, (
+            f"{command} is intercepted as a quick command but nothing dispatches it; "
+            "it will be silently swallowed"
+        )

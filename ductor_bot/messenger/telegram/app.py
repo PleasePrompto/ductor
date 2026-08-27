@@ -979,6 +979,9 @@ class TelegramBot:
         if text_lower.startswith(("/files", "/showfiles")) and self._orchestrator is not None:
             await self._on_files(message)
             return True
+        if text_lower.startswith("/menu"):
+            await self._on_menu(message)
+            return True
         return None
 
     async def _on_quick_command(self, chat_id: int, message: Message) -> bool:
