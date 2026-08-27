@@ -106,7 +106,7 @@ Matrix startup follows a similar pattern (orchestrator creation, bus wiring, obs
 
 Bot-level handlers (`messenger/telegram/app.py`):
 
-- `/start`, `/help`, `/info`, `/showfiles`, `/stop`, `/stop_all`, `/interrupt`, `/restart`, `/new`, `/reset`, `/session`, `/sessions`, `/tasks`, `/agent_commands`
+- `/start`, `/help`, `/info`, `/files`, `/stop`, `/stop_all`, `/interrupt`, `/restart`, `/new`, `/reset`, `/session`, `/sessions`, `/tasks`, `/agent_commands`
 - main-agent-only handlers: `/agents`, `/agent_start`, `/agent_stop`, `/agent_restart`
 
 Matrix command ownership (`messenger/matrix/bot.py`):
@@ -127,7 +127,7 @@ Abort behavior:
 
 Quick-command bypass (`SequentialMiddleware`):
 
-- `/status`, `/memory`, `/cron`, `/diagnose`, `/model`, `/showfiles`, `/sessions`, `/tasks`, `/where`, `/leave`
+- `/status`, `/memory`, `/cron`, `/diagnose`, `/model`, `/files`, `/sessions`, `/tasks`, `/where`, `/leave`
 
 ## Session and Topic Model
 
