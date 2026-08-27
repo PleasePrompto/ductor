@@ -140,6 +140,36 @@ async def run_startup(bot: TelegramBot) -> None:
     await bot._sync_commands()
     bot._restart_watcher = asyncio.create_task(bot._watch_restart_marker())
 
+    await _ensure_managed_topics(bot)
+
     # Audit groups on startup and start periodic 24h check
     await bot.audit_groups()
     bot._group_audit_task = asyncio.create_task(bot._run_group_audit_loop())
+
+
+async def _ensure_managed_topics(bot: TelegramBot) -> None:
+    """Create or verify the Consult topic and pinned notices in each group.
+
+    Runs on every start, not only the first: the state file records what was
+    created, and an edit to the pinned notice is what proves it still exists.
+    """
+    if not bot.config.managed_topics or bot._agent_name != "main":
+        return
+
+    from ductor_bot.messenger.telegram.managed_topics import (
+        ManagedTopicStore,
+        ensure_managed_topics,
+    )
+
+    paths = bot._orch.paths
+    store = ManagedTopicStore(paths.managed_topics_path)
+    schedule = (bot.config.consult_wipe, bot.config.consult_wipe_hour)
+    for chat_id in bot.config.allowed_group_ids:
+        await ensure_managed_topics(
+            bot.bot_instance, chat_id, store, paths.consult_dir, schedule
+        )
+
+    from ductor_bot.cleanup.consult_observer import ConsultWipeObserver
+
+    bot._consult_observer = ConsultWipeObserver(bot.config, paths, bot.bot_instance, store)
+    await bot._consult_observer.start()
