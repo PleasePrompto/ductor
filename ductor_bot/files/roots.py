@@ -15,17 +15,27 @@ from collections.abc import Mapping
 from pathlib import Path
 
 
-def browsable_roots(ductor_home: Path, project_roots: Mapping[str, str]) -> dict[str, Path]:
+def browsable_roots(
+    ductor_home: Path,
+    project_roots: Mapping[str, str],
+    *,
+    include_home: bool = True,
+) -> dict[str, Path]:
     """Return ``label -> directory`` for everything the browser may show.
 
     Duplicate directories collapse to one entry, so mapping two topic names at
     the same folder does not list it twice. Non-existent paths are dropped:
     showing a root that cannot be opened reads as a broken browser.
+
+    *include_home* must be False when the caller is restricting what may be
+    seen. ``~/.ductor`` is an ancestor of anything kept inside it, and the
+    collapsing rule keeps the shallowest — so a restricted root nested there
+    would widen back out to the whole of ``.ductor``.
     """
     candidates: list[tuple[str, Path]] = []
 
     home = ductor_home.expanduser().resolve()
-    if home.is_dir():
+    if include_home and home.is_dir():
         candidates.append(("~/.ductor", home))
 
     for label, raw in sorted(project_roots.items()):

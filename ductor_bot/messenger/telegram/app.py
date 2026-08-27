@@ -1032,7 +1032,15 @@ class TelegramBot:
         so unlike the instruction in its CLAUDE.md this is actually enforced.
         """
         if self._is_consult(key):
-            return {"Consult": str(self._orch.paths.consult_dir)}
+            from ductor_bot.messenger.telegram.file_browser import RESTRICTED
+
+            return {
+                "Consult": str(self._orch.paths.consult_dir),
+                # Without this the browser adds ~/.ductor, which contains
+                # Consult — and the nested-root rule would keep the ancestor,
+                # exposing everything the narrowing was for.
+                RESTRICTED: "1",
+            }
         return dict(self._config.project_roots)
 
     async def _send_files_view(self, key: SessionKey, thread_id: int | None) -> None:

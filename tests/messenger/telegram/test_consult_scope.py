@@ -68,8 +68,10 @@ def test_consult_is_recognised(app) -> None:
 
 
 def test_consult_sees_only_its_own_directory(app) -> None:
+    from ductor_bot.messenger.telegram.file_browser import RESTRICTED
+
     roots = app._roots_for(_key(CONSULT_TOPIC))
-    assert list(roots) == ["Consult"]
+    assert set(roots) == {"Consult", RESTRICTED}, roots
     assert "EMR" not in roots
 
 
@@ -103,3 +105,33 @@ def test_every_menu_item_is_handled_without_the_agent() -> None:
             f"{item.command} is neither an orchestrator command nor a transport "
             "action; handle_message would send it to the agent as plain text"
         )
+
+
+def test_consult_shows_only_consult_in_the_browser(app) -> None:
+    """The end-to-end property, and the one a missed call site would break.
+
+    ~/.ductor contains Consult, and browsable_roots keeps the shallowest of
+    nested roots — so forgetting to mark the catalogue restricted swaps a
+    one-folder view for the whole of .ductor.
+    """
+    from ductor_bot.messenger.telegram.file_browser import _visible_roots
+
+    paths = app._orch.paths
+    visible = _visible_roots(paths, app._roots_for(_key(CONSULT_TOPIC)))
+    assert list(visible) == ["Consult"], visible
+    assert "~/.ductor" not in visible
+
+
+def test_other_topics_still_see_the_ductor_home(app) -> None:
+    from ductor_bot.messenger.telegram.file_browser import _visible_roots
+
+    visible = _visible_roots(app._orch.paths, app._roots_for(_key(PROJECT_TOPIC)))
+    assert "~/.ductor" in visible
+
+
+def test_the_marker_never_appears_as_a_folder(app) -> None:
+    """It is plumbing, not a root."""
+    from ductor_bot.messenger.telegram.file_browser import RESTRICTED, _visible_roots
+
+    visible = _visible_roots(app._orch.paths, app._roots_for(_key(CONSULT_TOPIC)))
+    assert RESTRICTED not in visible

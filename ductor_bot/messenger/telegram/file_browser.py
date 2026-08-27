@@ -96,6 +96,13 @@ SF_BIND_PREFIX = "sf&"
 SF_BIND_CONFIRM_PREFIX = "sf&&"
 #: Destructive actions live behind one more tap, so they cannot be hit by
 #: aiming badly at the row above.
+#: Presence of this key means the caller narrowed the catalogue deliberately,
+#: so ``~/.ductor`` must not be added back as a root. It travels with the
+#: mapping because every browser function already receives that mapping, and a
+#: flag threaded through six signatures is six chances to miss one.
+RESTRICTED = "__restricted__"
+_RESTRICTED_MARKER = RESTRICTED
+
 SF_MANAGE_PREFIX = "sf~"
 SF_RENAME_PREFIX = "sf;"
 SF_NEWDIR_PREFIX = "sf^"
@@ -209,7 +216,7 @@ def _start_view(
     paths: DuctorPaths, project_roots: Mapping[str, str], start_dir: Path
 ) -> tuple[str, InlineKeyboardMarkup] | None:
     """The directory view for *start_dir*, or None if it cannot be shown."""
-    roots = browsable_roots(paths.ductor_home, project_roots)
+    roots = _visible_roots(paths, project_roots)
     if not start_dir.is_dir() or not contains(roots, start_dir):
         return None
     return _build_dir_view(paths, project_roots, start_dir)
@@ -545,6 +552,19 @@ def _human_size(total: int) -> str:
     return f"{total} B"
 
 
+def _visible_roots(paths: DuctorPaths, project_roots: Mapping[str, str]) -> dict[str, Path]:
+    """Roots the browser may show for this catalogue.
+
+    ``~/.ductor`` is added only when the catalogue is the full one. It is an
+    ancestor of anything kept inside it, and the collapsing rule keeps the
+    shallowest — so a restricted catalogue pointing at a directory under
+    ``.ductor`` would otherwise widen straight back out to all of it.
+    """
+    restricted = _RESTRICTED_MARKER in project_roots
+    catalogue = {k: v for k, v in project_roots.items() if k != _RESTRICTED_MARKER}
+    return browsable_roots(paths.ductor_home, catalogue, include_home=not restricted)
+
+
 def _roots_map(paths: DuctorPaths, project_roots: Mapping[str, str]) -> dict[str, Path]:
     """Every directory the user declared, not just the ones the picker shows.
 
@@ -553,7 +573,7 @@ def _roots_map(paths: DuctorPaths, project_roots: Mapping[str, str]) -> dict[str
     leave a configured root deletable whenever it happens to sit inside
     another, which is the normal arrangement rather than the exception.
     """
-    roots = dict(browsable_roots(paths.ductor_home, project_roots))
+    roots = dict(_visible_roots(paths, project_roots))
     for label, raw in project_roots.items():
         path = Path(raw).expanduser()
         if path.is_dir():
@@ -811,7 +831,7 @@ def _handle(  # noqa: PLR0911
     # An unknown token means the entry was evicted or the bot restarted since
     # the message was sent. Falling back to the root beats an error the user
     # can do nothing about.
-    roots = browsable_roots(paths.ductor_home, project_roots)
+    roots = _visible_roots(paths, project_roots)
     if target is None or not contains(roots, target):
         return _root_action(paths, project_roots)
 
@@ -836,7 +856,7 @@ def _root_action(paths: DuctorPaths, project_roots: Mapping[str, str]) -> Browse
 def _build_root_view(
     paths: DuctorPaths, project_roots: Mapping[str, str]
 ) -> tuple[str, InlineKeyboardMarkup]:
-    roots = browsable_roots(paths.ductor_home, project_roots)
+    roots = _visible_roots(paths, project_roots)
 
     if not roots:
         return fmt(t("file_browser.header"), SEP, t("file_browser.no_roots")), InlineKeyboardMarkup(
@@ -856,7 +876,7 @@ def _build_root_view(
 def _build_dir_view(
     paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
 ) -> tuple[str, InlineKeyboardMarkup]:
-    roots = browsable_roots(paths.ductor_home, project_roots)
+    roots = _visible_roots(paths, project_roots)
     owner = label_for(roots, target)
     if owner is None:
         return _build_root_view(paths, project_roots)
@@ -1158,7 +1178,7 @@ def _staging_keyboard(dest: Path, *, count: int) -> InlineKeyboardMarkup:
 
 def _display(paths: DuctorPaths, project_roots: Mapping[str, str], target: Path) -> str:
     """``Label/sub/dir`` for a path, falling back to its name."""
-    owner = label_for(browsable_roots(paths.ductor_home, project_roots), target)
+    owner = label_for(_visible_roots(paths, project_roots), target)
     if owner is None:
         return target.name
     label, root = owner
