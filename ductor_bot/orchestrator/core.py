@@ -6,12 +6,14 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.background import (
     BackgroundSubmit,
     BackgroundTask,
 )
+from ductor_bot.cli.claude_accounts import resolve_account_dir
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
@@ -29,14 +31,19 @@ from ductor_bot.errors import (
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
+    cmd_account,
+    cmd_consult,
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_folder,
     cmd_memory,
     cmd_model,
+    cmd_persona,
     cmd_reset,
     cmd_reset_current,
     cmd_sessions,
+    cmd_skills,
     cmd_status,
     cmd_tasks,
     cmd_upgrade,
@@ -61,13 +68,14 @@ from ductor_bot.orchestrator.memory_flush import MemoryFlusher
 from ductor_bot.orchestrator.observers import ObserverManager
 from ductor_bot.orchestrator.providers import ProviderManager
 from ductor_bot.orchestrator.registry import CommandRegistry, OrchestratorResult
+from ductor_bot.personas.store import PersonaStore
 from ductor_bot.security import detect_suspicious_patterns
 from ductor_bot.session import SessionKey, SessionManager
 from ductor_bot.session.manager import SessionData
 from ductor_bot.session.named import NamedSessionRegistry
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
-from ductor_bot.workspace.project_roots import resolve_project_root
+from ductor_bot.workspace.topic_bindings import BindingStore
 
 if TYPE_CHECKING:
     from ductor_bot.background import BackgroundObserver
@@ -155,6 +163,10 @@ class Orchestrator:
                 reasoning_effort=config.reasoning_effort,
                 gemini_api_key=config.gemini_api_key,
                 docker_container=docker_container,
+                claude_account_dir=resolve_account_dir(
+                    config.claude_accounts, config.claude_account
+                )
+                or "",
                 claude_cli_parameters=tuple(config.cli_parameters.claude),
                 codex_cli_parameters=tuple(config.cli_parameters.codex),
                 gemini_cli_parameters=tuple(config.cli_parameters.gemini),
@@ -169,7 +181,10 @@ class Orchestrator:
             available_providers=frozenset(),
             process_registry=self._process_registry,
         )
+        self._personas = PersonaStore(paths.ductor_home / "personas.json")
+        self._bindings = BindingStore(paths.ductor_home / "topic_bindings.json")
         self._cli_service.set_working_dir_resolver(self._resolve_request_working_dir)
+        self._cli_service.set_persona_resolver(self._resolve_request_persona)
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
         self._webhook_manager = WebhookManager(hooks_path=paths.webhooks_path)
         self._observers = ObserverManager(config, paths)
@@ -217,20 +232,57 @@ class Orchestrator:
         self._register_commands()
 
     def _resolve_request_working_dir(self, request: AgentRequest) -> str | None:
-        """Map a CLI request to a per-topic project root, if configured.
+        """The folder this conversation was bound to, if any.
 
         Returns ``None`` (keep the default workspace) for named sessions —
-        their resume consistency depends on a stable working dir — and when
-        no ``project_roots`` entry matches the request's topic.
+        their resume consistency depends on a stable working dir — and whenever
+        the conversation has no binding, which includes an explicit choice of
+        the shared workspace. Nothing is inferred: an unbound conversation is
+        stopped by the transport's gate before it ever reaches here.
         """
         if request.process_label.startswith("ns:"):
             return None  # named sessions stay in workspace (resume consistency)
-        return resolve_project_root(
-            self._config.project_roots,
-            chat_id=request.chat_id,
-            topic_id=request.topic_id,
-            topic_name=self._sessions.resolve_topic_name(request.chat_id, request.topic_id),
-        )
+        key = SessionKey.for_transport(request.transport, request.chat_id, request.topic_id)
+        bound = self._bindings.resolve(key.storage_key)
+        return str(bound) if bound is not None else None
+
+    def resolve_topic_media_dir(self, message: object) -> Path | None:
+        """Where an upload from *message* should be stored.
+
+        Returns the topic's configured project root, or ``None`` to fall back to
+        the shared media directory. Uploads previously always went to the shared
+        folder, so a file sent to a project topic landed away from the work and
+        had to be copied by hand.
+        """
+        chat = getattr(message, "chat", None)
+        chat_id = getattr(chat, "id", None)
+        if chat_id is None:
+            return None
+        topic_id = getattr(message, "message_thread_id", None)
+        if topic_id is None:
+            return None
+
+        key = SessionKey.for_transport("tg", chat_id, topic_id)
+        return self._bindings.resolve(key.storage_key)
+
+    def _resolve_request_persona(self, request: AgentRequest) -> str:
+        """The persona chosen for this conversation, or "" for none.
+
+        Never inferred: an unanswered conversation returns "" and the transport
+        is responsible for asking rather than picking something plausible.
+        """
+        key = SessionKey.for_transport(request.transport, request.chat_id, request.topic_id)
+        return self._personas.get(key.storage_key) or ""
+
+    @property
+    def personas(self) -> PersonaStore:
+        """Per-conversation persona choices."""
+        return self._personas
+
+    @property
+    def bindings(self) -> BindingStore:
+        """Per-conversation folder bindings."""
+        return self._bindings
 
     @property
     def paths(self) -> DuctorPaths:
@@ -448,7 +500,14 @@ class Orchestrator:
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/skills", cmd_skills)
+        reg.register_async("/skills ", cmd_skills)
+        reg.register_async("/account", cmd_account)
+        reg.register_async("/account ", cmd_account)
         reg.register_async("/memory", cmd_memory)
+        reg.register_async("/persona", cmd_persona)
+        reg.register_async("/folder", cmd_folder)
+        reg.register_async("/consult", cmd_consult)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
@@ -766,6 +825,8 @@ class Orchestrator:
                 "permission_mode",
                 "reasoning_effort",
                 "cli_parameters",
+                "claude_accounts",
+                "claude_account",
             )
         ):
             self._cli_service.update_config(
@@ -779,10 +840,21 @@ class Orchestrator:
                     reasoning_effort=config.reasoning_effort,
                     gemini_api_key=config.gemini_api_key,
                     docker_container=self._cli_service._config.docker_container,
+                    claude_account_dir=resolve_account_dir(
+                        config.claude_accounts, config.claude_account
+                    )
+                    or "",
                     claude_cli_parameters=tuple(config.cli_parameters.claude),
                     codex_cli_parameters=tuple(config.cli_parameters.codex),
                     gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                     antigravity_cli_parameters=tuple(config.cli_parameters.antigravity),
+                    # grok_cli_parameters, agent_name and interagent_port were
+                    # omitted here while being set at construction, so any hot
+                    # reload silently cleared the Grok flags and demoted a
+                    # sub-agent to "main" on the default inter-agent port.
+                    grok_cli_parameters=tuple(config.cli_parameters.grok),
+                    agent_name=self._cli_service._config.agent_name,
+                    interagent_port=self._cli_service._config.interagent_port,
                     transcribe_command=config.transcription.audio_command,
                     video_transcribe_command=config.transcription.video_command,
                 )
