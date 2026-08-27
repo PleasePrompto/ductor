@@ -23,6 +23,7 @@ from ductor_bot.bus.bus import MessageBus
 from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.commands import BOT_COMMANDS as _COMMAND_DEFS
 from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
+from ductor_bot.commands import PICKER_COMMANDS as _PICKER_DEFS
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.files.archive import (
@@ -132,8 +133,10 @@ _CAPTION_LIMIT = 1024
 TypingContext = _TypingContext
 send_files_from_text = _send_files_from_text
 
+# Built at import as well as in _rebuild_commands(): _sync_commands() may run
+# before a rebuild, and the initial value is what gets published then.
 _BOT_COMMANDS: list[BotCommand] = [
-    BotCommand(command=cmd, description=desc) for cmd, desc in _COMMAND_DEFS
+    BotCommand(command=cmd, description=desc) for cmd, desc in _PICKER_DEFS
 ]
 
 _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}
@@ -142,11 +145,17 @@ _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}
 def _rebuild_commands() -> None:
     """Rebuild module-level command lists from current translations."""
     global _BOT_COMMANDS  # noqa: PLW0603
-    from ductor_bot.commands import get_bot_commands, get_multiagent_sub_commands
+    from ductor_bot.commands import (
+        get_bot_commands,
+        get_multiagent_sub_commands,
+        get_picker_commands,
+    )
 
     cmd_defs = get_bot_commands()
     ma_defs = get_multiagent_sub_commands()
-    _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in cmd_defs]
+    # The picker is trimmed; _CMD_DESC below stays complete so /help still
+    # documents every command, including the ones the menu covers.
+    _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in get_picker_commands()]
     _CMD_DESC.clear()
     _CMD_DESC.update({**dict(cmd_defs), **dict(ma_defs)})
 
