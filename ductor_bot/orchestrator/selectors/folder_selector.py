@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.i18n import t
+from ductor_bot.messenger.telegram.file_browser import RESTRICTED as _RESTRICTED
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 from ductor_bot.workspace.topic_bindings import SHARED_WORKSPACE
 
@@ -62,8 +63,14 @@ def folder_selector(
     directory alone: a topic whose whole purpose is to touch no project must
     not present every project as a choice.
     """
-    roots = _catalogue(orch.config.project_roots if catalogue is None else catalogue)
+    offered = orch.config.project_roots if catalogue is None else catalogue
+    roots = _catalogue(offered)
     current = orch.bindings.get(key.storage_key)
+
+    # A restricted catalogue names the only place this conversation may work.
+    # Offering the shared workspace there would hand back a way out of the
+    # restriction, which is the whole thing it exists to prevent.
+    allow_shared = _RESTRICTED not in offered
 
     header = t("folder.ask_header") if asking else t("folder.header")
 
@@ -97,7 +104,8 @@ def folder_selector(
         for i, (label, path) in enumerate(roots)
     ]
     rows = [buttons[i : i + _BUTTONS_PER_ROW] for i in range(0, len(buttons), _BUTTONS_PER_ROW)]
-    rows.append([shared_button])
+    if allow_shared:
+        rows.append([shared_button])
 
     return SelectorResponse(text="\n".join(lines), buttons=ButtonGrid(rows=rows))
 
@@ -105,7 +113,9 @@ def folder_selector(
 def resolve_choice(roots: Mapping[str, str], index: int) -> str | None:
     """Map a callback index to a directory, ``SHARED_WORKSPACE``, or ``None``."""
     if index == _SHARED_INDEX:
-        return SHARED_WORKSPACE
+        # Refused rather than honoured: a stale keyboard from before the
+        # restriction must not be a way around it.
+        return None if _RESTRICTED in roots else SHARED_WORKSPACE
     catalogue = _catalogue(roots)
     if 0 <= index < len(catalogue):
         return catalogue[index][1]

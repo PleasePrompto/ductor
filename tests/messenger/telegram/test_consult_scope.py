@@ -135,3 +135,45 @@ def test_the_marker_never_appears_as_a_folder(app) -> None:
 
     visible = _visible_roots(app._orch.paths, app._roots_for(_key(CONSULT_TOPIC)))
     assert RESTRICTED not in visible
+
+
+def test_consult_offers_only_consult(app) -> None:
+    """No shared-workspace escape hatch: it would hand back a way out of the
+    restriction the topic exists for."""
+    from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
+    from ductor_bot.workspace.topic_bindings import BindingStore
+
+    orch = SimpleNamespace(
+        config=SimpleNamespace(project_roots=app._config.project_roots),
+        bindings=BindingStore(app._orch.paths.ductor_home / "b.json"),
+    )
+    resp = folder_selector(
+        orch, _key(CONSULT_TOPIC), asking=True, catalogue=app._roots_for(_key(CONSULT_TOPIC))
+    )
+    labels = [b.text for row in resp.buttons.rows for b in row]
+    assert labels == ["Consult"], labels
+    assert not any("workspace" in label.lower() for label in labels)
+
+
+def test_other_topics_keep_the_shared_workspace_option(app) -> None:
+    from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
+    from ductor_bot.workspace.topic_bindings import BindingStore
+
+    orch = SimpleNamespace(
+        config=SimpleNamespace(project_roots=app._config.project_roots),
+        bindings=BindingStore(app._orch.paths.ductor_home / "b2.json"),
+    )
+    resp = folder_selector(
+        orch, _key(PROJECT_TOPIC), asking=True, catalogue=app._roots_for(_key(PROJECT_TOPIC))
+    )
+    labels = [b.text for row in resp.buttons.rows for b in row]
+    assert any("workspace" in label.lower() for label in labels)
+
+
+def test_a_stale_shared_choice_is_refused_in_consult(app) -> None:
+    """An old keyboard must not be a way around the restriction."""
+    from ductor_bot.orchestrator.selectors.folder_selector import resolve_choice
+
+    restricted = app._roots_for(_key(CONSULT_TOPIC))
+    assert resolve_choice(restricted, -1) is None
+    assert resolve_choice(app._roots_for(_key(PROJECT_TOPIC)), -1) == ""
