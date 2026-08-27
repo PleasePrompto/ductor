@@ -317,3 +317,141 @@ async def test_a_deleted_binding_falls_back(env) -> None:
     paths, roots, _, proj = env
     text, _kb = await fb.file_browser_start(paths, roots, proj / "gone")
     assert "EMR/" in text
+
+
+# ---------------------------------------------------------------------------
+# Manage: rename, new folder, delete
+# ---------------------------------------------------------------------------
+
+
+def _session(env, **kw):
+    from ductor_bot.files.edits import EditStore
+
+    _paths, _roots, uploads, _proj = env
+    return fb.BrowserSession(uploads=uploads, key=KEY, edits=EditStore(), **kw)
+
+
+def _run(env, prefix, target, session=None):
+    paths, roots, _uploads, _proj = env
+    return fb._handle(paths, roots, f"{prefix}{token_for(target)}", session or _session(env))
+
+
+def test_destructive_actions_are_one_tap_further_in(env) -> None:
+    """Nothing that changes files sits on the browsing row."""
+    paths, roots, _u, proj = env
+    _text, kb = fb._build_dir_view(paths, roots, proj)
+    labels = [b.text for b in _buttons(kb)]
+    assert any("Manage" in label for label in labels)
+    for word in ("Delete", "Rename", "New folder"):
+        assert not any(word in label for label in labels), f"{word} must be behind Manage"
+
+
+def test_manage_menu_offers_the_three_actions(env) -> None:
+    _p, _r, _u, proj = env
+    action = _run(env, fb.SF_MANAGE_PREFIX, proj / "sub")
+    (proj / "sub").mkdir(exist_ok=True)
+    action = _run(env, fb.SF_MANAGE_PREFIX, proj / "sub")
+    labels = [b.text for b in _buttons(action.keyboard)]
+    assert any("Rename" in x for x in labels)
+    assert any("New folder" in x for x in labels)
+    assert any("Delete" in x for x in labels)
+
+
+def test_deleting_a_root_is_refused(env) -> None:
+    """The catastrophic case: no dialog, an outright refusal."""
+    _p, _r, _u, proj = env
+    action = _run(env, fb.SF_DELETE_PREFIX, proj)
+    assert "configured project root" in action.text
+    assert not any("Delete permanently" in b.text for b in _buttons(action.keyboard))
+
+
+def test_deleting_a_repository_is_refused(env) -> None:
+    _p, _r, _u, proj = env
+    repo = proj / "vendor"
+    (repo / ".git").mkdir(parents=True)
+    action = _run(env, fb.SF_DELETE_PREFIX, repo)
+    assert "git repository" in action.text
+    assert repo.is_dir(), "still there"
+
+
+def test_delete_needs_two_confirmations(env) -> None:
+    _p, _r, _u, proj = env
+    victim = proj / "scratch"
+    victim.mkdir()
+    (victim / "a.txt").write_text("x")
+
+    first = _run(env, fb.SF_DELETE_PREFIX, victim)
+    assert victim.is_dir(), "first screen must not delete"
+    assert any("Continue" in b.text for b in _buttons(first.keyboard))
+
+    second = _run(env, fb.SF_DELETE_AGAIN_PREFIX, victim)
+    assert victim.is_dir(), "second screen must not delete either"
+    assert any("permanently" in b.text for b in _buttons(second.keyboard))
+
+    _run(env, fb.SF_DELETE_DO_PREFIX, victim)
+    assert not victim.exists()
+
+
+def test_the_first_screen_says_what_will_go(env) -> None:
+    _p, _r, _u, proj = env
+    victim = proj / "scratch"
+    victim.mkdir()
+    (victim / "a.txt").write_text("x" * 2048)
+    action = _run(env, fb.SF_DELETE_PREFIX, victim)
+    assert "1 file(s)" in action.text
+    assert "2 KB" in action.text, "a real size, not one rounded up to a lie"
+    assert "a.txt" in action.text
+
+
+def test_rename_waits_for_a_name(env) -> None:
+    _p, _r, _u, proj = env
+    session = _session(env)
+    target = proj / "notes.md"
+    target.write_text("x")
+
+    action = _run(env, fb.SF_RENAME_PREFIX, target, session)
+    assert "Send the new name" in action.text
+    assert session.edits.get(KEY).kind == "rename"
+    assert target.exists(), "nothing written yet"
+
+
+def test_a_typed_name_is_shown_back_before_anything_happens(env) -> None:
+    paths, roots, _u, proj = env
+    session = _session(env)
+    target = proj / "notes.md"
+    target.write_text("x")
+    _run(env, fb.SF_RENAME_PREFIX, target, session)
+
+    text, kb = fb.build_name_confirmation(paths, roots, session.edits.get(KEY), "renamed.md")
+    assert "renamed.md" in text
+    assert any("Apply" in b.text for b in _buttons(kb))
+    assert target.exists(), "still not written"
+
+
+def test_a_rejected_name_offers_a_retry(env) -> None:
+    paths, roots, _u, proj = env
+    session = _session(env)
+    target = proj / "notes.md"
+    target.write_text("x")
+    _run(env, fb.SF_RENAME_PREFIX, target, session)
+
+    text, kb = fb.build_name_confirmation(paths, roots, session.edits.get(KEY), "a/b")
+    assert "cannot contain a slash" in text
+    assert "Send the new name" in text
+    assert not any("Apply" in b.text for b in _buttons(kb)), "nothing to apply"
+
+
+def test_edit_callbacks_are_recognised_and_parsed(env) -> None:
+    """The bug this catches: a prefix registered in one table but not the other."""
+    _p, _r, _u, proj = env
+    token = token_for(proj)
+    for prefix in (
+        fb.SF_MANAGE_PREFIX,
+        fb.SF_RENAME_PREFIX,
+        fb.SF_NEWDIR_PREFIX,
+        fb.SF_DELETE_PREFIX,
+        fb.SF_DELETE_AGAIN_PREFIX,
+        fb.SF_DELETE_DO_PREFIX,
+    ):
+        assert fb.is_file_browser_callback(f"{prefix}{token}"), prefix
+        assert fb._parse(f"{prefix}{token}") == (prefix, token), prefix

@@ -31,6 +31,7 @@ from ductor_bot.files.archive import (
     extract_archive,
     inspect_archive,
 )
+from ductor_bot.files.edits import EditStore
 from ductor_bot.files.uploads import UploadSession, UploadStore
 from ductor_bot.i18n import t
 from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
@@ -47,6 +48,7 @@ from ductor_bot.messenger.telegram.callbacks import (
 from ductor_bot.messenger.telegram.chat_tracker import ChatRecord, ChatTracker
 from ductor_bot.messenger.telegram.file_browser import (
     BrowserSession,
+    build_name_confirmation,
     build_staging_view,
     file_browser_start,
     handle_file_browser_callback,
@@ -173,6 +175,13 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
 
 
 
+def _rendered_dir(paths, project_roots, target: Path, notice: str):  # noqa: ANN001, ANN202
+    """Directory view plus a result line, for editing a message in place."""
+    from ductor_bot.messenger.telegram.file_browser import render_dir_with_notice
+
+    return render_dir_with_notice(paths, project_roots, target, notice)
+
+
 def _place(src: Path, dest: Path) -> None:
     """Move *src* to *dest*, creating the parent. Blocking; call in a thread."""
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -251,6 +260,7 @@ class TelegramBot:
         self._topic_names = TopicNameCache()
         self._lock_pool = lock_pool or LockPool()
         self._upload_store: UploadStore | None = None
+        self._edit_store = EditStore()
         self._bus = bus or MessageBus(lock_pool=self._lock_pool)
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
@@ -1327,11 +1337,16 @@ class TelegramBot:
 
         return False
 
-    async def _route_prefix_callback(
+    async def _route_prefix_callback(  # noqa: PLR0911
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> bool:
         """Handle prefix-based callback namespaces. Returns True when handled."""
+        from ductor_bot.messenger.telegram.file_browser import SF_EDIT_APPLY_PREFIX
+
         chat_id = key.chat_id
+        if data == SF_EDIT_APPLY_PREFIX:
+            await self._apply_pending_edit(key, message_id)
+            return True
         if data.startswith(MQ_PREFIX):
             await self._handle_queue_cancel(chat_id, data)
             return True
@@ -1498,11 +1513,17 @@ class TelegramBot:
                 uploads=self._uploads,
                 key=key.storage_key,
                 current_binding=self._orch.bindings.get(key.storage_key) or None,
+                edits=self._edit_store,
             ),
         )
 
         if action.bind_dir is not None:
             self._orch.bindings.set(key.storage_key, str(action.bind_dir))
+
+        if action.edit_message:
+            edit = self._edit_store.get(key.storage_key)
+            if edit is not None:
+                edit.message_id = message_id
 
         if action.upload_message:
             # Staged files are reported by editing this message, so the upload
@@ -1572,6 +1593,12 @@ class TelegramBot:
         key = get_session_key(message)
         thread_id = get_thread_id(message)
         logger.debug("Message text=%s", text[:80])
+
+        # A pending rename or new folder is waiting for its name. Consume the
+        # message rather than sending it to the agent, which would otherwise
+        # act on "docs" as though it were an instruction.
+        if await self._collect_edit_name(message, key):
+            return
 
         # Folder first, then persona: one decides where the work happens, the
         # other how. Each holds the message rather than discarding it, so
@@ -1782,6 +1809,89 @@ class TelegramBot:
                 await self._handle_streaming(sent, key, held, thread_id=thread_id)
             else:
                 await self._handle_non_streaming(None, key, held, thread_id=thread_id)
+    async def _apply_pending_edit(self, key: SessionKey, message_id: int) -> bool:
+        """Carry out a confirmed rename or folder creation. True when handled."""
+        from ductor_bot.files.edits import apply_newdir, apply_rename, validate_name
+
+        edit = self._edit_store.get(key.storage_key)
+        if edit is None or not edit.name or validate_name(edit.name):
+            return False
+
+        name = edit.name.strip()
+        target = edit.target
+        parent = target.parent if edit.kind == "rename" else target
+        try:
+            if edit.kind == "rename":
+                apply_rename(target, name)
+                notice = t("edits.renamed", old=target.name, new=name)
+            else:
+                apply_newdir(target, name)
+                notice = t("edits.created", name=name)
+        except FileExistsError:
+            notice = t("edits.exists", name=name)
+        except OSError:
+            logger.exception("Edit failed for %s", target)
+            notice = t("edits.failed", name=name)
+        finally:
+            self._edit_store.end(key.storage_key)
+
+        text, keyboard = await asyncio.to_thread(
+            _rendered_dir, self._orch.paths, self._config.project_roots, parent, notice
+        )
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                text=markdown_to_telegram_html(text),
+                chat_id=key.chat_id,
+                message_id=message_id,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
+            )
+        return True
+
+    async def _collect_edit_name(self, message: Message, key: SessionKey) -> bool:
+        """Take a typed name into the pending edit and show it back for approval.
+
+        Returns True when the message was consumed. Nothing is written here —
+        the user still has to confirm, which is what proves the bot read the
+        name they meant.
+        """
+        edit = self._edit_store.get(key.storage_key)
+        if edit is None or not message.text:
+            return False
+
+        edit.name = message.text.strip()
+        text, keyboard = await asyncio.to_thread(
+            build_name_confirmation,
+            self._orch.paths,
+            self._config.project_roots,
+            edit,
+            edit.name,
+        )
+        html = markdown_to_telegram_html(text)
+        thread_id = get_thread_id(message)
+        if edit.message_id is not None:
+            try:
+                await self._bot.edit_message_text(
+                    text=html,
+                    chat_id=message.chat.id,
+                    message_id=edit.message_id,
+                    reply_markup=keyboard,
+                    parse_mode=ParseMode.HTML,
+                )
+            except TelegramBadRequest:
+                edit.message_id = None
+        if edit.message_id is None:
+            with contextlib.suppress(TelegramAPIError):
+                sent = await self._bot.send_message(
+                    message.chat.id,
+                    html,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id,
+                    parse_mode=ParseMode.HTML,
+                )
+                edit.message_id = sent.message_id
+        return True
+
     async def _report_landing(self, message: Message, dest: Path) -> None:
         """Say where an attachment was saved.
 
