@@ -15,6 +15,7 @@ on first run, without being asked, is not a good guest.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from ductor_bot.i18n import t
 from ductor_bot.infra.atomic_io import atomic_text_save
 from ductor_bot.messenger.telegram.formatting import markdown_to_telegram_html
+from ductor_bot.workspace.paths import CONSULT_USER
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -179,15 +181,48 @@ offer as an option.**
 """
 
 
+#: Owner rwx, group rwx, others nothing. The bot owns the directory and the
+#: consult account shares the group: the bot can wipe and browse, the account
+#: can work, and nobody else can read what is said there.
+_CONSULT_MODE = 0o770
+
+
 def ensure_consult_workspace(directory: Path) -> Path:
-    """Create the Consult directory and (re)write its rule file."""
+    """Create the Consult directory, set its permissions, write its rule file.
+
+    Permissions are applied here rather than by hand because the daily wipe
+    deletes and recreates this directory: anything set once would last until
+    04:00.
+    """
     directory.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(OSError):
+        directory.chmod(_CONSULT_MODE)
+        _chgrp_consult(directory)
     rule = directory / "CLAUDE.md"
     # Rewritten every startup on purpose: the wipe removes it daily, and a
     # Consult directory without its rule is the failure that matters most.
     if not rule.is_file() or rule.read_text(encoding="utf-8") != CONSULT_RULE:
         rule.write_text(CONSULT_RULE, encoding="utf-8")
+    with contextlib.suppress(OSError):
+        rule.chmod(0o640)
+        _chgrp_consult(rule)
     return directory
+
+
+def _chgrp_consult(target: Path) -> None:
+    """Give the consult group access, when that account exists.
+
+    A deployment without the account is the normal case upstream; the
+    directory simply stays the bot's own.
+    """
+    import grp
+    import os
+
+    try:
+        gid = grp.getgrnam(CONSULT_USER).gr_gid
+    except KeyError:
+        return
+    os.chown(target, -1, gid)
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 
@@ -18,6 +19,7 @@ from ductor_bot.cli.base import (
     CLIConfig,
     _feed_stdin_and_close,
     _win_feed_stdin,
+    run_as_wrap,
 )
 from ductor_bot.cli.claude_accounts import apply_to_env as apply_account_env
 from ductor_bot.cli.stream_events import ResultEvent, StreamEvent
@@ -153,7 +155,7 @@ async def run_streaming_subprocess(
     """
     subprocess_env = build_subprocess_env(config) if spec.use_cwd else None
     process = await asyncio.create_subprocess_exec(
-        *spec.exec_cmd,
+        *run_as_wrap(list(spec.exec_cmd), config, subprocess_env or dict(os.environ)),
         stdin=_stdin_pipe(spec),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -304,7 +306,7 @@ async def run_oneshot_subprocess(
     """
     oneshot_env = build_subprocess_env(config) if spec.use_cwd else None
     process = await asyncio.create_subprocess_exec(
-        *spec.exec_cmd,
+        *run_as_wrap(list(spec.exec_cmd), config, oneshot_env or dict(os.environ)),
         stdin=_stdin_pipe(spec),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

@@ -10,6 +10,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.base import CLIConfig
@@ -26,6 +27,7 @@ from ductor_bot.cli.stream_events import (
 )
 from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse
 from ductor_bot.workspace.anchor import anchor_workspace_paths
+from ductor_bot.workspace.paths import CONSULT_USER
 
 if TYPE_CHECKING:
     from ductor_bot.cli.base import BaseCLI
@@ -203,6 +205,21 @@ class CLIService:
         if request.provider_override:
             return request.model_override or f"<{request.provider_override} default>"
         return request.model_override or self._config.default_model
+
+    def _is_consult_dir(self, working_dir: str) -> bool:
+        """True when the CLI would run in the Consult directory.
+
+        Derived from the configured workspace rather than plumbed in, the same
+        way ``docker_wrap`` locates ``.ductor``: the workspace is always
+        ``<ductor_home>/workspace``.
+        """
+        base = Path(self._config.working_dir)
+        if base.name != "workspace":
+            return False
+        try:
+            return Path(working_dir).resolve() == (base.parent / "Consult").resolve()
+        except (OSError, RuntimeError):
+            return False
 
     def _effective_working_dir(self, request: AgentRequest) -> str:
         """The directory the CLI will actually run in for *request*."""
@@ -408,6 +425,11 @@ class CLIService:
         # mode: docker_wrap maps cwd into the container via relative_to() and
         # would fail on a path outside the workspace.
         working_dir = self._effective_working_dir(request)
+        # A conversation running in the Consult directory is dropped to a unix
+        # account that cannot read the project tree. This is the one place the
+        # isolation is enforced rather than requested: the CLAUDE.md rule asks
+        # the agent to stay put, and the kernel is what makes it so.
+        run_as = CONSULT_USER if self._is_consult_dir(working_dir) else ""
         append_prompt = self.anchor(request.append_system_prompt, request)
         if working_dir != self._config.working_dir:
             # anchor() has already rewritten the prompts; this says plainly
@@ -425,6 +447,7 @@ class CLIService:
             CLIConfig(
                 provider=provider,
                 working_dir=working_dir,
+                run_as_user=run_as,
                 model=model,
                 system_prompt=self.anchor(request.system_prompt, request),
                 append_system_prompt=append_prompt,

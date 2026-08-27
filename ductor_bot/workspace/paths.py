@@ -22,6 +22,12 @@ def _default_framework_root() -> Path:
     return _PKG_DIR.parent
 
 
+#: Unix account the Consult topic's CLI is dropped to. Defined here because
+#: both the transport (which creates the directory) and the CLI layer (which
+#: drops to the account) need it, and neither should import the other.
+CONSULT_USER = "consult"
+
+
 @dataclass(frozen=True)
 class DuctorPaths:
     """Resolved, immutable paths for the workspace layout.
