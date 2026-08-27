@@ -142,11 +142,17 @@ _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}
 def _rebuild_commands() -> None:
     """Rebuild module-level command lists from current translations."""
     global _BOT_COMMANDS  # noqa: PLW0603
-    from ductor_bot.commands import get_bot_commands, get_multiagent_sub_commands
+    from ductor_bot.commands import (
+        get_bot_commands,
+        get_multiagent_sub_commands,
+        get_picker_commands,
+    )
 
     cmd_defs = get_bot_commands()
     ma_defs = get_multiagent_sub_commands()
-    _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in cmd_defs]
+    # The picker is trimmed; _CMD_DESC below stays complete so /help still
+    # documents every command, including the ones the menu covers.
+    _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in get_picker_commands()]
     _CMD_DESC.clear()
     _CMD_DESC.update({**dict(cmd_defs), **dict(ma_defs)})
 

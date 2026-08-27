@@ -46,6 +46,37 @@ def get_bot_commands() -> list[tuple[str, str]]:
     ]
 
 
+#: Commands the inline menu already offers. They stay registered, keep their
+#: descriptions, and still appear in /help — they are only dropped from
+#: Telegram's "/" picker, which is otherwise a list of twenty-four entries most
+#: of which are one tap away in the menu.
+#:
+#: /help is deliberately NOT hidden despite being in the menu: it is the way
+#: back when the menu itself is broken, and that has already happened once.
+MENU_DUPLICATES = frozenset(
+    {
+        "files",
+        "folder",
+        "persona",
+        "model",
+        "account",
+        "skills",
+        "new",
+        "status",
+        "consult",
+    }
+)
+
+
+def get_picker_commands() -> list[tuple[str, str]]:
+    """Commands offered in Telegram's "/" list.
+
+    A subset of :func:`get_bot_commands`, which stays complete: /help renders
+    from the full list, so hiding an entry here never makes it undiscoverable.
+    """
+    return [(name, desc) for name, desc in get_bot_commands() if name not in MENU_DUPLICATES]
+
+
 def get_multiagent_sub_commands() -> list[tuple[str, str]]:
     """Return multi-agent sub-commands with translated descriptions."""
     return [
