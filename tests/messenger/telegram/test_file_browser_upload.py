@@ -95,7 +95,7 @@ def test_confirm_moves_staged_files_and_returns_to_the_folder(env) -> None:
     assert uploads.get(KEY) is None
     # Back on the directory listing, not left in upload mode.
     assert "new.txt" in action.text
-    assert any("Send folder as zip" in b.text for b in _buttons(action.keyboard))
+    assert any("Download" in b.text for b in _buttons(action.keyboard))
 
 
 def test_cancel_discards_without_writing(env) -> None:
@@ -201,3 +201,84 @@ def test_extracted_archive_stages_its_tree(env) -> None:
 
     assert uploads.commit(KEY) == 2
     assert (proj / "docs" / "b.md").read_text() == "two"
+
+
+# ---------------------------------------------------------------------------
+# Download menu
+# ---------------------------------------------------------------------------
+
+
+def test_folder_view_has_no_button_per_file(env) -> None:
+    """Files live behind the download menu; a folder of any size stays aimable."""
+    paths, roots, _, proj = env
+    _text, kb = fb._build_dir_view(paths, roots, proj)
+    labels = [b.text for b in _buttons(kb)]
+    assert not any(label.startswith("📄") for label in labels)
+    assert any("Download" in label for label in labels)
+    # The name is still listed as text, so the folder's contents are visible.
+    assert "README.md" in _text
+
+
+def test_download_menu_offers_one_file_or_the_zip(env) -> None:
+    _, _, _, proj = env
+    action = _dispatch(env, f"{fb.SF_DOWNLOAD_PREFIX}{token_for(proj)}")
+    labels = [b.text for b in _buttons(action.keyboard)]
+    assert any("single file" in label for label in labels)
+    assert any("zip" in label for label in labels)
+    assert any("Back" in label for label in labels)
+    assert any("Home" in label for label in labels)
+
+
+def test_file_list_gives_each_file_a_button(env) -> None:
+    _, _, _, proj = env
+    (proj / "notes.md").write_text("x")
+    action = _dispatch(env, f"{fb.SF_FILE_LIST_PREFIX}{token_for(proj)}")
+    labels = [b.text for b in _buttons(action.keyboard)]
+    assert "📄 README.md" in labels
+    assert "📄 notes.md" in labels
+
+
+def test_tapping_a_listed_file_still_sends_it(env) -> None:
+    """The file list reuses the existing send callback."""
+    _, _, _, proj = env
+    action = _dispatch(env, f"{fb.SF_FILE_LIST_PREFIX}{token_for(proj)}")
+    send = next(b for b in _buttons(action.keyboard) if b.text == "📄 README.md")
+    result = _dispatch(env, send.callback_data)
+    assert result.send_path == proj / "README.md"
+
+
+def test_file_list_is_capped_and_says_so(env) -> None:
+    """Telegram rejects an oversized keyboard outright, so this cannot silently grow."""
+    _, _, _, proj = env
+    for i in range(fb._MAX_FILE_BUTTONS + 10):
+        (proj / f"f{i:03d}.txt").write_text(".")
+
+    action = _dispatch(env, f"{fb.SF_FILE_LIST_PREFIX}{token_for(proj)}")
+    file_buttons = [b for b in _buttons(action.keyboard) if b.text.startswith("📄")]
+    assert len(file_buttons) == fb._MAX_FILE_BUTTONS
+    assert f"first {fb._MAX_FILE_BUTTONS} files" in action.text
+
+
+def test_empty_folder_says_there_are_no_files(env) -> None:
+    _, _, _, proj = env
+    (proj / "README.md").unlink()
+    action = _dispatch(env, f"{fb.SF_FILE_LIST_PREFIX}{token_for(proj)}")
+    assert "no files" in action.text.lower()
+    assert not any(b.text.startswith("📄") for b in _buttons(action.keyboard))
+
+
+def test_long_listing_is_truncated(env) -> None:
+    """The text listing has its own ceiling against the 4096-character limit."""
+    paths, roots, _, proj = env
+    for i in range(fb._MAX_LISTED_ENTRIES + 7):
+        (proj / f"g{i:03d}.txt").write_text(".")
+    text, _kb = fb._build_dir_view(paths, roots, proj)
+    assert "and 8 more" in text
+
+
+def test_download_callbacks_are_recognised(env) -> None:
+    _, _, _, proj = env
+    token = token_for(proj)
+    for prefix in (fb.SF_DOWNLOAD_PREFIX, fb.SF_FILE_LIST_PREFIX):
+        assert fb.is_file_browser_callback(f"{prefix}{token}")
+        assert fb._parse(f"{prefix}{token}") == (prefix, token)
