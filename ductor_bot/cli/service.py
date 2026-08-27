@@ -25,6 +25,7 @@ from ductor_bot.cli.stream_events import (
     ToolUseEvent,
 )
 from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse
+from ductor_bot.workspace.anchor import anchor_workspace_paths
 
 if TYPE_CHECKING:
     from ductor_bot.cli.base import BaseCLI
@@ -203,6 +204,27 @@ class CLIService:
             return request.model_override or f"<{request.provider_override} default>"
         return request.model_override or self._config.default_model
 
+    def _effective_working_dir(self, request: AgentRequest) -> str:
+        """The directory the CLI will actually run in for *request*."""
+        if self._working_dir_resolver is not None and not self._config.docker_container:
+            override = self._working_dir_resolver(request)
+            if override is not None:
+                return override
+        return self._config.working_dir
+
+    def anchor(self, text: str | None, request: AgentRequest) -> str | None:
+        """Make workspace-relative paths absolute when cwd is not the workspace.
+
+        Applied at this choke point rather than in each prompt, because the
+        text arrives from a dozen places — hooks, memory flush, media prompts,
+        task rules — and any one of them forgetting is a silent failure: the
+        agent looks for tools that are not there, or writes bot memory into the
+        user's repository.
+        """
+        if not text or self._effective_working_dir(request) == self._config.working_dir:
+            return text
+        return anchor_workspace_paths(text, self._config.working_dir)
+
     async def execute(self, request: AgentRequest) -> AgentResponse:
         """Execute a CLI call."""
         cli = self._make_cli(request)
@@ -214,7 +236,7 @@ class CLIService:
 
         t0 = time.monotonic()
         response = await cli.send(
-            prompt=request.prompt,
+            prompt=self.anchor(request.prompt, request),
             resume_session=request.resume_session,
             continue_session=request.continue_session,
             timeout_seconds=request.timeout_seconds,
@@ -259,7 +281,7 @@ class CLIService:
 
         try:
             async for event in cli.send_streaming(
-                prompt=request.prompt,
+                prompt=self.anchor(request.prompt, request),
                 resume_session=request.resume_session,
                 continue_session=request.continue_session,
                 timeout_seconds=request.timeout_seconds,
@@ -385,31 +407,26 @@ class CLIService:
         # Per-request working dir override (project_roots). Skipped in Docker
         # mode: docker_wrap maps cwd into the container via relative_to() and
         # would fail on a path outside the workspace.
-        working_dir = self._config.working_dir
-        append_prompt = request.append_system_prompt
-        if self._working_dir_resolver is not None and not self._config.docker_container:
-            override = self._working_dir_resolver(request)
-            if override is not None:
-                working_dir = override
-                # Applied here at the single choke point so every execution
-                # path (normal turns, memory flush/compact, heartbeat) keeps
-                # addressing the bot memory by absolute path — a relative
-                # memory_system/ reference would otherwise land inside the
-                # user's project repo.
-                note = (
-                    f"[ductor] Project cwd override active. The shared bot workspace "
-                    f"(tools/, memory_system/) is at {self._config.working_dir}. Bot memory "
-                    f"lives at {self._config.working_dir}/memory_system/MAINMEMORY.md — always "
-                    f"address it by this absolute path, never via a relative path."
-                )
-                append_prompt = f"{append_prompt}\n\n{note}" if append_prompt else note
+        working_dir = self._effective_working_dir(request)
+        append_prompt = self.anchor(request.append_system_prompt, request)
+        if working_dir != self._config.working_dir:
+            # anchor() has already rewritten the prompts; this says plainly
+            # where the workspace is, for anything phrased too loosely to
+            # rewrite ("the workspace", "your tools").
+            note = (
+                f"[ductor] Project cwd override active. The shared bot workspace is at "
+                f"{self._config.working_dir}. Bot memory lives at "
+                f"{self._config.working_dir}/memory_system/MAINMEMORY.md — always address it "
+                f"by this absolute path, never via a relative path."
+            )
+            append_prompt = f"{append_prompt}\n\n{note}" if append_prompt else note
 
         return create_cli(
             CLIConfig(
                 provider=provider,
                 working_dir=working_dir,
                 model=model,
-                system_prompt=request.system_prompt,
+                system_prompt=self.anchor(request.system_prompt, request),
                 append_system_prompt=append_prompt,
                 max_turns=self._config.max_turns,
                 max_budget_usd=self._config.max_budget_usd,
