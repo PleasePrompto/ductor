@@ -22,6 +22,13 @@ Callback data:
     ``sf*<token>``     -- list that directory's files as buttons
     ``sf&<token>``     -- bind this chat/topic to that directory
     ``sf&&<token>``    -- confirm a rebind that would replace an existing one
+    ``sf~<token>``     -- manage menu (rename / new folder / delete)
+    ``sf;<token>``     -- start a rename, then wait for the name
+    ``sf^<token>``     -- start a new folder, then wait for the name
+    ``sf_``            -- apply the named rename or folder, once confirmed
+    ``sf,<token>``     -- delete, first confirmation
+    ``sf|<token>``     -- delete, second confirmation
+    ``sf$<token>``     -- delete, carry it out
 """
 
 from __future__ import annotations
@@ -36,6 +43,16 @@ from typing import TYPE_CHECKING
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from ductor_bot.files.browser import list_directory
+from ductor_bot.files.edits import (
+    LARGE_DELETE,
+    EditStore,
+    PendingEdit,
+    can_delete,
+    can_rename,
+    plan_delete,
+    sample,
+    validate_name,
+)
 from ductor_bot.files.git_status import (
     pending_commits,
     read_state,
@@ -77,6 +94,15 @@ SF_BIND_PREFIX = "sf&"
 #: Rebinding is confirmed: it moves the working directory, so the next
 #: command acts somewhere other than where the last one did.
 SF_BIND_CONFIRM_PREFIX = "sf&&"
+#: Destructive actions live behind one more tap, so they cannot be hit by
+#: aiming badly at the row above.
+SF_MANAGE_PREFIX = "sf~"
+SF_RENAME_PREFIX = "sf;"
+SF_NEWDIR_PREFIX = "sf^"
+SF_EDIT_APPLY_PREFIX = "sf_"
+SF_DELETE_PREFIX = "sf,"
+SF_DELETE_AGAIN_PREFIX = "sf|"
+SF_DELETE_DO_PREFIX = "sf$"
 
 #: One button per file put a folder's whole contents in the main view. They
 #: live behind the download menu now, but a large directory can still overflow
@@ -105,6 +131,7 @@ class BrowserSession:
     uploads: UploadStore
     key: str
     current_binding: str | None = None
+    edits: EditStore | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +145,8 @@ class BrowserAction:
     agent_prompt: str | None = None
     #: True when the edited message becomes the one staging is reported into.
     upload_message: bool = False
+    #: True when this message becomes the one a typed name is answered into.
+    edit_message: bool = False
     #: Set when the user confirmed this chat/topic should work in a directory.
     bind_dir: Path | None = None
 
@@ -142,6 +171,12 @@ def is_file_browser_callback(data: str) -> bool:
             SF_FILE_LIST_PREFIX,
             SF_BIND_PREFIX,
             SF_BIND_CONFIRM_PREFIX,
+            SF_MANAGE_PREFIX,
+            SF_RENAME_PREFIX,
+            SF_NEWDIR_PREFIX,
+            SF_DELETE_PREFIX,
+            SF_DELETE_AGAIN_PREFIX,
+            SF_DELETE_DO_PREFIX,
         )
     )
 
@@ -220,6 +255,12 @@ def _parse(data: str) -> tuple[str, str] | None:
         SF_DOWNLOAD_PREFIX,
         SF_FILE_LIST_PREFIX,
         SF_BIND_PREFIX,
+        SF_MANAGE_PREFIX,
+        SF_RENAME_PREFIX,
+        SF_NEWDIR_PREFIX,
+        SF_DELETE_PREFIX,
+        SF_DELETE_AGAIN_PREFIX,
+        SF_DELETE_DO_PREFIX,
         SF_PREFIX,
     ):
         if data.startswith(prefix):
@@ -311,6 +352,14 @@ def _push_confirmed_action(
     ok, output = git_push(state)
     key = "file_browser.push_ok" if ok else "file_browser.push_failed"
     return _with_notice(paths, project_roots, target, _result(t(key), output))
+
+
+def render_dir_with_notice(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, notice: str
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Public form of the directory view plus a result line."""
+    action = _with_notice(paths, project_roots, target, notice)
+    return action.text, action.keyboard or InlineKeyboardMarkup(inline_keyboard=[])
 
 
 def _with_notice(
@@ -482,6 +531,246 @@ _STATEFUL_PREFIXES = frozenset(
 )
 
 
+# ---------------------------------------------------------------------------
+# Rename, new folder, delete
+# ---------------------------------------------------------------------------
+
+
+def _human_size(total: int) -> str:
+    """A size a person can judge. Rounding 600 bytes up to "1 MB" is a lie."""
+    if total >= 1048576:
+        return f"{total // 1048576} MB"
+    if total >= 1024:
+        return f"{total // 1024} KB"
+    return f"{total} B"
+
+
+def _roots_map(paths: DuctorPaths, project_roots: Mapping[str, str]) -> dict[str, Path]:
+    return dict(browsable_roots(paths.ductor_home, project_roots))
+
+
+def _manage_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, session: BrowserSession
+) -> BrowserAction:
+    """The menu that changes files, one tap away from the browsing controls."""
+    if session.edits is not None:
+        session.edits.end(session.key)
+    if not target.exists():
+        return _root_action(paths, project_roots)
+
+    token = token_for(target)
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("edits.btn_rename"), callback_data=f"{SF_RENAME_PREFIX}{token}"
+            ),
+            InlineKeyboardButton(
+                text=t("edits.btn_newdir"), callback_data=f"{SF_NEWDIR_PREFIX}{token}"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=t("edits.btn_delete"), callback_data=f"{SF_DELETE_PREFIX}{token}"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=t("file_browser.btn_back"), callback_data=f"{SF_PREFIX}{token}"
+            )
+        ],
+    ]
+    body = t("edits.manage", dir=_display(paths, project_roots, target))
+    return BrowserAction(
+        text=fmt(t("file_browser.header"), SEP, body),
+        keyboard=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def _ask_name_action(kind: str):  # noqa: ANN202
+    """Build the action that starts a rename or a new folder."""
+
+    def action(
+        paths: DuctorPaths,
+        project_roots: Mapping[str, str],
+        target: Path,
+        session: BrowserSession,
+    ) -> BrowserAction:
+        if session.edits is None or not target.exists():
+            return _open_action(paths, project_roots, target)
+        if kind == "rename":
+            refusal = can_rename(target, _roots_map(paths, project_roots))
+            if refusal:
+                return _with_notice(paths, project_roots, target.parent, t(refusal))
+
+        session.edits.begin(session.key, kind, target)  # type: ignore[arg-type]
+        body = t(
+            "edits.ask_rename" if kind == "rename" else "edits.ask_newdir",
+            name=target.name,
+            dir=_display(paths, project_roots, target),
+        )
+        cancel = [
+            InlineKeyboardButton(
+                text=t("upload.btn_cancel"),
+                callback_data=f"{SF_MANAGE_PREFIX}{token_for(target)}",
+            )
+        ]
+        return BrowserAction(
+            text=fmt(t("file_browser.header"), SEP, body),
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[cancel]),
+            edit_message=True,
+        )
+
+    return action
+
+
+def build_name_confirmation(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    edit: PendingEdit,
+    name: str
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Show the typed name back before anything is written."""
+    refusal = validate_name(name)
+    if refusal:
+        retry = t(
+            "edits.ask_rename" if edit.kind == "rename" else "edits.ask_newdir",
+            name=edit.target.name,
+            dir=_display(paths, project_roots, edit.target),
+        )
+        body = f"{t(refusal)}\n\n{retry}"
+        rows = [
+            [
+                InlineKeyboardButton(
+                    text=t("upload.btn_cancel"),
+                    callback_data=f"{SF_MANAGE_PREFIX}{token_for(edit.target)}",
+                )
+            ]
+        ]
+        return fmt(t("file_browser.header"), SEP, body), InlineKeyboardMarkup(inline_keyboard=rows)
+
+    if edit.kind == "rename":
+        body = t(
+            "edits.confirm_rename",
+            old=edit.target.name,
+            new=name.strip(),
+            dir=_display(paths, project_roots, edit.target.parent),
+        )
+    else:
+        body = t(
+            "edits.confirm_newdir",
+            new=name.strip(),
+            dir=_display(paths, project_roots, edit.target),
+        )
+    rows = [
+        [
+            InlineKeyboardButton(text=t("edits.btn_apply"), callback_data=SF_EDIT_APPLY_PREFIX),
+            InlineKeyboardButton(
+                text=t("upload.btn_cancel"),
+                callback_data=f"{SF_MANAGE_PREFIX}{token_for(edit.target)}",
+            ),
+        ]
+    ]
+    return fmt(t("file_browser.header"), SEP, body), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _delete_step_one(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, _session: BrowserSession
+) -> BrowserAction:
+    """Say exactly what would go, and refuse the cases no dialog makes safe."""
+    refusal = can_delete(target, _roots_map(paths, project_roots))
+    if refusal:
+        return _with_notice(paths, project_roots, target.parent, t(refusal))
+
+    detail = plan_delete(target)
+    listing = "\n".join(f"  {line}" for line in sample(target))
+    body = t(
+        "edits.delete_first",
+        name=target.name,
+        count=detail.files,
+        size=_human_size(detail.bytes),
+    )
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("edits.btn_delete_continue"),
+                callback_data=f"{SF_DELETE_AGAIN_PREFIX}{token_for(target)}",
+            ),
+            InlineKeyboardButton(
+                text=t("upload.btn_cancel"),
+                callback_data=f"{SF_MANAGE_PREFIX}{token_for(target)}",
+            ),
+        ]
+    ]
+    return BrowserAction(
+        text=fmt(t("file_browser.header"), SEP, f"{body}\n\n{listing}"),
+        keyboard=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def _delete_step_two(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, _session: BrowserSession
+) -> BrowserAction:
+    """The second confirmation. Re-checks the refusals: the tree may have moved."""
+    refusal = can_delete(target, _roots_map(paths, project_roots))
+    if refusal:
+        return _with_notice(paths, project_roots, target.parent, t(refusal))
+
+    detail = plan_delete(target)
+    body = t(
+        "edits.delete_second",
+        name=target.name,
+        count=detail.files,
+        dir=_display(paths, project_roots, target.parent),
+    )
+    if detail.files > LARGE_DELETE:
+        body = f"{body}\n\n{t('edits.delete_large', count=detail.files)}"
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("edits.btn_delete_now"),
+                callback_data=f"{SF_DELETE_DO_PREFIX}{token_for(target)}",
+            ),
+            InlineKeyboardButton(
+                text=t("upload.btn_cancel"),
+                callback_data=f"{SF_MANAGE_PREFIX}{token_for(target)}",
+            ),
+        ]
+    ]
+    return BrowserAction(
+        text=fmt(t("file_browser.header"), SEP, body),
+        keyboard=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def _delete_do(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, _session: BrowserSession
+) -> BrowserAction:
+    """Carry it out. Guards are checked a third time, immediately before."""
+    from ductor_bot.files.edits import apply_delete
+
+    refusal = can_delete(target, _roots_map(paths, project_roots))
+    if refusal:
+        return _with_notice(paths, project_roots, target.parent, t(refusal))
+
+    parent = target.parent
+    name = target.name
+    try:
+        apply_delete(target)
+    except OSError:
+        return _with_notice(paths, project_roots, parent, t("edits.failed", name=name))
+    return _with_notice(paths, project_roots, parent, t("edits.deleted", name=name))
+
+
+_EDIT_ACTIONS = {
+    SF_MANAGE_PREFIX: _manage_action,
+    SF_RENAME_PREFIX: _ask_name_action("rename"),
+    SF_NEWDIR_PREFIX: _ask_name_action("newdir"),
+    SF_DELETE_PREFIX: _delete_step_one,
+    SF_DELETE_AGAIN_PREFIX: _delete_step_two,
+    SF_DELETE_DO_PREFIX: _delete_do,
+}
+
+
 _ACTIONS = {
     SF_ASK_PREFIX: _ask_action,
     SF_FILE_PREFIX: _send_file_action,
@@ -495,7 +784,7 @@ _ACTIONS = {
 }
 
 
-def _handle(
+def _handle(  # noqa: PLR0911
     paths: DuctorPaths,
     project_roots: Mapping[str, str],
     data: str,
@@ -514,11 +803,13 @@ def _handle(
     if target is None or not contains(roots, target):
         return _root_action(paths, project_roots)
 
-    if prefix in _STATEFUL_PREFIXES:
+    if prefix in _EDIT_ACTIONS or prefix in _STATEFUL_PREFIXES:
         # Without a session there is nowhere to record the result; fall back to
         # plain navigation rather than opening a mode that cannot work.
         if session is None:
             return _open_action(paths, project_roots, target)
+        if prefix in _EDIT_ACTIONS:
+            return _EDIT_ACTIONS[prefix](paths, project_roots, target, session)
         if prefix in _BIND_ACTIONS:
             return _BIND_ACTIONS[prefix](paths, project_roots, target, session.current_binding)
         return _UPLOAD_ACTIONS[prefix](paths, project_roots, target, session.uploads, session.key)
@@ -628,6 +919,10 @@ def _build_dir_view(
             InlineKeyboardButton(
                 text=t("file_browser.btn_bind"),
                 callback_data=f"{SF_BIND_PREFIX}{token_for(target)}",
+            ),
+            InlineKeyboardButton(
+                text=t("edits.btn_manage"),
+                callback_data=f"{SF_MANAGE_PREFIX}{token_for(target)}",
             ),
         ]
     )
