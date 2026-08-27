@@ -152,10 +152,32 @@ def is_file_browser_callback(data: str) -> bool:
 
 
 async def file_browser_start(
-    paths: DuctorPaths, project_roots: Mapping[str, str]
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    start_dir: Path | None = None,
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """Build the ``/showfiles`` root view."""
+    """Build the opening ``/showfiles`` view.
+
+    A conversation bound to a folder opens *in* it rather than at the list of
+    every root: that folder is where its work happens, and the list is one tap
+    away behind Home. Falls back to the root list when *start_dir* is not
+    somewhere the browser is allowed to show.
+    """
+    if start_dir is not None:
+        view = await asyncio.to_thread(_start_view, paths, project_roots, start_dir)
+        if view is not None:
+            return view
     return await asyncio.to_thread(_build_root_view, paths, project_roots)
+
+
+def _start_view(
+    paths: DuctorPaths, project_roots: Mapping[str, str], start_dir: Path
+) -> tuple[str, InlineKeyboardMarkup] | None:
+    """The directory view for *start_dir*, or None if it cannot be shown."""
+    roots = browsable_roots(paths.ductor_home, project_roots)
+    if not start_dir.is_dir() or not contains(roots, start_dir):
+        return None
+    return _build_dir_view(paths, project_roots, start_dir)
 
 
 async def handle_file_browser_callback(

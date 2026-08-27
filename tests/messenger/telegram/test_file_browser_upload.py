@@ -283,3 +283,37 @@ def test_download_callbacks_are_recognised(env) -> None:
     for prefix in (fb.SF_DOWNLOAD_PREFIX, fb.SF_FILE_LIST_PREFIX):
         assert fb.is_file_browser_callback(f"{prefix}{token}")
         assert fb._parse(f"{prefix}{token}") == (prefix, token)
+
+
+# ---------------------------------------------------------------------------
+# Opening view
+# ---------------------------------------------------------------------------
+
+
+async def test_showfiles_opens_at_the_bound_folder(env) -> None:
+    """A bound conversation opens in its folder, not at the list of every root."""
+    paths, roots, _, proj = env
+    text, kb = await fb.file_browser_start(paths, roots, proj)
+    assert "README.md" in text
+    assert any("Home" in b.text for b in _buttons(kb)), "the root list stays one tap away"
+
+
+async def test_showfiles_falls_back_to_the_root_list(env) -> None:
+    paths, roots, _, _proj = env
+    text, _kb = await fb.file_browser_start(paths, roots, None)
+    assert "EMR/" in text
+
+
+async def test_a_binding_outside_the_roots_is_ignored(env, tmp_path: Path) -> None:
+    """A stale or hostile binding must not open a directory the browser hides."""
+    paths, roots, _, _proj = env
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    text, _kb = await fb.file_browser_start(paths, roots, outside)
+    assert "EMR/" in text, "falls back to the root list"
+
+
+async def test_a_deleted_binding_falls_back(env) -> None:
+    paths, roots, _, proj = env
+    text, _kb = await fb.file_browser_start(paths, roots, proj / "gone")
+    assert "EMR/" in text

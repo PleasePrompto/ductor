@@ -879,7 +879,12 @@ class TelegramBot:
 
     async def _on_showfiles(self, message: Message) -> None:
         """Handle /showfiles: interactive file browser for ~/.ductor."""
-        text, keyboard = await file_browser_start(self._orch.paths, self._config.project_roots)
+        key = get_session_key(message)
+        text, keyboard = await file_browser_start(
+            self._orch.paths,
+            self._config.project_roots,
+            self._orch.bindings.resolve(key.storage_key),
+        )
         await send_rich(
             self._bot,
             message.chat.id,
