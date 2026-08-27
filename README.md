@@ -203,7 +203,8 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Multi-account Claude** — map several credential stores in `claude_accounts` and switch with `/account`; sessions and skills stay shared, so a rate-limited conversation continues on the other subscription via `--resume`
 - **Skill browser** — `/skills` groups every loadable skill by plugin and copies `/name ` to your clipboard on tap, which is the only way to reach skills marked `disable-model-invocation`. Discovery follows `enabledPlugins` and the plugin registry, so stale versions and disabled plugins are not listed
 - **File browser over your projects** — `/showfiles` lists `~/.ductor` alongside every directory in `project_roots`, with tap-to-navigate, `Back`/`Home`, breadcrumbs, tap-a-file-to-receive-it, and folder-as-zip. Nested roots collapse into their parent so the picker stays short
-- **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder
+- **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder, and the bot replies with where it put it
+- **Upload into any folder you can browse** — `⬆️ Upload here` opens an upload for the directory you are looking at. Files are staged and listed, overwrites are flagged, and nothing is written until you confirm; `📦 Send a folder (.zip)` unpacks an archive into that listing first. Archives are validated before extraction (no path traversal, no symlink entries, size and entry ceilings), and staging is discarded on cancel and swept daily
 - **Pull and push from the browser** — a directory inside a git repository gains `⤓ Pull` and `⤒ Push`. Push is inert when the branch matches its upstream, and asks for confirmation against the list of commits it would publish. Pull is `--ff-only`, so a divergence is reported rather than merged unnoticed
 - **Personas** — when `persona_prompt` is on, a conversation that has not chosen a persona asks which of your Claude Code agents should handle it, holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`; `/new` and `/reset` clear it. Nothing is inferred and there is no default; installations without agents never see the prompt
 - **Persistent memory** — plain Markdown files that survive across sessions
@@ -395,7 +396,7 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/sessions` | View/manage active sessions |
 | `/tasks` | View/manage background tasks |
 | `/cron` | Interactive cron management |
-| `/showfiles` | Browse `~/.ductor/` and your configured `project_roots`; send files and folders |
+| `/showfiles` | Browse `~/.ductor/` and your configured `project_roots`; send files and folders, upload into them, pull/push git |
 | `/diagnose` | Runtime diagnostics |
 | `/upgrade` | Check/apply updates |
 | `/agents` | Multi-agent status |
