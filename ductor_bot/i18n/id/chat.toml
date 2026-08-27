@@ -469,6 +469,10 @@ download_menu = "Unduh dari `{dir}`. Mau yang mana?"
 pick_file = "Ketuk berkas di `{dir}` untuk dikirimkan kepadamu."
 no_files = "Tidak ada berkas di folder ini."
 file_list_truncated = "Menampilkan {count} berkas pertama."
+btn_bind = "📌 Pakai folder ini untuk topik ini"
+btn_bind_confirm = "📌 Ganti"
+bind_confirm = "Percakapan ini sudah bekerja di `{current}`. Pindahkan ke `{new}`?"
+bound = "📌 Percakapan ini sekarang bekerja di `{dir}`."
 
 [upgrade_handler]
 btn_changelog = "Catatan Rilis v{version}"
@@ -547,3 +551,10 @@ zip_unsafe = "⚠️ Ditolak: arsip berisi entri yang akan menulis di luar folde
 zip_too_big = "⚠️ Ditolak: arsip terbuka menjadi lebih dari {mb} MB."
 zip_too_many = "⚠️ Ditolak: arsip berisi lebih dari {count} berkas."
 zip_empty = "⚠️ Arsip itu tidak berisi berkas."
+
+[folder]
+header = "Folder untuk percakapan ini:"
+ask_header = "Percakapan ini belum punya folder. Pilih tempat agen harus bekerja:"
+none_defined = "Tidak ada folder proyek yang dikonfigurasi, jadi ruang kerja bersama adalah satu-satunya tempat yang mungkin."
+shared_label = "🗂 Ruang kerja bersama"
+selected = "📌 Bekerja di {dir}."

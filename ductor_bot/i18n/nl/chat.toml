@@ -470,6 +470,10 @@ download_menu = "Downloaden uit `{dir}`. Wat wil je?"
 pick_file = "Tik op een bestand in `{dir}` om het toegestuurd te krijgen."
 no_files = "Er staan geen bestanden in deze map."
 file_list_truncated = "De eerste {count} bestanden worden getoond."
+btn_bind = "📌 Deze map voor dit onderwerp gebruiken"
+btn_bind_confirm = "📌 Opnieuw koppelen"
+bind_confirm = "Dit gesprek werkt al in `{current}`. Verplaatsen naar `{new}`?"
+bound = "📌 Dit gesprek werkt nu in `{dir}`."
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
@@ -548,3 +552,10 @@ zip_unsafe = "⚠️ Geweigerd: het archief bevat items die buiten de doelmap zo
 zip_too_big = "⚠️ Geweigerd: het archief pakt uit naar meer dan {mb} MB."
 zip_too_many = "⚠️ Geweigerd: het archief bevat meer dan {count} bestanden."
 zip_empty = "⚠️ Dat archief bevat geen bestanden."
+
+[folder]
+header = "Map voor dit gesprek:"
+ask_header = "Dit gesprek heeft nog geen map. Kies waar de agent moet werken:"
+none_defined = "Er zijn geen projectmappen ingesteld, dus de gedeelde werkruimte is de enige plek waar werk kan gebeuren."
+shared_label = "🗂 Gedeelde werkruimte"
+selected = "📌 Werkt in {dir}."

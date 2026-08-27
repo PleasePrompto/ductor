@@ -470,6 +470,10 @@ download_menu = "Télécharger depuis `{dir}`. Que voulez-vous ?"
 pick_file = "Touchez un fichier dans `{dir}` pour le recevoir."
 no_files = "Il n y a aucun fichier dans ce dossier."
 file_list_truncated = "Affichage des {count} premiers fichiers."
+btn_bind = "📌 Utiliser ce dossier pour ce sujet"
+btn_bind_confirm = "📌 Réassocier"
+bind_confirm = "Cette conversation travaille déjà dans `{current}`. La déplacer vers `{new}` ?"
+bound = "📌 Cette conversation travaille maintenant dans `{dir}`."
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
@@ -548,3 +552,10 @@ zip_unsafe = "⚠️ Refusé : l archive contient des entrées qui écriraient h
 zip_too_big = "⚠️ Refusé : l archive se décompresse à plus de {mb} Mo."
 zip_too_many = "⚠️ Refusé : l archive contient plus de {count} fichiers."
 zip_empty = "⚠️ Cette archive ne contient aucun fichier."
+
+[folder]
+header = "Dossier de cette conversation :"
+ask_header = "Cette conversation n a pas encore de dossier. Choisissez où l agent doit travailler :"
+none_defined = "Aucun dossier de projet n est configuré, l espace de travail partagé est donc le seul endroit possible."
+shared_label = "🗂 Espace de travail partagé"
+selected = "📌 Travaille dans {dir}."

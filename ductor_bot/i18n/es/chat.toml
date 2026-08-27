@@ -470,6 +470,10 @@ download_menu = "Descargar de `{dir}`. ¿Qué quieres?"
 pick_file = "Toca un archivo en `{dir}` para que te lo envíe."
 no_files = "No hay archivos en esta carpeta."
 file_list_truncated = "Mostrando los primeros {count} archivos."
+btn_bind = "📌 Usar esta carpeta para este tema"
+btn_bind_confirm = "📌 Reasignar"
+bind_confirm = "Esta conversación ya trabaja en `{current}`. ¿Moverla a `{new}`?"
+bound = "📌 Esta conversación ahora trabaja en `{dir}`."
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
@@ -548,3 +552,10 @@ zip_unsafe = "⚠️ Rechazado: el archivo contiene entradas que escribirían fu
 zip_too_big = "⚠️ Rechazado: el archivo se descomprime a más de {mb} MB."
 zip_too_many = "⚠️ Rechazado: el archivo contiene más de {count} ficheros."
 zip_empty = "⚠️ Ese archivo comprimido no contiene ficheros."
+
+[folder]
+header = "Carpeta de esta conversación:"
+ask_header = "Esta conversación aún no tiene carpeta. Elige dónde debe trabajar el agente:"
+none_defined = "No hay carpetas de proyecto configuradas, así que el espacio compartido es el único lugar posible."
+shared_label = "🗂 Espacio compartido"
+selected = "📌 Trabajando en {dir}."

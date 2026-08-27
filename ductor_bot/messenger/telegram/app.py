@@ -46,6 +46,7 @@ from ductor_bot.messenger.telegram.callbacks import (
 )
 from ductor_bot.messenger.telegram.chat_tracker import ChatRecord, ChatTracker
 from ductor_bot.messenger.telegram.file_browser import (
+    BrowserSession,
     build_staging_view,
     file_browser_start,
     handle_file_browser_callback,
@@ -150,7 +151,7 @@ def _build_help_text() -> str:
         f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('reset')}\n{_help_line('stop')}\n"
         f"{_help_line('interrupt')}\n{_help_line('stop_all')}\n"
         f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('account')}\n"
-        f"{_help_line('persona')}\n"
+        f"{_help_line('persona')}\n{_help_line('folder')}\n"
         f"{_help_line('status')}\n{_help_line('memory')}",
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
@@ -443,6 +444,7 @@ class TelegramBot:
             "effort",
             "account",
             "persona",
+            "folder",
             "skills",
             "cron",
             "diagnose",
@@ -1261,6 +1263,14 @@ class TelegramBot:
         if await self._route_prefix_callback(key, message_id, data, thread_id=thread_id):
             return True
 
+        from ductor_bot.orchestrator.selectors.folder_selector import (
+            is_folder_selector_callback,
+        )
+
+        if is_folder_selector_callback(data):
+            await self._handle_folder_selector(key, message_id, data, thread_id=thread_id)
+            return True
+
         from ductor_bot.orchestrator.selectors.persona_selector import (
             is_persona_selector_callback,
         )
@@ -1470,9 +1480,15 @@ class TelegramBot:
             self._orch.paths,
             self._config.project_roots,
             data,
-            uploads=self._uploads,
-            session_key=key.storage_key,
+            session=BrowserSession(
+                uploads=self._uploads,
+                key=key.storage_key,
+                current_binding=self._orch.bindings.get(key.storage_key) or None,
+            ),
         )
+
+        if action.bind_dir is not None:
+            self._orch.bindings.set(key.storage_key, str(action.bind_dir))
 
         if action.upload_message:
             # Staged files are reported by editing this message, so the upload
@@ -1543,9 +1559,12 @@ class TelegramBot:
         thread_id = get_thread_id(message)
         logger.debug("Message text=%s", text[:80])
 
-        # A new conversation picks its persona before any work happens. The
-        # message is held rather than discarded, so answering the question does
-        # not cost the user their prompt.
+        # Folder first, then persona: one decides where the work happens, the
+        # other how. Each holds the message rather than discarding it, so
+        # answering does not cost the user their prompt.
+        if await self._ask_folder_if_needed(key, text, thread_id=thread_id):
+            return
+
         if await self._ask_persona_if_needed(key, text, thread_id=thread_id):
             return
 
@@ -1558,6 +1577,85 @@ class TelegramBot:
             await self._handle_streaming(message, key, text, thread_id=thread_id)
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
+
+    async def _ask_folder_if_needed(
+        self, key: SessionKey, text: str, *, thread_id: int | None = None
+    ) -> bool:
+        """Ask which folder this conversation works in, before any work happens.
+
+        Returns True when the message was held and the question asked, in which
+        case the caller must not process it yet.
+
+        Nothing is inferred. A folder is never guessed from a topic's name — the
+        mechanism that did guess failed silently after every restart, which is
+        how a file ended up in a directory nobody was told about.
+        """
+        from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
+
+        if self._orch.bindings.has_choice(key.storage_key):
+            return False
+        # Nothing configured means one possible answer, so there is nothing to
+        # consent to; blocking here would lock out an installation that has
+        # never defined a project.
+        if not self._config.project_roots:
+            return False
+
+        self._orch.bindings.hold(key.storage_key, text)
+        resp = folder_selector(self._orch, key, asking=True)
+        await self._bot.send_message(
+            key.chat_id,
+            markdown_to_telegram_html(resp.text),
+            reply_markup=button_grid_to_markup(resp.buttons),
+            message_thread_id=thread_id,
+            parse_mode=ParseMode.HTML,
+        )
+        return True
+
+    async def _handle_folder_selector(
+        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
+        """Record a folder choice and run whatever message was waiting on it."""
+        from ductor_bot.orchestrator.selectors.folder_selector import (
+            folder_selector,
+            parse_callback,
+            resolve_choice,
+        )
+
+        index = parse_callback(data)
+        chosen = resolve_choice(self._config.project_roots, index) if index is not None else None
+        if chosen is None:
+            resp = folder_selector(self._orch, key)
+            await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+            return
+
+        self._orch.bindings.set(key.storage_key, chosen)
+        label = chosen or t("folder.shared_label")
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                chat_id=key.chat_id,
+                message_id=message_id,
+                text=markdown_to_telegram_html(t("folder.selected", dir=label)),
+                parse_mode=ParseMode.HTML,
+            )
+
+        held = self._orch.bindings.take(key.storage_key)
+        if not held:
+            return
+
+        # The folder was only the first gate. Hand the held message back to the
+        # persona gate rather than running it: skipping straight to execution
+        # here would let a conversation start with no persona chosen.
+        if await self._ask_persona_if_needed(key, held, thread_id=thread_id):
+            return
+
+        async with self._sequential.get_lock(key.lock_key):
+            if self._config.streaming.enabled:
+                sent = await self._bot.send_message(
+                    key.chat_id, held, parse_mode=None, message_thread_id=thread_id
+                )
+                await self._handle_streaming(sent, key, held, thread_id=thread_id)
+            else:
+                await self._handle_non_streaming(None, key, held, thread_id=thread_id)
 
     async def _ask_persona_if_needed(
         self, key: SessionKey, text: str, *, thread_id: int | None = None
@@ -1626,7 +1724,6 @@ class TelegramBot:
                 await self._handle_streaming(sent, key, held, thread_id=thread_id)
             else:
                 await self._handle_non_streaming(None, key, held, thread_id=thread_id)
-
     async def _report_landing(self, message: Message, dest: Path) -> None:
         """Say where an attachment was saved.
 

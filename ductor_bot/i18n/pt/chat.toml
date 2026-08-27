@@ -470,6 +470,10 @@ download_menu = "Transferir de `{dir}`. O que pretende?"
 pick_file = "Toque num ficheiro em `{dir}` para lho enviar."
 no_files = "Não há ficheiros nesta pasta."
 file_list_truncated = "A mostrar os primeiros {count} ficheiros."
+btn_bind = "📌 Usar esta pasta para este tópico"
+btn_bind_confirm = "📌 Reassociar"
+bind_confirm = "Esta conversa já trabalha em `{current}`. Mover para `{new}`?"
+bound = "📌 Esta conversa passa a trabalhar em `{dir}`."
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
@@ -548,3 +552,10 @@ zip_unsafe = "⚠️ Recusado: o arquivo contém entradas que escreveriam fora d
 zip_too_big = "⚠️ Recusado: o arquivo descompacta para mais de {mb} MB."
 zip_too_many = "⚠️ Recusado: o arquivo contém mais de {count} ficheiros."
 zip_empty = "⚠️ Esse arquivo não contém ficheiros."
+
+[folder]
+header = "Pasta desta conversa:"
+ask_header = "Esta conversa ainda não tem pasta. Escolha onde o agente deve trabalhar:"
+none_defined = "Não há pastas de projeto configuradas, por isso o espaço partilhado é o único local possível."
+shared_label = "🗂 Espaço partilhado"
+selected = "📌 A trabalhar em {dir}."
