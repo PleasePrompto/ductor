@@ -469,6 +469,10 @@ download_menu = "Transferir de `{dir}`. O que pretende?"
 pick_file = "Toque num ficheiro em `{dir}` para lho enviar."
 no_files = "Não há ficheiros nesta pasta."
 file_list_truncated = "A mostrar os primeiros {count} ficheiros."
+btn_bind = "📌 Usar esta pasta para este tópico"
+btn_bind_confirm = "📌 Reassociar"
+bind_confirm = "Esta conversa já trabalha em `{current}`. Mover para `{new}`?"
+bound = "📌 Esta conversa passa a trabalhar em `{dir}`."
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
@@ -523,3 +527,10 @@ ask_header = "**Que persona deve tratar disto?**"
 none_defined = "Nenhuma persona definida. Adicione ficheiros de agente à sua configuração do Claude Code."
 default_label = "Padrão"
 selected = "Persona: **{persona}**"
+
+[folder]
+header = "Pasta desta conversa:"
+ask_header = "Esta conversa ainda não tem pasta. Escolha onde o agente deve trabalhar:"
+none_defined = "Não há pastas de projeto configuradas, por isso o espaço partilhado é o único local possível."
+shared_label = "🗂 Espaço partilhado"
+selected = "📌 A trabalhar em {dir}."

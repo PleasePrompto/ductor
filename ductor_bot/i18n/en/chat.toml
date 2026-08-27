@@ -470,6 +470,10 @@ download_menu = "Download from `{dir}`. What do you want?"
 pick_file = "Tap a file in `{dir}` to have it sent to you."
 no_files = "There are no files in this folder."
 file_list_truncated = "Showing the first {count} files."
+btn_bind = "📌 Use this folder for this topic"
+btn_bind_confirm = "📌 Rebind"
+bind_confirm = "This conversation already works in `{current}`. Move it to `{new}`?"
+bound = "📌 This conversation now works in `{dir}`."
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
@@ -524,3 +528,10 @@ ask_header = "**Which persona should handle this?**"
 none_defined = "No personas are defined. Add agent files to your Claude Code config to use this."
 default_label = "Default"
 selected = "Persona: **{persona}**"
+
+[folder]
+header = "Folder for this conversation:"
+ask_header = "This conversation has no folder yet. Choose where the agent should work:"
+none_defined = "No project folders are configured, so the shared workspace is the only place work can happen."
+shared_label = "🗂 Shared workspace"
+selected = "📌 Working in {dir}."

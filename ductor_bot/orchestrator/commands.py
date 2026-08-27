@@ -12,6 +12,7 @@ from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.orchestrator.selectors.cron_selector import cron_selector_start
+from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
 from ductor_bot.orchestrator.selectors.model_selector import (
     effort_selector_start,
     model_selector_start,
@@ -81,6 +82,13 @@ async def cmd_persona(orch: Orchestrator, key: SessionKey, _text: str) -> Orches
     """Handle /persona: choose which agent governs this conversation."""
     logger.info("Persona requested")
     resp = persona_selector(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_folder(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /folder: choose which directory this conversation works in."""
+    logger.info("Folder selection requested")
+    resp = folder_selector(orch, key)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 

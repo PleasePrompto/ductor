@@ -20,13 +20,15 @@ Callback data:
     ``sf-<token>``     -- abandon the upload and discard staging
     ``sf/<token>``     -- open the download menu for that directory
     ``sf*<token>``     -- list that directory's files as buttons
+    ``sf&<token>``     -- bind this chat/topic to that directory
+    ``sf&&<token>``    -- confirm a rebind that would replace an existing one
 """
 
 from __future__ import annotations
 
 import asyncio
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING
@@ -71,6 +73,10 @@ SF_UPLOAD_CONFIRM_PREFIX = "sf="
 SF_UPLOAD_CANCEL_PREFIX = "sf-"
 SF_DOWNLOAD_PREFIX = "sf/"
 SF_FILE_LIST_PREFIX = "sf*"
+SF_BIND_PREFIX = "sf&"
+#: Rebinding is confirmed: it moves the working directory, so the next
+#: command acts somewhere other than where the last one did.
+SF_BIND_CONFIRM_PREFIX = "sf&&"
 
 #: One button per file put a folder's whole contents in the main view. They
 #: live behind the download menu now, but a large directory can still overflow
@@ -87,6 +93,21 @@ _MAX_ZIP_FILES = 2000
 
 
 @dataclass(frozen=True, slots=True)
+class BrowserSession:
+    """Per-conversation state the stateful actions need.
+
+    Navigation is a pure function of the path in the callback; only uploads and
+    binding care which conversation is asking. Passing one object keeps that
+    distinction visible instead of threading three parameters through actions
+    that ignore them.
+    """
+
+    uploads: UploadStore
+    key: str
+    current_binding: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BrowserAction:
     """What the transport should do after a callback."""
 
@@ -97,6 +118,8 @@ class BrowserAction:
     agent_prompt: str | None = None
     #: True when the edited message becomes the one staging is reported into.
     upload_message: bool = False
+    #: Set when the user confirmed this chat/topic should work in a directory.
+    bind_dir: Path | None = None
 
 
 def is_file_browser_callback(data: str) -> bool:
@@ -117,6 +140,8 @@ def is_file_browser_callback(data: str) -> bool:
             SF_UPLOAD_CANCEL_PREFIX,
             SF_DOWNLOAD_PREFIX,
             SF_FILE_LIST_PREFIX,
+            SF_BIND_PREFIX,
+            SF_BIND_CONFIRM_PREFIX,
         )
     )
 
@@ -138,16 +163,15 @@ async def handle_file_browser_callback(
     project_roots: Mapping[str, str],
     data: str,
     *,
-    uploads: UploadStore | None = None,
-    session_key: str | None = None,
+    session: BrowserSession | None = None,
 ) -> BrowserAction:
     """Route an ``sf`` callback.
 
-    *uploads* and *session_key* are only needed by the upload actions, which
-    are the sole stateful ones: everything else is a pure function of the path
-    in the callback.
+    *session* is only needed by the upload and binding actions, which are the
+    stateful ones: everything else is a pure function of the path in the
+    callback.
     """
-    return await asyncio.to_thread(_handle, paths, project_roots, data, uploads, session_key)
+    return await asyncio.to_thread(_handle, paths, project_roots, data, session)
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +184,7 @@ def _parse(data: str) -> tuple[str, str] | None:
     # SF_PUSH_CONFIRM_PREFIX starts with SF_FILE_PREFIX, so it must be tried first.
     for prefix in (
         SF_PUSH_CONFIRM_PREFIX,
+        SF_BIND_CONFIRM_PREFIX,
         SF_FILE_PREFIX,
         SF_ZIP_PREFIX,
         SF_ASK_PREFIX,
@@ -172,6 +197,7 @@ def _parse(data: str) -> tuple[str, str] | None:
         SF_UPLOAD_CANCEL_PREFIX,
         SF_DOWNLOAD_PREFIX,
         SF_FILE_LIST_PREFIX,
+        SF_BIND_PREFIX,
         SF_PREFIX,
     ):
         if data.startswith(prefix):
@@ -361,6 +387,79 @@ def _nav_row(target: Path) -> list[InlineKeyboardButton]:
     ]
 
 
+def _bind_action(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    target: Path,
+    current_binding: str | None,
+) -> BrowserAction:
+    """Bind this chat to *target*, asking first if it would replace a binding."""
+    if not target.is_dir():
+        return _root_action(paths, project_roots)
+    if current_binding and current_binding != str(target):
+        confirm = [
+            InlineKeyboardButton(
+                text=t("file_browser.btn_bind_confirm"),
+                callback_data=f"{SF_BIND_CONFIRM_PREFIX}{token_for(target)}",
+            ),
+            InlineKeyboardButton(
+                text=t("file_browser.btn_cancel"),
+                callback_data=f"{SF_PREFIX}{token_for(target)}",
+            ),
+        ]
+        text, _ = _build_dir_view(paths, project_roots, target)
+        body = t(
+            "file_browser.bind_confirm",
+            # Both sides go through the same label: showing a friendly name
+            # against a raw absolute path made the two look unrelated.
+            current=_display(paths, project_roots, Path(current_binding)),
+            new=_display(paths, project_roots, target),
+        )
+        return BrowserAction(
+            text=f"{text}\n\n{body}",
+            keyboard=InlineKeyboardMarkup(inline_keyboard=[confirm]),
+        )
+    return _bind_confirmed_action(paths, project_roots, target)
+
+
+_BIND_ACTIONS: dict[str, Callable[..., BrowserAction]] = {}
+
+
+def _bind_confirmed_action(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    target: Path,
+    _current_binding: str | None = None,
+) -> BrowserAction:
+    if not target.is_dir():
+        return _root_action(paths, project_roots)
+    action = _with_notice(
+        paths,
+        project_roots,
+        target,
+        t("file_browser.bound", dir=_display(paths, project_roots, target)),
+    )
+    return replace(action, bind_dir=target)
+
+
+_BIND_ACTIONS[SF_BIND_PREFIX] = _bind_action
+_BIND_ACTIONS[SF_BIND_CONFIRM_PREFIX] = _bind_confirmed_action
+
+
+#: Prefixes whose actions need a BrowserSession.
+_STATEFUL_PREFIXES = frozenset(
+    {
+        SF_BIND_PREFIX,
+        SF_BIND_CONFIRM_PREFIX,
+        SF_UPLOAD_PREFIX,
+        SF_UPLOAD_FILES_PREFIX,
+        SF_UPLOAD_FOLDER_PREFIX,
+        SF_UPLOAD_CONFIRM_PREFIX,
+        SF_UPLOAD_CANCEL_PREFIX,
+    }
+)
+
+
 _ACTIONS = {
     SF_ASK_PREFIX: _ask_action,
     SF_FILE_PREFIX: _send_file_action,
@@ -378,8 +477,7 @@ def _handle(
     paths: DuctorPaths,
     project_roots: Mapping[str, str],
     data: str,
-    uploads: UploadStore | None = None,
-    session_key: str | None = None,
+    session: BrowserSession | None = None,
 ) -> BrowserAction:
     parsed = _parse(data)
     if parsed is None or not parsed[1]:
@@ -394,12 +492,14 @@ def _handle(
     if target is None or not contains(roots, target):
         return _root_action(paths, project_roots)
 
-    if prefix in _UPLOAD_ACTIONS:
-        # Without a session there is nowhere to keep the upload; fall back to
+    if prefix in _STATEFUL_PREFIXES:
+        # Without a session there is nowhere to record the result; fall back to
         # plain navigation rather than opening a mode that cannot work.
-        if uploads is None or session_key is None:
+        if session is None:
             return _open_action(paths, project_roots, target)
-        return _UPLOAD_ACTIONS[prefix](paths, project_roots, target, uploads, session_key)
+        if prefix in _BIND_ACTIONS:
+            return _BIND_ACTIONS[prefix](paths, project_roots, target, session.current_binding)
+        return _UPLOAD_ACTIONS[prefix](paths, project_roots, target, session.uploads, session.key)
     return _ACTIONS[prefix](paths, project_roots, target)
 
 
@@ -498,6 +598,14 @@ def _build_dir_view(
             InlineKeyboardButton(
                 text=t("file_browser.btn_ask"),
                 callback_data=f"{SF_ASK_PREFIX}{token_for(target)}",
+            ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text=t("file_browser.btn_bind"),
+                callback_data=f"{SF_BIND_PREFIX}{token_for(target)}",
             ),
         ]
     )

@@ -42,9 +42,10 @@ def _buttons(kb) -> list:
     return [b for row in kb.inline_keyboard for b in row]
 
 
-def _dispatch(env, data: str):
+def _dispatch(env, data: str, *, current_binding: str | None = None):
     paths, roots, uploads, _ = env
-    return fb._handle(paths, roots, data, uploads, KEY)
+    session = fb.BrowserSession(uploads=uploads, key=KEY, current_binding=current_binding)
+    return fb._handle(paths, roots, data, session)
 
 
 def test_directory_view_offers_upload(env) -> None:

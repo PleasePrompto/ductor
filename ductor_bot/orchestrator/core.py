@@ -33,6 +33,7 @@ from ductor_bot.orchestrator.commands import (
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_folder,
     cmd_memory,
     cmd_model,
     cmd_persona,
@@ -70,7 +71,7 @@ from ductor_bot.session.manager import SessionData
 from ductor_bot.session.named import NamedSessionRegistry
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
-from ductor_bot.workspace.project_roots import resolve_project_root
+from ductor_bot.workspace.topic_bindings import BindingStore
 
 if TYPE_CHECKING:
     from ductor_bot.background import BackgroundObserver
@@ -173,6 +174,7 @@ class Orchestrator:
             process_registry=self._process_registry,
         )
         self._personas = PersonaStore(paths.ductor_home / "personas.json")
+        self._bindings = BindingStore(paths.ductor_home / "topic_bindings.json")
         self._cli_service.set_working_dir_resolver(self._resolve_request_working_dir)
         self._cli_service.set_persona_resolver(self._resolve_request_persona)
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
@@ -222,20 +224,19 @@ class Orchestrator:
         self._register_commands()
 
     def _resolve_request_working_dir(self, request: AgentRequest) -> str | None:
-        """Map a CLI request to a per-topic project root, if configured.
+        """The folder this conversation was bound to, if any.
 
         Returns ``None`` (keep the default workspace) for named sessions —
-        their resume consistency depends on a stable working dir — and when
-        no ``project_roots`` entry matches the request's topic.
+        their resume consistency depends on a stable working dir — and whenever
+        the conversation has no binding, which includes an explicit choice of
+        the shared workspace. Nothing is inferred: an unbound conversation is
+        stopped by the transport's gate before it ever reaches here.
         """
         if request.process_label.startswith("ns:"):
             return None  # named sessions stay in workspace (resume consistency)
-        return resolve_project_root(
-            self._config.project_roots,
-            chat_id=request.chat_id,
-            topic_id=request.topic_id,
-            topic_name=self._sessions.resolve_topic_name(request.chat_id, request.topic_id),
-        )
+        key = SessionKey.for_transport(request.transport, request.chat_id, request.topic_id)
+        bound = self._bindings.resolve(key.storage_key)
+        return str(bound) if bound is not None else None
 
     def resolve_topic_media_dir(self, message: object) -> Path | None:
         """Where an upload from *message* should be stored.
@@ -253,16 +254,8 @@ class Orchestrator:
         if topic_id is None:
             return None
 
-        root = resolve_project_root(
-            self._config.project_roots,
-            chat_id=chat_id,
-            topic_id=topic_id,
-            topic_name=self._sessions.resolve_topic_name(chat_id, topic_id),
-        )
-        if not root:
-            return None
-        path = Path(root)
-        return path if path.is_dir() else None
+        key = SessionKey.for_transport("tg", chat_id, topic_id)
+        return self._bindings.resolve(key.storage_key)
 
     def _resolve_request_persona(self, request: AgentRequest) -> str:
         """The persona chosen for this conversation, or "" for none.
@@ -277,6 +270,11 @@ class Orchestrator:
     def personas(self) -> PersonaStore:
         """Per-conversation persona choices."""
         return self._personas
+
+    @property
+    def bindings(self) -> BindingStore:
+        """Per-conversation folder bindings."""
+        return self._bindings
 
     @property
     def paths(self) -> DuctorPaths:
@@ -496,6 +494,7 @@ class Orchestrator:
         reg.register_async("/effort", cmd_effort)
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/persona", cmd_persona)
+        reg.register_async("/folder", cmd_folder)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
