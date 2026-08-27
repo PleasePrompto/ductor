@@ -74,3 +74,14 @@ def test_commands_absent_from_the_menu_are_still_offered() -> None:
 
 def test_the_picker_actually_got_shorter() -> None:
     assert len(get_picker_commands()) < len(get_bot_commands())
+
+
+def test_the_import_time_list_is_trimmed_too() -> None:
+    """_sync_commands can run before any rebuild, and publishes whatever the
+    module-level list holds. Trimming only the rebuild path left the full
+    twenty-four being published on a fresh start."""
+    from ductor_bot.messenger.telegram import app
+
+    assert len(app._BOT_COMMANDS) == len(get_picker_commands())
+    published = {c.command for c in app._BOT_COMMANDS}
+    assert not (published & MENU_DUPLICATES), sorted(published & MENU_DUPLICATES)

@@ -22,6 +22,7 @@ from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParam
 from ductor_bot.bus.bus import MessageBus
 from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.commands import BOT_COMMANDS as _COMMAND_DEFS
+from ductor_bot.commands import PICKER_COMMANDS as _PICKER_DEFS
 from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
@@ -132,8 +133,10 @@ _CAPTION_LIMIT = 1024
 TypingContext = _TypingContext
 send_files_from_text = _send_files_from_text
 
+# Built at import as well as in _rebuild_commands(): _sync_commands() may run
+# before a rebuild, and the initial value is what gets published then.
 _BOT_COMMANDS: list[BotCommand] = [
-    BotCommand(command=cmd, description=desc) for cmd, desc in _COMMAND_DEFS
+    BotCommand(command=cmd, description=desc) for cmd, desc in _PICKER_DEFS
 ]
 
 _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}

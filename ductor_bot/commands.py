@@ -92,3 +92,4 @@ def get_multiagent_sub_commands() -> list[tuple[str, str]]:
 # These are evaluated at import time, so i18n must be auto-initialized by then.
 BOT_COMMANDS: list[tuple[str, str]] = get_bot_commands()
 MULTIAGENT_SUB_COMMANDS: list[tuple[str, str]] = get_multiagent_sub_commands()
+PICKER_COMMANDS: list[tuple[str, str]] = get_picker_commands()
