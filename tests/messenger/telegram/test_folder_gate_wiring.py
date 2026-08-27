@@ -52,6 +52,9 @@ def app(tmp_path: Path) -> TelegramBot:
         project_roots={"EMR": str(emr)},
         persona_prompt=True,
         streaming=SimpleNamespace(enabled=False),
+        # Real AgentConfig always carries this; the gate now consults it to
+        # decide whether a topic is the managed Consult one.
+        managed_topics=False,
     )
     instance = object.__new__(TelegramBot)
     instance._bot = _Bot()
@@ -60,6 +63,11 @@ def app(tmp_path: Path) -> TelegramBot:
     # config; both point at the same object so they cannot drift in the test.
     instance._orchestrator = SimpleNamespace(
         config=config,
+        paths=SimpleNamespace(
+            ductor_home=tmp_path,
+            consult_dir=tmp_path / "Consult",
+            managed_topics_path=tmp_path / "managed_topics.json",
+        ),
         bindings=BindingStore(tmp_path / "bindings.json"),
         personas=SimpleNamespace(
             has_choice=lambda _k: False,
