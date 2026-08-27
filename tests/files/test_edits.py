@@ -203,3 +203,20 @@ def test_delete_of_a_symlink_does_not_touch_the_target(tmp_path: Path) -> None:
     apply_delete(link)
     assert not link.exists()
     assert (outside / "keep.txt").read_text() == "important"
+
+
+def test_a_configured_root_nested_inside_another_is_still_protected(tmp_path: Path) -> None:
+    """browsable_roots collapses nested entries; the guard must not.
+
+    With `IT` configured, every project under it disappears from the browsable
+    set — so checking only that set would leave each project deletable.
+    """
+    umbrella = tmp_path / "IT"
+    project = umbrella / "EMR"
+    project.mkdir(parents=True)
+
+    collapsed_only = {"IT": umbrella}
+    assert can_delete(project, collapsed_only) == "", "collapsed set does not protect it"
+
+    all_configured = {"IT": umbrella, "cfg:EMR": project}
+    assert can_delete(project, all_configured) == "edits.refuse_root"

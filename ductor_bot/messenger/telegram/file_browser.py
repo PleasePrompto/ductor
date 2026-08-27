@@ -546,7 +546,19 @@ def _human_size(total: int) -> str:
 
 
 def _roots_map(paths: DuctorPaths, project_roots: Mapping[str, str]) -> dict[str, Path]:
-    return dict(browsable_roots(paths.ductor_home, project_roots))
+    """Every directory the user declared, not just the ones the picker shows.
+
+    ``browsable_roots`` collapses nested entries — with ``IT`` configured, the
+    twelve projects under it fold into one. Protecting only that set would
+    leave a configured root deletable whenever it happens to sit inside
+    another, which is the normal arrangement rather than the exception.
+    """
+    roots = dict(browsable_roots(paths.ductor_home, project_roots))
+    for label, raw in project_roots.items():
+        path = Path(raw).expanduser()
+        if path.is_dir():
+            roots.setdefault(f"cfg:{label}", path)
+    return roots
 
 
 def _manage_action(
