@@ -204,6 +204,8 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder, and the bot replies with where it put it
 - **Upload into any folder you can browse** — `⬆️ Upload here` opens an upload for the directory you are looking at. Files are staged and listed, overwrites are flagged, and nothing is written until you confirm; `📦 Send a folder (.zip)` unpacks an archive into that listing first. Archives are validated before extraction (no path traversal, no symlink entries, size and entry ceilings), and staging is discarded on cancel and swept daily
 - **Pull and push from the browser** — a directory inside a git repository gains `⤓ Pull` and `⤒ Push`. Push is inert when the branch matches its upstream, and asks for confirmation against the list of commits it would publish. Pull is `--ff-only`, so a divergence is reported rather than merged unnoticed
+
+- **Personas** — when `persona_prompt` is on, a conversation that has not chosen a persona asks which of your Claude Code agents should handle it, holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`; `/new` and `/reset` clear it. Nothing is inferred and there is no default; installations without agents never see the prompt
 - **Persistent memory** — plain Markdown files that survive across sessions
 - **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
 - **Cron jobs** — in-process scheduler with timezone support, per-job overrides, optional silent-on-success, result routing to originating chat
@@ -379,6 +381,7 @@ This is **hot-reloadable** — change the language without restarting the bot.
 |---|---|
 | `/model` | Interactive model/provider selector |
 | `/effort` | Reasoning effort for the current chat/topic (Claude & Codex) |
+| `/persona` | Choose which Claude Code agent governs this chat/topic |
 | `/new` | Reset the configured default-provider session for this chat/topic |
 | `/reset` | Reset the currently active provider session for this chat/topic |
 | `/stop` | Stop current message and discard queued messages |

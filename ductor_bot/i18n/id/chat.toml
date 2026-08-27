@@ -515,3 +515,10 @@ zip_unsafe = "⚠️ Ditolak: arsip berisi entri yang akan menulis di luar folde
 zip_too_big = "⚠️ Ditolak: arsip terbuka menjadi lebih dari {mb} MB."
 zip_too_many = "⚠️ Ditolak: arsip berisi lebih dari {count} berkas."
 zip_empty = "⚠️ Arsip itu tidak berisi berkas."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Persona mana yang menangani ini?**"
+none_defined = "Belum ada persona. Tambahkan berkas agent ke konfigurasi Claude Code-mu."
+default_label = "Bawaan"
+selected = "Persona: **{persona}**"

@@ -516,3 +516,10 @@ zip_unsafe = "⚠️ Rechazado: el archivo contiene entradas que escribirían fu
 zip_too_big = "⚠️ Rechazado: el archivo se descomprime a más de {mb} MB."
 zip_too_many = "⚠️ Rechazado: el archivo contiene más de {count} ficheros."
 zip_empty = "⚠️ Ese archivo comprimido no contiene ficheros."
+
+[persona]
+header = "**Persona**"
+ask_header = "**¿Qué persona debe encargarse?**"
+none_defined = "No hay personas definidas. Añade archivos de agente a tu configuración de Claude Code."
+default_label = "Predeterminada"
+selected = "Persona: **{persona}**"

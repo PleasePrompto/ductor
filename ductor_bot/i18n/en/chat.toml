@@ -517,3 +517,10 @@ zip_unsafe = "⚠️ Refused: the archive contains entries that would write outs
 zip_too_big = "⚠️ Refused: the archive unpacks to more than {mb} MB."
 zip_too_many = "⚠️ Refused: the archive holds more than {count} files."
 zip_empty = "⚠️ That archive contains no files."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Which persona should handle this?**"
+none_defined = "No personas are defined. Add agent files to your Claude Code config to use this."
+default_label = "Default"
+selected = "Persona: **{persona}**"

@@ -516,3 +516,10 @@ zip_unsafe = "⚠️ Abgelehnt: Das Archiv enthält Einträge, die außerhalb de
 zip_too_big = "⚠️ Abgelehnt: Das Archiv entpackt sich auf mehr als {mb} MB."
 zip_too_many = "⚠️ Abgelehnt: Das Archiv enthält mehr als {count} Dateien."
 zip_empty = "⚠️ Dieses Archiv enthält keine Dateien."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Welche Persona soll das übernehmen?**"
+none_defined = "Keine Personas definiert. Lege Agent-Dateien in deiner Claude-Code-Konfiguration an."
+default_label = "Standard"
+selected = "Persona: **{persona}**"

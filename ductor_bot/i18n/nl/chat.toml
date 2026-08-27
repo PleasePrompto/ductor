@@ -516,3 +516,10 @@ zip_unsafe = "⚠️ Geweigerd: het archief bevat items die buiten de doelmap zo
 zip_too_big = "⚠️ Geweigerd: het archief pakt uit naar meer dan {mb} MB."
 zip_too_many = "⚠️ Geweigerd: het archief bevat meer dan {count} bestanden."
 zip_empty = "⚠️ Dat archief bevat geen bestanden."
+
+[persona]
+header = "**Persona**"
+ask_header = "**Welke persona moet dit doen?**"
+none_defined = "Geen persona's gedefinieerd. Voeg agentbestanden toe aan je Claude Code-configuratie."
+default_label = "Standaard"
+selected = "Persona: **{persona}**"
