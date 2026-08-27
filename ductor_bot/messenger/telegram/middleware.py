@@ -57,6 +57,8 @@ QUICK_COMMANDS: frozenset[str] = frozenset(
         "/diagnose",
         "/model",
         "/showfiles",
+        "/files",
+        "/menu",
         "/sessions",
         "/tasks",
         "/where",
