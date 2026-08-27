@@ -24,6 +24,7 @@ from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.commands import BOT_COMMANDS as _COMMAND_DEFS
 from ductor_bot.commands import PICKER_COMMANDS as _PICKER_DEFS
 from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
+from ductor_bot.commands import PICKER_COMMANDS as _PICKER_DEFS
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
 from ductor_bot.files.archive import (
