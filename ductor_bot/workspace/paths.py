@@ -84,6 +84,16 @@ class DuctorPaths:
         return self.workspace / "telegram_files"
 
     @property
+    def managed_topics_path(self) -> Path:
+        """Ids of the topics this bot created. Telegram cannot list them."""
+        return self.ductor_home / "managed_topics.json"
+
+    @property
+    def consult_dir(self) -> Path:
+        """Working directory for the Consult topic, wiped daily."""
+        return self.ductor_home / "Consult"
+
+    @property
     def uploads_staging_dir(self) -> Path:
         """Where browser uploads wait for confirmation.
 

@@ -559,3 +559,13 @@ ask_header = "Dit gesprek heeft nog geen map. Kies waar de agent moet werken:"
 none_defined = "Er zijn geen projectmappen ingesteld, dus de gedeelde werkruimte is de enige plek waar werk kan gebeuren."
 shared_label = "🗂 Gedeelde werkruimte"
 selected = "📌 Werkt in {dir}."
+
+[topics]
+consult_name = "Consult"
+general_title = "Algemeen"
+general_scope = "Dit is de gedeelde ruimte. Agents werken hier in de map waaraan dit gesprek is gekoppeld — controleer `/folder` voordat je iets vraagt dat schrijft."
+general_care = "Projectwerk hoort in het eigen onderwerp van dat project, waar de map één keer wordt gekoppeld en blijft staan."
+consult_title = "Consult"
+consult_purpose = "Voor vragen, nadenken en second opinions — niet voor projectwerk."
+consult_isolation = "Agents hier hebben de instructie niets buiten de map van dit onderwerp te lezen of te schrijven. Dat is een regel die ze volgen, geen muur die ze niet over kunnen — plak hier dus niets wat je liever niet gelezen ziet."
+consult_wipe = "Dit onderwerp en alles erin, inclusief bestanden en geschiedenis, wordt dagelijks verwijderd. Niets hier is blijvend."

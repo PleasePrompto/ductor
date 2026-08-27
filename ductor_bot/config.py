@@ -443,6 +443,10 @@ class AgentConfig(BaseModel):
     append_system_prompt_files: list[str] = Field(default_factory=list)
     # Per-topic project roots: topic name | "<topic_id>" | "<chat_id>:<topic_id>" -> path
     project_roots: dict[str, str] = Field(default_factory=dict)
+    #: Create and maintain the Consult topic and the pinned notices in the
+    #: configured groups. Off by default: creating topics and pinning messages
+    #: in someone's group uninvited is not a good default.
+    managed_topics: bool = False
     # Ask which persona (Claude Code agent) should govern a new conversation.
     # Off by default: it adds a prompt before the first reply, which should be
     # opted into rather than arriving with an update.

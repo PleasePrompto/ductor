@@ -559,3 +559,13 @@ ask_header = "Esta conversa ainda não tem pasta. Escolha onde o agente deve tra
 none_defined = "Não há pastas de projeto configuradas, por isso o espaço partilhado é o único local possível."
 shared_label = "🗂 Espaço partilhado"
 selected = "📌 A trabalhar em {dir}."
+
+[topics]
+consult_name = "Consult"
+general_title = "Geral"
+general_scope = "Esta é a área partilhada. Os agentes trabalham aqui na pasta a que esta conversa está associada — verifique `/folder` antes de pedir algo que escreva."
+general_care = "O trabalho de projeto pertence ao tópico do próprio projeto, onde a pasta é associada uma vez e fica."
+consult_title = "Consult"
+consult_purpose = "Para perguntas, reflexão e segundas opiniões — não para trabalho de projeto."
+consult_isolation = "Os agentes aqui têm instruções para não ler nem escrever nada fora da pasta deste tópico. É uma regra que seguem, não um muro que não possam atravessar, por isso não cole aqui nada que se importe que seja lido."
+consult_wipe = "Este tópico e tudo o que contém, incluindo ficheiros e histórico, é apagado diariamente. Nada aqui é duradouro."

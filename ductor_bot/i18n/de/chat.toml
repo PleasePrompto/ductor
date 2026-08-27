@@ -559,3 +559,13 @@ ask_header = "Diese Unterhaltung hat noch keinen Ordner. Wähle, wo der Agent ar
 none_defined = "Es sind keine Projektordner konfiguriert, daher ist der gemeinsame Arbeitsbereich der einzige mögliche Ort."
 shared_label = "🗂 Gemeinsamer Arbeitsbereich"
 selected = "📌 Arbeitet in {dir}."
+
+[topics]
+consult_name = "Consult"
+general_title = "Allgemein"
+general_scope = "Dies ist der gemeinsame Bereich. Agenten arbeiten hier in dem Ordner, an den dieser Chat gebunden ist — prüfe `/folder`, bevor du etwas Schreibendes verlangst."
+general_care = "Projektarbeit gehört in das eigene Thema des Projekts, wo der Ordner einmal gebunden wird und bleibt."
+consult_title = "Consult"
+consult_purpose = "Für Fragen, Überlegungen und zweite Meinungen — nicht für Projektarbeit."
+consult_isolation = "Agenten hier sind angewiesen, nichts außerhalb des Ordners dieses Themas zu lesen oder zu schreiben. Das ist eine Regel, der sie folgen, keine Mauer, die sie nicht überwinden können — füge hier also nichts ein, dessen Mitlesen dich stören würde."
+consult_wipe = "Dieses Thema und alles darin, einschließlich Dateien und Verlauf, wird täglich gelöscht. Nichts hier ist dauerhaft."
