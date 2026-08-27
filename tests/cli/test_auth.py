@@ -73,7 +73,8 @@ def _patch_claude_cli_fallback(monkeypatch: pytest.MonkeyPatch, *, logged_in: bo
     """Disable the subprocess fallback so tests stay fast and deterministic."""
     import ductor_bot.cli.auth as _auth_mod
 
-    monkeypatch.setattr(_auth_mod, "_claude_cli_logged_in", lambda: logged_in)
+    # Accepts the optional account_dir the account-aware probe now passes.
+    monkeypatch.setattr(_auth_mod, "_claude_cli_logged_in", lambda *_args: logged_in)
 
 
 def test_check_claude_auth_not_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
