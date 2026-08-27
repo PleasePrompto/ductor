@@ -22,7 +22,6 @@ from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParam
 from ductor_bot.bus.bus import MessageBus
 from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.commands import BOT_COMMANDS as _COMMAND_DEFS
-from ductor_bot.commands import PICKER_COMMANDS as _PICKER_DEFS
 from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
 from ductor_bot.commands import PICKER_COMMANDS as _PICKER_DEFS
 from ductor_bot.config import AgentConfig
