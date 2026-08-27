@@ -18,6 +18,8 @@ Callback data:
     ``sf%<token>``     -- start a folder (.zip) upload into it
     ``sf=<token>``     -- move what is staged into it
     ``sf-<token>``     -- abandon the upload and discard staging
+    ``sf/<token>``     -- open the download menu for that directory
+    ``sf*<token>``     -- list that directory's files as buttons
 """
 
 from __future__ import annotations
@@ -67,6 +69,15 @@ SF_UPLOAD_FILES_PREFIX = "sf#"
 SF_UPLOAD_FOLDER_PREFIX = "sf%"
 SF_UPLOAD_CONFIRM_PREFIX = "sf="
 SF_UPLOAD_CANCEL_PREFIX = "sf-"
+SF_DOWNLOAD_PREFIX = "sf/"
+SF_FILE_LIST_PREFIX = "sf*"
+
+#: One button per file put a folder's whole contents in the main view. They
+#: live behind the download menu now, but a large directory can still overflow
+#: what Telegram accepts in one keyboard, so the list is capped and says so.
+_MAX_FILE_BUTTONS = 60
+#: Same reasoning for the text listing against the 4096-character message cap.
+_MAX_LISTED_ENTRIES = 100
 
 _MAX_BUTTONS_PER_ROW = 3
 #: Telegram refuses bot uploads past 50 MB; stop before building the archive
@@ -104,6 +115,8 @@ def is_file_browser_callback(data: str) -> bool:
             SF_UPLOAD_FOLDER_PREFIX,
             SF_UPLOAD_CONFIRM_PREFIX,
             SF_UPLOAD_CANCEL_PREFIX,
+            SF_DOWNLOAD_PREFIX,
+            SF_FILE_LIST_PREFIX,
         )
     )
 
@@ -157,6 +170,8 @@ def _parse(data: str) -> tuple[str, str] | None:
         SF_UPLOAD_FOLDER_PREFIX,
         SF_UPLOAD_CONFIRM_PREFIX,
         SF_UPLOAD_CANCEL_PREFIX,
+        SF_DOWNLOAD_PREFIX,
+        SF_FILE_LIST_PREFIX,
         SF_PREFIX,
     ):
         if data.startswith(prefix):
@@ -273,6 +288,79 @@ def _trim(output: str, limit: int = 400) -> str:
     return output if len(output) <= limit else output[: limit - 1] + "…"
 
 
+# ---------------------------------------------------------------------------
+# Download
+# ---------------------------------------------------------------------------
+
+
+def _download_menu_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
+) -> BrowserAction:
+    """Choose between one file and the whole folder."""
+    if not target.is_dir():
+        return _root_action(paths, project_roots)
+    token = token_for(target)
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("file_browser.btn_download_file"),
+                callback_data=f"{SF_FILE_LIST_PREFIX}{token}",
+            ),
+            InlineKeyboardButton(
+                text=t("file_browser.btn_zip"),
+                callback_data=f"{SF_ZIP_PREFIX}{token}",
+            ),
+        ],
+        _nav_row(target),
+    ]
+    text = fmt(
+        t("file_browser.header"),
+        SEP,
+        t("file_browser.download_menu", dir=_display(paths, project_roots, target)),
+    )
+    return BrowserAction(text=text, keyboard=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def _file_list_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
+) -> BrowserAction:
+    """One button per file, so a tap sends it."""
+    if not target.is_dir():
+        return _root_action(paths, project_roots)
+    _dirs, files = list_directory(target)
+    shown = files[:_MAX_FILE_BUTTONS]
+
+    rows = _rows(
+        [
+            InlineKeyboardButton(
+                text=f"📄 {f}", callback_data=f"{SF_FILE_PREFIX}{token_for(target / f)}"
+            )
+            for f in shown
+        ]
+    )
+    rows.append(_nav_row(target))
+
+    body = t("file_browser.pick_file", dir=_display(paths, project_roots, target))
+    if not files:
+        body = t("file_browser.no_files")
+    elif len(files) > len(shown):
+        body = f"{body}\n\n{t('file_browser.file_list_truncated', count=len(shown))}"
+
+    text = fmt(t("file_browser.header"), SEP, body)
+    return BrowserAction(text=text, keyboard=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def _nav_row(target: Path) -> list[InlineKeyboardButton]:
+    """Back to the folder, or straight to the root list."""
+    return [
+        InlineKeyboardButton(
+            text=t("file_browser.btn_back"),
+            callback_data=f"{SF_PREFIX}{token_for(target)}",
+        ),
+        InlineKeyboardButton(text=t("file_browser.btn_home"), callback_data=SF_PREFIX),
+    ]
+
+
 _ACTIONS = {
     SF_ASK_PREFIX: _ask_action,
     SF_FILE_PREFIX: _send_file_action,
@@ -281,6 +369,8 @@ _ACTIONS = {
     SF_PULL_PREFIX: _pull_action,
     SF_PUSH_PREFIX: _push_action,
     SF_PUSH_CONFIRM_PREFIX: _push_confirmed_action,
+    SF_DOWNLOAD_PREFIX: _download_menu_action,
+    SF_FILE_LIST_PREFIX: _file_list_action,
 }
 
 
@@ -353,6 +443,9 @@ def _build_dir_view(
 
     lines = [f"  {d}/" for d in dirs]
     lines += [f"  {f}" for f in files]
+    if len(lines) > _MAX_LISTED_ENTRIES:
+        hidden = len(lines) - _MAX_LISTED_ENTRIES
+        lines = [*lines[:_MAX_LISTED_ENTRIES], f"  {t('upload.more', count=hidden)}"]
     if not lines:
         lines.append(f"  {t('file_browser.empty')}")
 
@@ -364,17 +457,15 @@ def _build_dir_view(
         t("file_browser.tap_hint"),
     )
 
-    buttons = [
-        InlineKeyboardButton(text=f"{d}/", callback_data=f"{SF_PREFIX}{token_for(target / d)}")
-        for d in dirs
-    ]
-    buttons += [
-        InlineKeyboardButton(
-            text=f"📄 {f}", callback_data=f"{SF_FILE_PREFIX}{token_for(target / f)}"
-        )
-        for f in files
-    ]
-    rows = _rows(buttons)
+    # Only directories get a button here: they are navigation. Files are
+    # reachable through the download menu, which keeps a folder of any size to
+    # a screen you can actually aim at.
+    rows = _rows(
+        [
+            InlineKeyboardButton(text=f"{d}/", callback_data=f"{SF_PREFIX}{token_for(target / d)}")
+            for d in dirs
+        ]
+    )
 
     # Both controls are always present. At a root they happen to lead to the
     # same place, and that redundancy is the cheaper trade: a button that
@@ -391,8 +482,8 @@ def _build_dir_view(
     rows.append(
         [
             InlineKeyboardButton(
-                text=t("file_browser.btn_zip"),
-                callback_data=f"{SF_ZIP_PREFIX}{token_for(target)}",
+                text=t("file_browser.btn_download"),
+                callback_data=f"{SF_DOWNLOAD_PREFIX}{token_for(target)}",
             ),
             InlineKeyboardButton(
                 text=t("upload.btn_upload"),
