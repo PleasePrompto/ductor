@@ -226,7 +226,7 @@ async def _ensure_consult(
     if record.topic_id is not None and await _notice_is_alive(
         bot, chat_id, record.notice_message_id, text
     ):
-        await _pin(bot, chat_id, record.notice_message_id)
+        await _pin(bot, chat_id, record.notice_message_id, in_topic=True)
         return
 
     topic = await bot.create_forum_topic(chat_id=chat_id, name=t("topics.consult_name"))
@@ -238,7 +238,7 @@ async def _ensure_consult(
         CONSULT,
         TopicRecord(topic_id=topic.message_thread_id, notice_message_id=message.message_id),
     )
-    await _pin(bot, chat_id, message.message_id)
+    await _pin(bot, chat_id, message.message_id, in_topic=True)
     logger.info("Created Consult topic %d in chat %d", topic.message_thread_id, chat_id)
 
 
@@ -276,9 +276,19 @@ async def _notice_is_alive(bot: Bot, chat_id: int, message_id: int | None, text:
     return True
 
 
-async def _pin(bot: Bot, chat_id: int, message_id: int | None) -> None:
-    """Pin the notice. Pinning an already-pinned message is harmless."""
-    if message_id is None:
+async def _pin(bot: Bot, chat_id: int, message_id: int | None, *, in_topic: bool = False) -> None:
+    """Pin the notice, where pinning is possible at all.
+
+    ``pinChatMessage`` takes no ``message_thread_id``: it pins chat-wide, and a
+    message that belongs to a forum topic is accepted and then simply not
+    pinned — the call returns True and nothing appears. Bots cannot pin inside
+    a topic.
+
+    So the General notice is pinned and a topic notice is not. What makes a
+    topic notice visible instead is its position: it is the first message in a
+    topic that is recreated whenever it is wiped, so it sits at the top.
+    """
+    if message_id is None or in_topic:
         return
     try:
         await bot.pin_chat_message(
