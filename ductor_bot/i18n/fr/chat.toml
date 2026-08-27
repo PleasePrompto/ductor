@@ -568,4 +568,15 @@ general_care = "Le travail de projet appartient au sujet propre à ce projet, o�
 consult_title = "Consult"
 consult_purpose = "Pour les questions, la réflexion et les seconds avis — pas pour le travail de projet."
 consult_isolation = "Les agents ici ont pour consigne de ne rien lire ni écrire hors du dossier de ce sujet. C est une règle qu ils suivent, pas un mur qu ils ne peuvent franchir : ne collez donc rien ici que vous ne voudriez pas voir lu."
-consult_wipe = "Ce sujet et tout ce qu il contient, fichiers et historique compris, est supprimé chaque jour. Rien ici n est durable."
+consult_wipe = "Ce sujet et tout ce qu il contient, fichiers et historique compris, est supprimé automatiquement. Rien ici n est durable."
+consult_schedule = "Fréquence : {schedule}"
+consult_no_wipe = "L effacement automatique est désactivé pour ce sujet : tout y reste jusqu à ce que quelqu un le supprime."
+
+[consult]
+header = "**Effacement de Consult**"
+explains = "Tout ce qui se trouve dans le sujet Consult — fichiers, messages et historique — est supprimé selon cette fréquence."
+schedule_hourly = "Toutes les heures"
+schedule_6h = "Toutes les 6 heures"
+schedule_daily = "Chaque jour à {hour}:00"
+schedule_weekly = "Chaque semaine, lundi {hour}:00"
+schedule_off = "Jamais"

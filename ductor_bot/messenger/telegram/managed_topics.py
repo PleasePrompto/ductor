@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 CONSULT = "consult"
 GENERAL = "general"
+#: Stored beside the topic records; ints only, so the file shape is unchanged.
+_WIPE = "wipe"
 
 #: Telegram answers an edit that changes nothing with an error. It means the
 #: message is alive and already correct, which is a success for our purposes.
@@ -80,6 +82,14 @@ class ManagedTopicStore:
             notice_message_id=entry.get("notice_message_id"),
         )
 
+    def last_wipe(self, chat_id: int) -> int | None:
+        """Epoch seconds of the last wipe, or None if it has never run."""
+        return self._data.get(str(chat_id), {}).get(_WIPE, {}).get("at")
+
+    def mark_wiped(self, chat_id: int, at: int) -> None:
+        self._data.setdefault(str(chat_id), {})[_WIPE] = {"at": at}
+        self._save()
+
     def set(self, chat_id: int, name: str, record: TopicRecord) -> None:
         chat = self._data.setdefault(str(chat_id), {})
         chat[name] = {
@@ -108,13 +118,30 @@ def general_notice() -> str:
     )
 
 
-def consult_notice() -> str:
+def consult_notice(schedule: str, hour: int) -> str:
+    """The pinned Consult notice, stating the schedule actually configured.
+
+    Generated rather than fixed: this is the sentence someone decides what to
+    paste on, so it must not promise a daily wipe that is not happening.
+    """
+    from ductor_bot.messenger.telegram.consult_wipe import schedule_label
+
+    if schedule == "off":
+        wipe = [t("topics.consult_no_wipe")]
+    else:
+        # The schedule gets its own line rather than being dropped into the
+        # sentence: a button label does not inline as grammar, and it inlines
+        # differently wrong in each language.
+        wipe = [
+            t("topics.consult_wipe"),
+            t("topics.consult_schedule", schedule=schedule_label(schedule, hour)),
+        ]
     return "\n\n".join(
         (
             f"**{t('topics.consult_title')}**",
             t("topics.consult_purpose"),
             t("topics.consult_isolation"),
-            t("topics.consult_wipe"),
+            *wipe,
         )
     )
 
@@ -169,7 +196,11 @@ def ensure_consult_workspace(directory: Path) -> Path:
 
 
 async def ensure_managed_topics(
-    bot: Bot, chat_id: int, store: ManagedTopicStore, consult_dir: Path
+    bot: Bot,
+    chat_id: int,
+    store: ManagedTopicStore,
+    consult_dir: Path,
+    schedule: tuple[str, int] = ("daily", 4),
 ) -> None:
     """Create and verify this chat's managed topics and pinned notices.
 
@@ -178,7 +209,7 @@ async def ensure_managed_topics(
     """
     try:
         ensure_consult_workspace(consult_dir)
-        await _ensure_consult(bot, chat_id, store)
+        await _ensure_consult(bot, chat_id, store, schedule)
         await _ensure_general(bot, chat_id, store)
     except TelegramAPIError:
         logger.warning("Managed topics unavailable in chat %d", chat_id, exc_info=True)
@@ -186,9 +217,11 @@ async def ensure_managed_topics(
         logger.warning("Cannot prepare the Consult directory %s", consult_dir, exc_info=True)
 
 
-async def _ensure_consult(bot: Bot, chat_id: int, store: ManagedTopicStore) -> None:
+async def _ensure_consult(
+    bot: Bot, chat_id: int, store: ManagedTopicStore, schedule: tuple[str, int]
+) -> None:
     record = store.get(chat_id, CONSULT)
-    text = markdown_to_telegram_html(consult_notice())
+    text = markdown_to_telegram_html(consult_notice(*schedule))
 
     if record.topic_id is not None and await _notice_is_alive(
         bot, chat_id, record.notice_message_id, text

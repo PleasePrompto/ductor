@@ -568,4 +568,15 @@ general_care = "Projectwerk hoort in het eigen onderwerp van dat project, waar d
 consult_title = "Consult"
 consult_purpose = "Voor vragen, nadenken en second opinions — niet voor projectwerk."
 consult_isolation = "Agents hier hebben de instructie niets buiten de map van dit onderwerp te lezen of te schrijven. Dat is een regel die ze volgen, geen muur die ze niet over kunnen — plak hier dus niets wat je liever niet gelezen ziet."
-consult_wipe = "Dit onderwerp en alles erin, inclusief bestanden en geschiedenis, wordt dagelijks verwijderd. Niets hier is blijvend."
+consult_wipe = "Dit onderwerp en alles erin, inclusief bestanden en geschiedenis, wordt automatisch verwijderd. Niets hier is blijvend."
+consult_schedule = "Schema: {schedule}"
+consult_no_wipe = "Automatisch wissen staat uit voor dit onderwerp, dus alles hier blijft staan tot iemand het verwijdert."
+
+[consult]
+header = "**Consult wissen**"
+explains = "Alles in het Consult-onderwerp — bestanden, berichten en geschiedenis — wordt volgens dit schema verwijderd."
+schedule_hourly = "Elk uur"
+schedule_6h = "Elke 6 uur"
+schedule_daily = "Dagelijks om {hour}:00"
+schedule_weekly = "Wekelijks, maandag {hour}:00"
+schedule_off = "Nooit"

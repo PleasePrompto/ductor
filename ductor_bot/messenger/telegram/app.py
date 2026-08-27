@@ -151,7 +151,7 @@ def _build_help_text() -> str:
         f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('reset')}\n{_help_line('stop')}\n"
         f"{_help_line('interrupt')}\n{_help_line('stop_all')}\n"
         f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('account')}\n"
-        f"{_help_line('persona')}\n{_help_line('folder')}\n"
+        f"{_help_line('persona')}\n{_help_line('folder')}\n{_help_line('consult')}\n"
         f"{_help_line('status')}\n{_help_line('memory')}",
         f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
@@ -445,6 +445,7 @@ class TelegramBot:
             "account",
             "persona",
             "folder",
+            "consult",
             "skills",
             "cron",
             "diagnose",
@@ -1263,6 +1264,14 @@ class TelegramBot:
         if await self._route_prefix_callback(key, message_id, data, thread_id=thread_id):
             return True
 
+        from ductor_bot.orchestrator.selectors.consult_selector import (
+            is_consult_selector_callback,
+        )
+
+        if is_consult_selector_callback(data):
+            await self._handle_consult_selector(key, message_id, data)
+            return True
+
         from ductor_bot.orchestrator.selectors.folder_selector import (
             is_folder_selector_callback,
         )
@@ -1577,6 +1586,50 @@ class TelegramBot:
             await self._handle_streaming(message, key, text, thread_id=thread_id)
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
+
+    async def _handle_consult_selector(self, key: SessionKey, message_id: int, data: str) -> None:
+        """Record a new wipe schedule and refresh the notice that states it."""
+        from ductor_bot.config import update_config_file_async
+        from ductor_bot.orchestrator.selectors.consult_selector import (
+            consult_selector,
+            parse_callback,
+            resolve_choice,
+        )
+
+        index = parse_callback(data)
+        chosen = resolve_choice(index) if index is not None else None
+        if chosen is None:
+            await edit_selector_response(
+                self._bot, key.chat_id, message_id, consult_selector(self._orch)
+            )
+            return
+
+        self._config.consult_wipe = chosen
+        await update_config_file_async(self._orch.paths.config_path, consult_wipe=chosen)
+        # The pinned notice names the schedule, so it is now out of date. It is
+        # rewritten here rather than at the next restart: the sentence people
+        # rely on must not describe the old plan.
+        await self._refresh_managed_notices()
+        await edit_selector_response(
+            self._bot, key.chat_id, message_id, consult_selector(self._orch)
+        )
+
+    async def _refresh_managed_notices(self) -> None:
+        """Re-run the bootstrap so pinned notices match the current config."""
+        if not self._config.managed_topics:
+            return
+        from ductor_bot.messenger.telegram.managed_topics import (
+            ManagedTopicStore,
+            ensure_managed_topics,
+        )
+
+        paths = self._orch.paths
+        store = ManagedTopicStore(paths.managed_topics_path)
+        schedule = (self._config.consult_wipe, self._config.consult_wipe_hour)
+        for chat_id in self._config.allowed_group_ids:
+            await ensure_managed_topics(
+                self._bot, chat_id, store, paths.consult_dir, schedule
+            )
 
     async def _ask_folder_if_needed(
         self, key: SessionKey, text: str, *, thread_id: int | None = None

@@ -568,4 +568,15 @@ general_care = "El trabajo de proyecto va en el tema propio de ese proyecto, don
 consult_title = "Consult"
 consult_purpose = "Para preguntas, reflexión y segundas opiniones — no para trabajo de proyecto."
 consult_isolation = "Los agentes aquí tienen instrucciones de no leer ni escribir nada fuera de la carpeta de este tema. Es una regla que siguen, no un muro que no puedan cruzar, así que no pegues aquí nada que te importe que se lea."
-consult_wipe = "Este tema y todo lo que contiene, incluidos sus archivos y su historial, se borra a diario. Nada aquí es duradero."
+consult_wipe = "Este tema y todo lo que contiene, incluidos sus archivos y su historial, se borra automáticamente. Nada aquí es duradero."
+consult_schedule = "Frecuencia: {schedule}"
+consult_no_wipe = "El borrado automático está desactivado para este tema, así que todo lo de aquí permanece hasta que alguien lo elimine."
+
+[consult]
+header = "**Borrado de Consult**"
+explains = "Todo lo que hay en el tema Consult — sus archivos, sus mensajes y su historial — se borra según esta frecuencia."
+schedule_hourly = "Cada hora"
+schedule_6h = "Cada 6 horas"
+schedule_daily = "A diario a las {hour}:00"
+schedule_weekly = "Semanal, lunes {hour}:00"
+schedule_off = "Nunca"

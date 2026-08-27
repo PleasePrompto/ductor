@@ -16,6 +16,7 @@ from ductor_bot.orchestrator.selectors.account_selector import (
     account_selector_start,
     switch_account,
 )
+from ductor_bot.orchestrator.selectors.consult_selector import consult_selector
 from ductor_bot.orchestrator.selectors.cron_selector import cron_selector_start
 from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
 from ductor_bot.orchestrator.selectors.model_selector import (
@@ -113,6 +114,13 @@ async def cmd_folder(orch: Orchestrator, key: SessionKey, _text: str) -> Orchest
     """Handle /folder: choose which directory this conversation works in."""
     logger.info("Folder selection requested")
     resp = folder_selector(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_consult(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /consult: how often the Consult topic is wiped."""
+    logger.info("Consult schedule requested")
+    resp = consult_selector(orch)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 

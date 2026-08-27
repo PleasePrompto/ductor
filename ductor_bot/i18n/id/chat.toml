@@ -567,4 +567,15 @@ general_care = "Pekerjaan proyek sebaiknya di topik proyek itu sendiri, tempat f
 consult_title = "Consult"
 consult_purpose = "Untuk pertanyaan, pemikiran, dan pendapat kedua — bukan untuk pekerjaan proyek."
 consult_isolation = "Agen di sini diinstruksikan untuk tidak membaca atau menulis apa pun di luar folder topik ini. Itu aturan yang mereka ikuti, bukan dinding yang tak bisa mereka lewati, jadi jangan tempel apa pun di sini yang keberatan kamu kalau dibaca."
-consult_wipe = "Topik ini dan semua isinya, termasuk berkas dan riwayatnya, dihapus setiap hari. Tidak ada yang permanen di sini."
+consult_wipe = "Topik ini dan semua isinya, termasuk berkas dan riwayatnya, dihapus otomatis. Tidak ada yang permanen di sini."
+consult_schedule = "Jadwal: {schedule}"
+consult_no_wipe = "Penghapusan otomatis dimatikan untuk topik ini, jadi semua di sini tetap ada sampai seseorang menghapusnya."
+
+[consult]
+header = "**Penghapusan Consult**"
+explains = "Semua yang ada di topik Consult — berkas, pesan, dan riwayatnya — dihapus sesuai jadwal ini."
+schedule_hourly = "Setiap jam"
+schedule_6h = "Setiap 6 jam"
+schedule_daily = "Harian pukul {hour}:00"
+schedule_weekly = "Mingguan, Senin {hour}:00"
+schedule_off = "Tidak pernah"

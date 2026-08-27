@@ -163,5 +163,13 @@ async def _ensure_managed_topics(bot: TelegramBot) -> None:
 
     paths = bot._orch.paths
     store = ManagedTopicStore(paths.managed_topics_path)
+    schedule = (bot.config.consult_wipe, bot.config.consult_wipe_hour)
     for chat_id in bot.config.allowed_group_ids:
-        await ensure_managed_topics(bot.bot_instance, chat_id, store, paths.consult_dir)
+        await ensure_managed_topics(
+            bot.bot_instance, chat_id, store, paths.consult_dir, schedule
+        )
+
+    from ductor_bot.cleanup.consult_observer import ConsultWipeObserver
+
+    bot._consult_observer = ConsultWipeObserver(bot.config, paths, bot.bot_instance, store)
+    await bot._consult_observer.start()

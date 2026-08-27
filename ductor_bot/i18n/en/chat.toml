@@ -569,4 +569,15 @@ general_care = "Project work belongs in that project's own topic, where the fold
 consult_title = "Consult"
 consult_purpose = "For questions, thinking and second opinions — not for project work."
 consult_isolation = "Agents here are instructed not to read or write anything outside this topic's folder. That is a rule they follow, not a wall they cannot cross, so do not paste anything here you would mind being read."
-consult_wipe = "This topic and everything in it, including its files and its history, is deleted daily. Nothing here is durable."
+consult_wipe = "This topic and everything in it, including its files and its history, is deleted automatically. Nothing here is durable."
+consult_schedule = "Schedule: {schedule}"
+consult_no_wipe = "Automatic clearing is switched off for this topic, so anything here stays until someone removes it."
+
+[consult]
+header = "**Consult wipe**"
+explains = "Everything in the Consult topic — its files, its messages and its history — is deleted on this schedule."
+schedule_hourly = "Every hour"
+schedule_6h = "Every 6 hours"
+schedule_daily = "Daily at {hour}:00"
+schedule_weekly = "Weekly, Monday {hour}:00"
+schedule_off = "Never"

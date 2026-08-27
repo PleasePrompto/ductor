@@ -568,4 +568,15 @@ general_care = "O trabalho de projeto pertence ao tópico do próprio projeto, o
 consult_title = "Consult"
 consult_purpose = "Para perguntas, reflexão e segundas opiniões — não para trabalho de projeto."
 consult_isolation = "Os agentes aqui têm instruções para não ler nem escrever nada fora da pasta deste tópico. É uma regra que seguem, não um muro que não possam atravessar, por isso não cole aqui nada que se importe que seja lido."
-consult_wipe = "Este tópico e tudo o que contém, incluindo ficheiros e histórico, é apagado diariamente. Nada aqui é duradouro."
+consult_wipe = "Este tópico e tudo o que contém, incluindo ficheiros e histórico, é apagado automaticamente. Nada aqui é duradouro."
+consult_schedule = "Frequência: {schedule}"
+consult_no_wipe = "A limpeza automática está desligada para este tópico, por isso tudo aqui permanece até alguém o remover."
+
+[consult]
+header = "**Limpeza do Consult**"
+explains = "Tudo no tópico Consult — ficheiros, mensagens e histórico — é apagado com esta frequência."
+schedule_hourly = "A cada hora"
+schedule_6h = "A cada 6 horas"
+schedule_daily = "Diariamente às {hour}:00"
+schedule_weekly = "Semanalmente, segunda {hour}:00"
+schedule_off = "Nunca"

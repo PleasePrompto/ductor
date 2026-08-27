@@ -54,6 +54,8 @@ _HOT_RELOADABLE: frozenset[str] = frozenset(
         "cli_parameters",
         "project_roots",
         "managed_topics",
+        "consult_wipe",
+        "consult_wipe_hour",
         "persona_prompt",
         "claude_accounts",
         "claude_account",

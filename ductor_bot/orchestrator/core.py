@@ -32,6 +32,7 @@ from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
     cmd_account,
+    cmd_consult,
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
@@ -506,6 +507,7 @@ class Orchestrator:
         reg.register_async("/memory", cmd_memory)
         reg.register_async("/persona", cmd_persona)
         reg.register_async("/folder", cmd_folder)
+        reg.register_async("/consult", cmd_consult)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)

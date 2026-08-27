@@ -568,4 +568,15 @@ general_care = "Projektarbeit gehört in das eigene Thema des Projekts, wo der O
 consult_title = "Consult"
 consult_purpose = "Für Fragen, Überlegungen und zweite Meinungen — nicht für Projektarbeit."
 consult_isolation = "Agenten hier sind angewiesen, nichts außerhalb des Ordners dieses Themas zu lesen oder zu schreiben. Das ist eine Regel, der sie folgen, keine Mauer, die sie nicht überwinden können — füge hier also nichts ein, dessen Mitlesen dich stören würde."
-consult_wipe = "Dieses Thema und alles darin, einschließlich Dateien und Verlauf, wird täglich gelöscht. Nichts hier ist dauerhaft."
+consult_wipe = "Dieses Thema und alles darin, einschließlich Dateien und Verlauf, wird automatisch gelöscht. Nichts hier ist dauerhaft."
+consult_schedule = "Zeitplan: {schedule}"
+consult_no_wipe = "Die automatische Löschung ist für dieses Thema abgeschaltet — alles hier bleibt, bis es jemand entfernt."
+
+[consult]
+header = "**Consult-Löschung**"
+explains = "Alles im Consult-Thema — Dateien, Nachrichten und Verlauf — wird nach diesem Zeitplan gelöscht."
+schedule_hourly = "Stündlich"
+schedule_6h = "Alle 6 Stunden"
+schedule_daily = "Täglich um {hour}:00"
+schedule_weekly = "Wöchentlich, Montag {hour}:00"
+schedule_off = "Nie"

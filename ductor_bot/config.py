@@ -447,6 +447,11 @@ class AgentConfig(BaseModel):
     #: configured groups. Off by default: creating topics and pinning messages
     #: in someone's group uninvited is not a good default.
     managed_topics: bool = False
+    #: How often the Consult topic is wiped: hourly, 6h, daily, weekly, off.
+    #: Changed from Telegram with /consult; the pinned notice is regenerated
+    #: from it so it never promises a schedule that is not running.
+    consult_wipe: str = "daily"
+    consult_wipe_hour: int = 4
     # Ask which persona (Claude Code agent) should govern a new conversation.
     # Off by default: it adds a prompt before the first reply, which should be
     # opted into rather than arriving with an update.
