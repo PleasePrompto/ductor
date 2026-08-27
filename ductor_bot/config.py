@@ -443,6 +443,10 @@ class AgentConfig(BaseModel):
     append_system_prompt_files: list[str] = Field(default_factory=list)
     # Per-topic project roots: topic name | "<topic_id>" | "<chat_id>:<topic_id>" -> path
     project_roots: dict[str, str] = Field(default_factory=dict)
+    # Ask which persona (Claude Code agent) should govern a new conversation.
+    # Off by default: it adds a prompt before the first reply, which should be
+    # opted into rather than arriving with an update.
+    persona_prompt: bool = False
     gemini_api_key: str | None = None
     streaming: StreamingConfig = Field(default_factory=StreamingConfig)
     docker: DockerConfig = Field(default_factory=DockerConfig)

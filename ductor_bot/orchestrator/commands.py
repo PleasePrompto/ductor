@@ -12,12 +12,14 @@ from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
 from ductor_bot.orchestrator.selectors.cron_selector import cron_selector_start
+from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
 from ductor_bot.orchestrator.selectors.model_selector import (
     effort_selector_start,
     model_selector_start,
     switch_model,
 )
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
+from ductor_bot.orchestrator.selectors.persona_selector import persona_selector
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
 from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
 from ductor_bot.text.response_format import SEP, fmt, new_session_text
@@ -36,6 +38,7 @@ logger = logging.getLogger(__name__)
 async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /new: kill processes and reset only active provider session."""
     logger.info("Reset requested")
+    orch.personas.clear(key.storage_key)
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     provider = await orch.reset_active_provider_session(key)
     return OrchestratorResult(text=new_session_text(provider))
@@ -44,6 +47,7 @@ async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
 async def cmd_reset_current(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /reset: kill processes and reset the *current* provider session."""
     logger.info("Reset (current) requested")
+    orch.personas.clear(key.storage_key)
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     provider = await orch.reset_current_provider_session(key)
     return OrchestratorResult(text=new_session_text(provider))
@@ -71,6 +75,20 @@ async def cmd_effort(orch: Orchestrator, key: SessionKey, _text: str) -> Orchest
     """Handle /effort: show reasoning-effort buttons for the active provider."""
     logger.info("Effort requested")
     resp = await effort_selector_start(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_persona(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /persona: choose which agent governs this conversation."""
+    logger.info("Persona requested")
+    resp = persona_selector(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_folder(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /folder: choose which directory this conversation works in."""
+    logger.info("Folder selection requested")
+    resp = folder_selector(orch, key)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 

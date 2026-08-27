@@ -30,6 +30,8 @@ ORCHESTRATOR_COMMANDS: frozenset[str] = frozenset(
         "status",
         "model",
         "effort",
+        "persona",
+        "folder",
         "memory",
         "cron",
         "diagnose",
