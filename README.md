@@ -23,6 +23,56 @@
 
 ---
 
+## About this fork
+
+This is [ali-rajabpour/ductor](https://github.com/ali-rajabpour/ductor), a fork of
+[PleasePrompto/ductor](https://github.com/PleasePrompto/ductor) that runs a production
+Telegram bot 24/7 against live projects. `main` here carries **19 feature branches plus
+one fix on top of upstream `main`** — every one of them offered back upstream as a pull
+request first. None has been reviewed or merged, so this fork is the version that ships.
+
+Upstream remains the origin of the project and of everything not listed below. Changes
+here are additive: no upstream behaviour was removed, and the fork merges cleanly from
+upstream `main`.
+
+### What the fork adds
+
+**Working directories, and consent about them.** A conversation is bound to a project
+folder by tapping a button, once, and the binding is a record of consent rather than a
+guess. Folder names are never inferred from topic names — that mechanism failed silently
+after every restart and ran work in the wrong directory with nothing said. Every injected
+prompt path is anchored to the workspace at the CLI choke point, so an instruction to
+write `memory_system/MAINMEMORY.md` cannot land inside a user's git tree. A forum's
+General thread can never hold a binding at all: its messages carry no
+`message_thread_id`, so binding one there let a message typed outside a topic start a
+fresh conversation in another topic's project folder.
+
+**A file browser over the project roots.** Browse bound directories, pull and push, send
+files up and pull them down, and rename, create or delete behind an explicit Manage
+gate — all from a phone, as `/files`.
+
+**A Consult topic that is genuinely disposable.** Created and pinned by the bot,
+scoped to its own directory, wiped on a schedule, and running as its own unix account so
+the isolation is enforced by the kernel rather than by a sentence in a prompt.
+
+**Phone-shaped UI.** An inline menu behind a single toggle, a `/` picker trimmed to what
+fits on a screen, and button labels that never inline into a sentence.
+
+**Accounts, personas and skills.** `/account` switches the credential store — moving
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` alone, so sessions, skills and MCP stay shared and
+`--resume` continues the same conversation on the other subscription. A persona gate asks
+which agent governs a conversation instead of picking something plausible, and `/skills`
+browses what is installed.
+
+### Running it
+
+Deployment lives outside this repository: the bot runs as an unprivileged user on a
+rootless Docker daemon, with credentials and per-project access managed on the host.
+Nothing here assumes that setup — `pip install ductor` and the upstream quick start below
+still work unchanged.
+
+---
+
 If you want to control Claude Code, Google's Gemini CLI, OpenAI's Codex CLI, Antigravity CLI, or xAI Grok Build via Telegram, Matrix, or Slack, build automations, or manage multiple agents easily — ductor is the right tool for you. The messaging layer is modular: Telegram, Matrix, and Slack ship today, and new transports plug into the same transport-agnostic core.
 
 ductor runs on your machine and sends simple console commands as if you were typing them yourself, so you can use your active subscriptions (Claude Max, Google AI Ultra, etc.) directly. No API proxying, no SDK patching, no spoofed headers. Just the official CLIs, executed as subprocesses, with all state kept in plain JSON and Markdown under `~/.ductor/`.
