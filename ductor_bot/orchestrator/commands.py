@@ -113,6 +113,8 @@ async def cmd_persona(orch: Orchestrator, key: SessionKey, _text: str) -> Orches
 async def cmd_folder(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
     """Handle /folder: choose which directory this conversation works in."""
     logger.info("Folder selection requested")
+    if orch.bindings.is_protected(key.storage_key):
+        return OrchestratorResult(text=t("folder.general_locked"))
     resp = folder_selector(orch, key)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 

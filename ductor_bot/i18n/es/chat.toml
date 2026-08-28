@@ -559,11 +559,12 @@ ask_header = "Esta conversación aún no tiene carpeta. Elige dónde debe trabaj
 none_defined = "No hay carpetas de proyecto configuradas, así que el espacio compartido es el único lugar posible."
 shared_label = "🗂 Espacio compartido"
 selected = "📌 Trabajando en {dir}."
+general_locked = "**General no tiene carpeta.** Es el área compartida de este grupo: siempre trabaja en el espacio de trabajo compartido y no puede vincularse a un directorio de proyecto. Abre el tema del proyecto y elige la carpeta allí."
 
 [topics]
 consult_name = "Consult"
 general_title = "General"
-general_scope = "Esta es el área compartida. Los agentes trabajan aquí en la carpeta a la que esté vinculado este chat — revisa `/folder` antes de pedir algo que escriba."
+general_scope = "Esta es el área compartida. Los agentes trabajan aquí siempre en el espacio de trabajo compartido: General no puede vincularse a una carpeta de proyecto, así que nada escrito aquí puede alcanzar un proyecto por accidente."
 general_care = "El trabajo de proyecto va en el tema propio de ese proyecto, donde la carpeta se vincula una vez y se queda."
 consult_title = "Consult"
 consult_purpose = "Para preguntas, reflexión y segundas opiniones — no para trabajo de proyecto."

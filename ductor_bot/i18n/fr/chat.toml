@@ -559,11 +559,12 @@ ask_header = "Cette conversation n a pas encore de dossier. Choisissez où l age
 none_defined = "Aucun dossier de projet n est configuré, l espace de travail partagé est donc le seul endroit possible."
 shared_label = "🗂 Espace de travail partagé"
 selected = "📌 Travaille dans {dir}."
+general_locked = "**General n'a pas de dossier.** C'est la zone partagée de ce groupe : il travaille toujours dans l'espace de travail partagé et ne peut pas être lié à un répertoire de projet. Ouvrez le sujet du projet et choisissez le dossier là-bas."
 
 [topics]
 consult_name = "Consult"
 general_title = "Général"
-general_scope = "Ceci est la zone partagée. Les agents y travaillent dans le dossier auquel ce salon est lié — vérifiez `/folder` avant de demander quoi que ce soit qui écrive."
+general_scope = "Ceci est la zone partagée. Les agents y travaillent toujours dans l'espace de travail partagé : General ne peut pas être lié à un dossier de projet, donc rien de ce qui est écrit ici ne peut atteindre un projet par accident."
 general_care = "Le travail de projet appartient au sujet propre à ce projet, où le dossier est lié une fois et ne bouge plus."
 consult_title = "Consult"
 consult_purpose = "Pour les questions, la réflexion et les seconds avis — pas pour le travail de projet."

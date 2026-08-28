@@ -558,11 +558,12 @@ ask_header = "Percakapan ini belum punya folder. Pilih tempat agen harus bekerja
 none_defined = "Tidak ada folder proyek yang dikonfigurasi, jadi ruang kerja bersama adalah satu-satunya tempat yang mungkin."
 shared_label = "🗂 Ruang kerja bersama"
 selected = "📌 Bekerja di {dir}."
+general_locked = "**General tidak punya folder.** Ini area bersama grup ini: selalu bekerja di ruang kerja bersama dan tidak bisa diikat ke direktori proyek. Buka topik proyeknya dan pilih folder di sana."
 
 [topics]
 consult_name = "Consult"
 general_title = "Umum"
-general_scope = "Ini area bersama. Agen di sini bekerja di folder yang terikat pada obrolan ini — periksa `/folder` sebelum meminta sesuatu yang menulis."
+general_scope = "Ini area bersama. Agen di sini selalu bekerja di ruang kerja bersama: General tidak bisa diikat ke folder proyek, jadi tidak ada yang ditulis di sini bisa menyentuh proyek secara tidak sengaja."
 general_care = "Pekerjaan proyek sebaiknya di topik proyek itu sendiri, tempat foldernya diikat sekali dan tetap."
 consult_title = "Consult"
 consult_purpose = "Untuk pertanyaan, pemikiran, dan pendapat kedua — bukan untuk pekerjaan proyek."

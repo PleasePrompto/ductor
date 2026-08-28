@@ -39,6 +39,8 @@ class BindingStore:
         self._bound: dict[str, str] = self._load()
         # Held prompts stay in memory only; see the module docstring.
         self._pending: dict[str, str] = {}
+        # Conversations that must never hold a binding; see protect().
+        self._protected: set[str] = set()
 
     # -- persistence ----------------------------------------------------------
 
@@ -60,11 +62,40 @@ class BindingStore:
         except OSError as exc:
             logger.warning("Cannot write binding store %s: %s", self._path, exc)
 
+    # -- protection -----------------------------------------------------------
+
+    def protect(self, key: str) -> None:
+        """Mark *key* as a conversation that may never hold a binding.
+
+        Used for the General thread of a forum group. General's messages carry
+        no ``message_thread_id``, so they collapse onto the chat-level key that
+        a private chat would use — which meant a message typed outside a topic
+        could bind a folder and start a fresh conversation in another topic's
+        project directory, with the folder picker as the only warning.
+
+        A protected key reads as "answered, shared workspace": the gate never
+        asks, ``resolve`` never yields a directory, and ``set`` refuses. That
+        covers stale entries written before this rule existed as well as any
+        future caller, which is why the check lives here rather than at each
+        of the four paths that can write a binding.
+
+        Held in memory on purpose. Unlike the topic *names* whose in-memory
+        cache failed (it was consulted when no update was present), this is
+        re-derived from every incoming update, and every path that could bind
+        is reached by an update from the same chat — so the mark is always set
+        before anything can consult it.
+        """
+        self._protected.add(key)
+
+    def is_protected(self, key: str) -> bool:
+        """True when *key* may not be bound to a folder."""
+        return key in self._protected
+
     # -- bindings -------------------------------------------------------------
 
     def has_choice(self, key: str) -> bool:
         """True when this chat has answered, including 'shared workspace'."""
-        return key in self._bound
+        return key in self._protected or key in self._bound
 
     def get(self, key: str) -> str | None:
         """The bound directory, ``SHARED_WORKSPACE`` for an explicit none.
@@ -72,6 +103,8 @@ class BindingStore:
         ``None`` means unanswered. Never guessed: the caller asks rather than
         picking something plausible.
         """
+        if key in self._protected:
+            return SHARED_WORKSPACE
         return self._bound.get(key)
 
     def resolve(self, key: str) -> Path | None:
@@ -81,6 +114,8 @@ class BindingStore:
         directory has since been deleted or renamed. Callers treat all three as
         "no project root"; the gate distinguishes them via ``has_choice``.
         """
+        if key in self._protected:
+            return None
         raw = self._bound.get(key)
         if not raw:
             return None
@@ -90,9 +125,14 @@ class BindingStore:
             return None
         return path
 
-    def set(self, key: str, directory: str) -> None:
+    def set(self, key: str, directory: str) -> bool:
+        """Record the choice. False when *key* is protected and nothing changed."""
+        if key in self._protected:
+            logger.warning("Refused to bind protected conversation %s to %s", key, directory)
+            return False
         self._bound[key] = directory
         self._save()
+        return True
 
     def clear(self, key: str) -> None:
         """Forget the binding, so the next message asks again.

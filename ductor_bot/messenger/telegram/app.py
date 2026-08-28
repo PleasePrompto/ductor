@@ -104,6 +104,7 @@ from ductor_bot.messenger.telegram.topic import (
     TopicNameCache,
     get_session_key,
     get_thread_id,
+    is_general_thread,
 )
 from ductor_bot.messenger.telegram.typing import TypingContext as _TypingContext
 from ductor_bot.messenger.telegram.welcome import (
@@ -1405,6 +1406,7 @@ class TelegramBot:
 
         chat_id = msg.chat.id
         key = get_session_key(msg)
+        self._protect_general(msg, key)
         thread_id = get_thread_id(msg)
         set_log_context(operation="cb", chat_id=chat_id)
         logger.info("Callback data=%s", data[:40])
@@ -1678,8 +1680,16 @@ class TelegramBot:
             ),
         )
 
-        if action.bind_dir is not None:
-            self._orch.bindings.set(key.storage_key, str(action.bind_dir))
+        if action.bind_dir is not None and not self._orch.bindings.set(
+            key.storage_key, str(action.bind_dir)
+        ):
+            await self._bot.send_message(
+                chat_id,
+                markdown_to_telegram_html(t("folder.general_locked")),
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
+            return
 
         if action.edit_message:
             edit = self._edit_store.get(key.storage_key)
@@ -1752,6 +1762,7 @@ class TelegramBot:
             return
 
         key = get_session_key(message)
+        self._protect_general(message, key)
         thread_id = get_thread_id(message)
         logger.debug("Message text=%s", text[:80])
 
@@ -1824,6 +1835,16 @@ class TelegramBot:
                 self._bot, chat_id, store, paths.consult_dir, schedule
             )
 
+    def _protect_general(self, message: Message, key: SessionKey) -> None:
+        """Mark a forum's General thread as unbindable, before anything reads it.
+
+        Called at both front doors — messages and callbacks — because every path
+        that could bind a folder is reached by an update from the same chat, so
+        marking here is enough for the store to refuse all of them.
+        """
+        if is_general_thread(message):
+            self._orch.bindings.protect(key.storage_key)
+
     async def _ask_folder_if_needed(
         self, key: SessionKey, text: str, *, thread_id: int | None = None
     ) -> bool:
@@ -1867,6 +1888,19 @@ class TelegramBot:
             parse_callback,
             resolve_choice,
         )
+
+        # A panel posted before this conversation was recognised as General is
+        # still on screen and still pressable, so the refusal lives here too and
+        # not only where the buttons are offered.
+        if self._orch.bindings.is_protected(key.storage_key):
+            with contextlib.suppress(TelegramBadRequest):
+                await self._bot.edit_message_text(
+                    chat_id=key.chat_id,
+                    message_id=message_id,
+                    text=markdown_to_telegram_html(t("folder.general_locked")),
+                    parse_mode=ParseMode.HTML,
+                )
+            return
 
         catalogue = self._roots_for(key)
         index = parse_callback(data)

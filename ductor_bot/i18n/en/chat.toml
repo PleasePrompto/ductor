@@ -560,11 +560,12 @@ ask_header = "This conversation has no folder yet. Choose where the agent should
 none_defined = "No project folders are configured, so the shared workspace is the only place work can happen."
 shared_label = "🗂 Shared workspace"
 selected = "📌 Working in {dir}."
+general_locked = "**General has no folder.** It is this group's shared area: it always works in the shared workspace and cannot be bound to a project directory. Open the project's own topic and choose the folder there."
 
 [topics]
 consult_name = "Consult"
 general_title = "General"
-general_scope = "This is the shared area. Agents here work in whatever folder this chat is bound to — check `/folder` before asking for anything that writes."
+general_scope = "This is the shared area. Agents here always work in the shared workspace: General cannot be bound to a project folder, so nothing typed here can reach a project by accident."
 general_care = "Project work belongs in that project's own topic, where the folder is bound once and stays put."
 consult_title = "Consult"
 consult_purpose = "For questions, thinking and second opinions — not for project work."
