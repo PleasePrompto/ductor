@@ -145,6 +145,7 @@ async def _prepare_normal(
         is_new_session=is_new,
         provider=req_provider,
         model=req_model,
+        workspace=str(orch.paths.workspace),
     )
     prompt = orch._hook_registry.apply(text, hook_ctx)
 

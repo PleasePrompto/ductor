@@ -99,6 +99,10 @@ All chats share the same `~/.ductor/` workspace — same tools, same memory, sam
 > ductor learns topic names from `forum_topic_created` and `forum_topic_edited`
 > events — pre-existing topics show as "Topic #N" until renamed.
 > This is a Telegram limitation, not a ductor limitation.
+>
+> Folder bindings do not depend on those names: they are keyed by chat and
+> topic id, so a topic ductor cannot name still works, and renaming one never
+> changes where its work happens.
 
 ### 3. Named sessions (extra contexts within any chat)
 
@@ -199,7 +203,19 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Telegram reasoning + tool UX controls** — optional reasoning stream, live tool progress, and separate thinking indicator controls
 - **Quoted-reply context** — replying to a message (Telegram) carries the cited text into the agent prompt, so follow-ups like "expand on this" keep their reference
 - **Five coding agents** — Claude Code, Codex CLI, Gemini CLI (API key / Code Assist license; Google ended free individual-account access on 2026-06-18), Antigravity (`agy`), and Grok Build (`grok`), switchable per chat/topic with `/model` (never blocks, even during active processes)
-- **Per-topic project roots** — map a forum topic to its own working directory (`project_roots`) so the agent runs inside that repo instead of the shared workspace
+- **Per-conversation folders** — `project_roots` lists the directories you are willing to work in; a conversation is *bound* to one of them by tapping `📌 Use this folder` in `/files`, or by answering the picker the first time you use it. Bindings are keyed by session, so renaming a topic cannot break them and a restart cannot forget them. Change one later with `/folder`
+- **The bot's own files stay findable** — when a conversation runs in a project directory, every prompt naming a workspace path (`tools/`, `memory_system/`, `cron_tasks/`, `user_tools/`, …) is rewritten to an absolute path at the point the CLI is invoked. Without it an agent looks for tools that are not under its cwd and concludes it is in the wrong place — and an instruction to update `memory_system/MAINMEMORY.md` resolves *inside your repository*
+- **Managed topics** (`managed_topics`, **off by default**) — when enabled, ductor creates a `Consult` topic in each configured group and keeps a notice in it and in General, verifying both on every start. The General notice is pinned; the Consult one cannot be — `pinChatMessage` takes no `message_thread_id`, so a bot cannot pin inside a forum topic — and is instead the first message of a topic that is recreated on every wipe. Consult gets its own working directory at `~/.ductor/Consult`, carrying a `CLAUDE.md` that tells the agent to stay inside it. That is an instruction the agent follows, **not a sandbox** — the CLI runs as your user and a working directory is not a boundary. Leave this off unless you want a bot that creates topics and pins messages in your group Inside Consult the file manager and the folder picker are narrowed to that topic's own directory — unlike the instruction in its `CLAUDE.md`, that part is enforced, because the browser is ductor's own code With a `consult` unix account present, the CLI for that topic is dropped to it — the project tree is `0750` and the account is not in the bot's group, so it cannot read your repositories whatever the rule persuades it to try. It still shares the credential store, because the CLI has to authenticate: the isolation is from your projects, not from your token or the network
+- **Scheduled Consult wipe** (`/consult`) — the Consult topic is deleted and recreated on a schedule you pick from Telegram: hourly, every 6 hours, daily at a set hour, weekly, or never. Deleting the topic clears its files, its messages *and* its session in one step, since the replacement gets a new topic id. The pinned notice is regenerated from the schedule, so it never promises a wipe that is not running
+- **Rename, new folder and delete** — behind a `🛠 Manage` button, so nothing that changes files sits on the row you tap to browse. Renaming and creating ask for the name as a message and show it back for approval before writing. Deleting takes two confirmations and states what will go — file count and real size, not a rounded one. Two cases are refused outright rather than confirmed: a configured project root, and any directory containing `.git`, whose untracked files exist nowhere else
+- **Multi-account Claude** — map several credential stores in `claude_accounts` and switch with `/account`; sessions and skills stay shared, so a rate-limited conversation continues on the other subscription via `--resume`
+- **Skill browser** — `/skills` groups every loadable skill by plugin and copies `/name ` to your clipboard on tap, which is the only way to reach skills marked `disable-model-invocation`. Discovery follows `enabledPlugins` and the plugin registry, so stale versions and disabled plugins are not listed
+- **File manager over your projects** — `/files` opens in the folder this conversation is bound to, or lists `~/.ductor` alongside every directory in `project_roots` when it is not bound, with tap-to-navigate, breadcrumbs, `Back` to the parent directory and `Home` to the folder this conversation is bound to (the list of roots when it is not bound). Only directories get a button; files are reached through `⬇️ Download`, which offers a single file or the whole folder as a zip, so a folder of any size stays a screen you can aim at. Nested roots collapse into their parent so the picker stays short
+- **Button menu** (`/menu`) — Telegram's toggle beside the input box is bound to reply keyboards and cannot be pointed elsewhere, so the panel holds a single `/menu` button and everything after it is an inline keyboard. Exactly one command is ever sent as text, and it is deleted on arrival; every menu action is a callback, so nothing the menu does reaches the agent and nothing has to be intercepted to keep it out. Items are fixed rather than filtered — a button that appears and disappears reads as a broken screen — and the current folder, persona and model are shown in the header instead The nine commands the menu covers are dropped from Telegram's `/` picker — they still work when typed and are still listed by `/help`, which keeps the picker to the fifteen that are urgent, take arguments, or have no button
+- **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder, and the bot replies with where it put it
+- **Upload into any folder you can browse** — `⬆️ Upload here` opens an upload for the directory you are looking at. Files are staged and listed, overwrites are flagged, and nothing is written until you confirm; `📦 Send a folder (.zip)` unpacks an archive into that listing first. Archives are validated before extraction (no path traversal, no symlink entries, size and entry ceilings), and staging is discarded on cancel and swept daily
+- **Pull and push from the browser** — a directory inside a git repository gains `⤓ Pull` and `⤒ Push`. Push is inert when the branch matches its upstream, and asks for confirmation against the list of commits it would publish. Pull is `--ff-only`, so a divergence is reported rather than merged unnoticed
+- **Personas** — when `persona_prompt` is on, a conversation that has not chosen a persona asks which of your Claude Code agents should handle it, holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`; `/new` and `/reset` clear it. Nothing is inferred and there is no default; installations without agents never see the prompt
 - **Persistent memory** — plain Markdown files that survive across sessions
 - **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
 - **Cron jobs** — in-process scheduler with timezone support, per-job overrides, optional silent-on-success, result routing to originating chat
@@ -375,6 +391,9 @@ This is **hot-reloadable** — change the language without restarting the bot.
 |---|---|
 | `/model` | Interactive model/provider selector |
 | `/effort` | Reasoning effort for the current chat/topic (Claude & Codex) |
+| `/account` | Switch the Claude credential store (see `claude_accounts` in docs/config.md) |
+| `/persona` | Choose which Claude Code agent governs this chat/topic |
+| `/skills` | Browse available skills by plugin; tap one to copy its command |
 | `/new` | Reset the configured default-provider session for this chat/topic |
 | `/reset` | Reset the currently active provider session for this chat/topic |
 | `/stop` | Stop current message and discard queued messages |
@@ -386,7 +405,8 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/sessions` | View/manage active sessions |
 | `/tasks` | View/manage background tasks |
 | `/cron` | Interactive cron management |
-| `/showfiles` | Browse `~/.ductor/` |
+| `/files` | Browse `~/.ductor/` and your configured `project_roots`; download, upload, rename, create, delete, and pull/push git. `/showfiles` still works as an alias |
+| `/menu` | Show or hide a persistent keyboard of the commands used most often |
 | `/diagnose` | Runtime diagnostics |
 | `/upgrade` | Check/apply updates |
 | `/agents` | Multi-agent status |

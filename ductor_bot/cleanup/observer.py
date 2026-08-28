@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CHECK_INTERVAL = 3600  # Re-check every hour whether it's time to run.
+_STAGING_RETENTION_DAYS = 1
 
 
 def _delete_old_files(directory: Path, max_age_days: int) -> int:
@@ -127,16 +128,20 @@ class CleanupObserver(BaseObserver):
             (self._paths.output_to_user_dir, self._cfg.output_to_user_days),
             (self._paths.api_files_dir, self._cfg.api_files_days),
             (self._paths.matrix_files_dir, self._cfg.media_files_days),
+            # Staged uploads are transient by design: anything still here
+            # tomorrow is an upload the user walked away from.
+            (self._paths.uploads_staging_dir, _STAGING_RETENTION_DAYS),
         ]
         results = await asyncio.to_thread(_run_cleanup, targets)
 
         if any(results):
             logger.info(
-                "Cleanup complete: telegram=%d, output=%d, api=%d, matrix=%d",
+                "Cleanup complete: telegram=%d, output=%d, api=%d, matrix=%d, uploads=%d",
                 results[0],
                 results[1],
                 results[2],
                 results[3],
+                results[4],
             )
         else:
             logger.debug("Cleanup: nothing to delete")

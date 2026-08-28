@@ -29,6 +29,26 @@ def get_thread_id(message: Message | None) -> int | None:
     return None
 
 
+def is_general_thread(message: Message | None) -> bool:
+    """True when *message* belongs to the General thread of a forum group.
+
+    General is the one thread in a forum whose messages are not topic messages,
+    so ``get_session_key`` gives it the chat-level key that private chats and
+    ordinary groups also use. Both facts are needed: a private chat is not a
+    forum, and its chat-level key is the only key it has.
+
+    Probed with ``getattr`` rather than attribute access: both fields are
+    optional in the Bot API and absent on anything that is not a real forum
+    message, and a conversation wrongly treated as General would lose the
+    ability to bind a folder at all.
+    """
+    if message is None:
+        return False
+    if not getattr(getattr(message, "chat", None), "is_forum", False):
+        return False
+    return not getattr(message, "is_topic_message", False)
+
+
 def get_session_key(message: Message) -> SessionKey:
     """Build a transport-agnostic ``SessionKey`` from a Telegram message.
 

@@ -22,6 +22,12 @@ def _default_framework_root() -> Path:
     return _PKG_DIR.parent
 
 
+#: Unix account the Consult topic's CLI is dropped to. Defined here because
+#: both the transport (which creates the directory) and the CLI layer (which
+#: drops to the account) need it, and neither should import the other.
+CONSULT_USER = "consult"
+
+
 @dataclass(frozen=True)
 class DuctorPaths:
     """Resolved, immutable paths for the workspace layout.
@@ -82,6 +88,25 @@ class DuctorPaths:
     @property
     def telegram_files_dir(self) -> Path:
         return self.workspace / "telegram_files"
+
+    @property
+    def managed_topics_path(self) -> Path:
+        """Ids of the topics this bot created. Telegram cannot list them."""
+        return self.ductor_home / "managed_topics.json"
+
+    @property
+    def consult_dir(self) -> Path:
+        """Working directory for the Consult topic, wiped daily."""
+        return self.ductor_home / "Consult"
+
+    @property
+    def uploads_staging_dir(self) -> Path:
+        """Where browser uploads wait for confirmation.
+
+        Outside ``workspace`` on purpose: these files are not the agent's to
+        see until the user has confirmed where they belong.
+        """
+        return self.ductor_home / "uploads_staging"
 
     @property
     def matrix_files_dir(self) -> Path:
