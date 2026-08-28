@@ -455,3 +455,55 @@ def test_edit_callbacks_are_recognised_and_parsed(env) -> None:
     ):
         assert fb.is_file_browser_callback(f"{prefix}{token}"), prefix
         assert fb._parse(f"{prefix}{token}") == (prefix, token), prefix
+
+
+# ---------------------------------------------------------------------------
+# Home
+# ---------------------------------------------------------------------------
+
+
+def test_home_opens_the_bound_folder(env) -> None:
+    """"Home" is this conversation's folder, not the top of the filesystem."""
+    _p, _r, _u, proj = env
+    (proj / "sub").mkdir(exist_ok=True)
+    session = _session(env, current_binding=str(proj / "sub"))
+
+    action = fb._handle(*env[:2], fb.SF_HOME_PREFIX, session)
+    assert "EMR/sub" in action.text
+
+
+def test_home_falls_back_to_the_root_list_when_unbound(env) -> None:
+    action = fb._handle(*env[:2], fb.SF_HOME_PREFIX, _session(env))
+    assert "EMR/" in action.text
+    assert "Choose a location" in action.text
+
+
+def test_home_ignores_a_binding_outside_the_visible_roots(env, tmp_path: Path) -> None:
+    """A rebound topic must not keep a door to where it used to work."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    action = fb._handle(*env[:2], fb.SF_HOME_PREFIX, _session(env, current_binding=str(outside)))
+    assert "Choose a location" in action.text
+
+
+def test_home_ignores_a_binding_that_has_gone(env) -> None:
+    _p, _r, _u, proj = env
+    action = fb._handle(
+        *env[:2], fb.SF_HOME_PREFIX, _session(env, current_binding=str(proj / "deleted"))
+    )
+    assert "Choose a location" in action.text
+
+
+def test_the_home_button_points_at_the_home_callback(env) -> None:
+    """It carries no token: baking one in at render time would go stale on a
+    rebind, silently sending Home to the previous folder."""
+    paths, roots, _u, proj = env
+    _text, kb = fb._build_dir_view(paths, roots, proj)
+    home = next(b for b in _buttons(kb) if "Home" in b.text)
+    assert home.callback_data == fb.SF_HOME_PREFIX
+
+
+def test_home_is_recognised_as_a_browser_callback() -> None:
+    """Missed once: the prefix was dispatched but not recognised, so the
+    callback never reached the browser at all."""
+    assert fb.is_file_browser_callback(fb.SF_HOME_PREFIX)

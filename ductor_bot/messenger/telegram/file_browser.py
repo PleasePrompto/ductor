@@ -20,6 +20,7 @@ Callback data:
     ``sf-<token>``     -- abandon the upload and discard staging
     ``sf/<token>``     -- open the download menu for that directory
     ``sf*<token>``     -- list that directory's files as buttons
+    ``sfh``            -- this conversation's own folder, or the root list
     ``sf&<token>``     -- bind this chat/topic to that directory
     ``sf&&<token>``    -- confirm a rebind that would replace an existing one
     ``sf~<token>``     -- manage menu (rename / new folder / delete)
@@ -89,6 +90,10 @@ SF_UPLOAD_FOLDER_PREFIX = "sf%"
 SF_UPLOAD_CONFIRM_PREFIX = "sf="
 SF_UPLOAD_CANCEL_PREFIX = "sf-"
 SF_DOWNLOAD_PREFIX = "sf/"
+#: "Home" means the folder this conversation works in, not the top of the
+#: filesystem. It carries no token: the destination depends on the binding, and
+#: a token baked into the button at render time would go stale on a rebind.
+SF_HOME_PREFIX = "sfh"
 SF_FILE_LIST_PREFIX = "sf*"
 SF_BIND_PREFIX = "sf&"
 #: Rebinding is confirmed: it moves the working directory, so the next
@@ -184,6 +189,7 @@ def is_file_browser_callback(data: str) -> bool:
             SF_DELETE_PREFIX,
             SF_DELETE_AGAIN_PREFIX,
             SF_DELETE_DO_PREFIX,
+            SF_HOME_PREFIX,
         )
     )
 
@@ -461,7 +467,7 @@ def _nav_row(target: Path) -> list[InlineKeyboardButton]:
             text=t("file_browser.btn_back"),
             callback_data=f"{SF_PREFIX}{token_for(target)}",
         ),
-        InlineKeyboardButton(text=t("file_browser.btn_home"), callback_data=SF_PREFIX),
+        InlineKeyboardButton(text=t("file_browser.btn_home"), callback_data=SF_HOME_PREFIX),
     ]
 
 
@@ -822,6 +828,9 @@ def _handle(  # noqa: PLR0911
     data: str,
     session: BrowserSession | None = None,
 ) -> BrowserAction:
+    if data == SF_HOME_PREFIX:
+        return _home_action(paths, project_roots, session)
+
     parsed = _parse(data)
     if parsed is None or not parsed[1]:
         return _root_action(paths, project_roots)
@@ -846,6 +855,25 @@ def _handle(  # noqa: PLR0911
             return _BIND_ACTIONS[prefix](paths, project_roots, target, session.current_binding)
         return _UPLOAD_ACTIONS[prefix](paths, project_roots, target, session.uploads, session.key)
     return _ACTIONS[prefix](paths, project_roots, target)
+
+
+def _home_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], session: BrowserSession | None
+) -> BrowserAction:
+    """Open the folder this conversation is bound to.
+
+    Falls back to the list of roots when there is no binding, when the
+    directory has since gone, or when it is no longer somewhere this
+    conversation may look — a topic that was rebound should not still have a
+    door to where it used to work.
+    """
+    bound = session.current_binding if session else None
+    if bound:
+        target = Path(bound).expanduser()
+        roots = _visible_roots(paths, project_roots)
+        if target.is_dir() and contains(roots, target):
+            return _open_action(paths, project_roots, target)
+    return _root_action(paths, project_roots)
 
 
 def _root_action(paths: DuctorPaths, project_roots: Mapping[str, str]) -> BrowserAction:
@@ -921,7 +949,7 @@ def _build_dir_view(
     rows.append(
         [
             InlineKeyboardButton(text=t("file_browser.btn_back"), callback_data=back_target),
-            InlineKeyboardButton(text=t("file_browser.btn_home"), callback_data=SF_PREFIX),
+            InlineKeyboardButton(text=t("file_browser.btn_home"), callback_data=SF_HOME_PREFIX),
         ]
     )
     rows.append(
