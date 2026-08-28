@@ -74,6 +74,9 @@ class ClaudeCodeCLI(BaseCLI):
 
         add_cli_opt(cmd, "--permission-mode", cfg.permission_mode)
         add_cli_opt(cmd, "--model", cfg.model)
+        # A persona is a Claude Code agent; --agent is what actually loads its
+        # definition, rather than merely describing it in the prompt.
+        add_cli_opt(cmd, "--agent", cfg.persona or None)
         if cfg.reasoning_effort and cfg.reasoning_effort != "default":
             cmd += ["--effort", cfg.reasoning_effort]
         add_cli_opt(cmd, "--system-prompt", cfg.system_prompt)

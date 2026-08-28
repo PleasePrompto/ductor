@@ -76,8 +76,9 @@ async def create_orchestrator(
     orch._docker = docker_mgr
 
     from ductor_bot.cli.auth import AuthStatus, check_all_auth
+    from ductor_bot.cli.claude_accounts import active_claude_account_dir
 
-    auth_results = await asyncio.to_thread(check_all_auth)
+    auth_results = await asyncio.to_thread(check_all_auth, active_claude_account_dir(orch._config))
     orch._providers.apply_auth_results(
         auth_results,
         auth_status_enum=AuthStatus,
