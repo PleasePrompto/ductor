@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 
@@ -18,7 +19,9 @@ from ductor_bot.cli.base import (
     CLIConfig,
     _feed_stdin_and_close,
     _win_feed_stdin,
+    run_as_wrap,
 )
+from ductor_bot.cli.claude_accounts import apply_to_env as apply_account_env
 from ductor_bot.cli.stream_events import ResultEvent, StreamEvent
 from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import CLIResponse, task_id_from_label
@@ -76,6 +79,12 @@ def build_subprocess_env(config: CLIConfig) -> dict[str, str] | None:
         # Sub-agent home is <main_home>/agents/<name>/
         main_home = ductor_home.parent.parent
         env["DUCTOR_SHARED_MEMORY_PATH"] = str(main_home / "SHAREDMEMORY.md")
+
+    # Claude account: point the credential store at the selected account, or
+    # drop an inherited value so the default store is used. Setting it to an
+    # empty string would NOT be equivalent — Claude Code reads empty as
+    # ``~/.claude`` and would ignore a custom CLAUDE_CONFIG_DIR.
+    apply_account_env(env, config.claude_account_dir)
     return env
 
 
@@ -146,7 +155,7 @@ async def run_streaming_subprocess(
     """
     subprocess_env = build_subprocess_env(config) if spec.use_cwd else None
     process = await asyncio.create_subprocess_exec(
-        *spec.exec_cmd,
+        *run_as_wrap(list(spec.exec_cmd), config, subprocess_env or dict(os.environ)),
         stdin=_stdin_pipe(spec),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -297,7 +306,7 @@ async def run_oneshot_subprocess(
     """
     oneshot_env = build_subprocess_env(config) if spec.use_cwd else None
     process = await asyncio.create_subprocess_exec(
-        *spec.exec_cmd,
+        *run_as_wrap(list(spec.exec_cmd), config, oneshot_env or dict(os.environ)),
         stdin=_stdin_pipe(spec),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

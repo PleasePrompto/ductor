@@ -15,7 +15,7 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest
 
 from ductor_bot.messenger.telegram.formatting import markdown_to_telegram_html
-from ductor_bot.orchestrator.selectors.models import ButtonGrid, SelectorResponse
+from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid, SelectorResponse
 
 if TYPE_CHECKING:
     from aiogram import Bot
@@ -31,13 +31,16 @@ def button_grid_to_markup(grid: ButtonGrid | None) -> InlineKeyboardMarkup | Non
     """Convert abstract ``ButtonGrid`` to aiogram ``InlineKeyboardMarkup``."""
     if grid is None:
         return None
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
+
+    def _to_button(btn: Button) -> InlineKeyboardButton:
+        # copy_text and callback_data are mutually exclusive in the Bot API.
+        if btn.copy_text is not None:
+            return InlineKeyboardButton(text=btn.text, copy_text=CopyTextButton(text=btn.copy_text))
+        return InlineKeyboardButton(text=btn.text, callback_data=btn.callback_data)
 
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=btn.text, callback_data=btn.callback_data) for btn in row]
-            for row in grid.rows
-        ]
+        inline_keyboard=[[_to_button(btn) for btn in row] for row in grid.rows]
     )
 
 

@@ -145,8 +145,19 @@ async def _prepare_normal(
         is_new_session=is_new,
         provider=req_provider,
         model=req_model,
+        workspace=str(orch.paths.workspace),
     )
     prompt = orch._hook_registry.apply(text, hook_ctx)
+
+    # A persona change swaps the system prompt and the tool set, but the model
+    # goes on answering in the shape the previous turns established — it takes
+    # its identity from the history it can see. Say it once, in the turn that
+    # first runs under the new persona.
+    switch = orch._personas.take_switch(key.storage_key)
+    if switch:
+        was, now = switch
+        logger.info("Persona switch announced: %s -> %s", was, now)
+        prompt = f"{t('persona.switched_notice', old=was, new=now)}\n\n{prompt}"
 
     timeout_secs = resolve_timeout(orch._config, "normal")
     request = AgentRequest(

@@ -10,6 +10,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.base import CLIConfig
@@ -25,6 +26,8 @@ from ductor_bot.cli.stream_events import (
     ToolUseEvent,
 )
 from ductor_bot.cli.types import AgentRequest, AgentResponse, CLIResponse
+from ductor_bot.workspace.anchor import anchor_workspace_paths
+from ductor_bot.workspace.paths import CONSULT_USER
 
 if TYPE_CHECKING:
     from ductor_bot.cli.base import BaseCLI
@@ -108,6 +111,9 @@ class CLIServiceConfig:
     reasoning_effort: str = "medium"
     gemini_api_key: str | None = None
     docker_container: str = ""
+    # Resolved CLAUDE_SECURESTORAGE_CONFIG_DIR for the active Claude account
+    # (empty string = default credential store).
+    claude_account_dir: str = ""
     claude_cli_parameters: tuple[str, ...] = ()
     codex_cli_parameters: tuple[str, ...] = ()
     gemini_cli_parameters: tuple[str, ...] = ()
@@ -148,6 +154,15 @@ class CLIService:
         self._available_providers = available_providers
         self._process_registry = process_registry
         self._working_dir_resolver: Callable[[AgentRequest], str | None] | None = None
+        self._persona_resolver: Callable[[AgentRequest], str] | None = None
+
+    def set_persona_resolver(self, resolver: Callable[[AgentRequest], str] | None) -> None:
+        """Install the callback that decides which persona a request runs under.
+
+        Kept as a callback so the service stays unaware of where choices live,
+        exactly as the working-directory override does.
+        """
+        self._persona_resolver = resolver
 
     def set_working_dir_resolver(self, resolver: Callable[[AgentRequest], str | None]) -> None:
         """Register a callback that maps a request to a per-request working dir.
@@ -173,6 +188,10 @@ class CLIService:
         """Update the default reasoning effort after wizard selection."""
         self._config = replace(self._config, reasoning_effort=effort)
 
+    def update_claude_account_dir(self, account_dir: str) -> None:
+        """Update the Claude credential-store dir after an /account switch."""
+        self._config = replace(self._config, claude_account_dir=account_dir)
+
     def update_config(self, config: CLIServiceConfig) -> None:
         """Replace the full service config (used by config hot-reload)."""
         self._config = config
@@ -187,6 +206,42 @@ class CLIService:
             return request.model_override or f"<{request.provider_override} default>"
         return request.model_override or self._config.default_model
 
+    def _is_consult_dir(self, working_dir: str) -> bool:
+        """True when the CLI would run in the Consult directory.
+
+        Derived from the configured workspace rather than plumbed in, the same
+        way ``docker_wrap`` locates ``.ductor``: the workspace is always
+        ``<ductor_home>/workspace``.
+        """
+        base = Path(self._config.working_dir)
+        if base.name != "workspace":
+            return False
+        try:
+            return Path(working_dir).resolve() == (base.parent / "Consult").resolve()
+        except (OSError, RuntimeError):
+            return False
+
+    def _effective_working_dir(self, request: AgentRequest) -> str:
+        """The directory the CLI will actually run in for *request*."""
+        if self._working_dir_resolver is not None and not self._config.docker_container:
+            override = self._working_dir_resolver(request)
+            if override is not None:
+                return override
+        return self._config.working_dir
+
+    def anchor(self, text: str | None, request: AgentRequest) -> str | None:
+        """Make workspace-relative paths absolute when cwd is not the workspace.
+
+        Applied at this choke point rather than in each prompt, because the
+        text arrives from a dozen places — hooks, memory flush, media prompts,
+        task rules — and any one of them forgetting is a silent failure: the
+        agent looks for tools that are not there, or writes bot memory into the
+        user's repository.
+        """
+        if not text or self._effective_working_dir(request) == self._config.working_dir:
+            return text
+        return anchor_workspace_paths(text, self._config.working_dir)
+
     async def execute(self, request: AgentRequest) -> AgentResponse:
         """Execute a CLI call."""
         cli = self._make_cli(request)
@@ -198,7 +253,7 @@ class CLIService:
 
         t0 = time.monotonic()
         response = await cli.send(
-            prompt=request.prompt,
+            prompt=self.anchor(request.prompt, request),
             resume_session=request.resume_session,
             continue_session=request.continue_session,
             timeout_seconds=request.timeout_seconds,
@@ -243,7 +298,7 @@ class CLIService:
 
         try:
             async for event in cli.send_streaming(
-                prompt=request.prompt,
+                prompt=self.anchor(request.prompt, request),
                 resume_session=request.resume_session,
                 continue_session=request.continue_session,
                 timeout_seconds=request.timeout_seconds,
@@ -369,31 +424,32 @@ class CLIService:
         # Per-request working dir override (project_roots). Skipped in Docker
         # mode: docker_wrap maps cwd into the container via relative_to() and
         # would fail on a path outside the workspace.
-        working_dir = self._config.working_dir
-        append_prompt = request.append_system_prompt
-        if self._working_dir_resolver is not None and not self._config.docker_container:
-            override = self._working_dir_resolver(request)
-            if override is not None:
-                working_dir = override
-                # Applied here at the single choke point so every execution
-                # path (normal turns, memory flush/compact, heartbeat) keeps
-                # addressing the bot memory by absolute path — a relative
-                # memory_system/ reference would otherwise land inside the
-                # user's project repo.
-                note = (
-                    f"[ductor] Project cwd override active. The shared bot workspace "
-                    f"(tools/, memory_system/) is at {self._config.working_dir}. Bot memory "
-                    f"lives at {self._config.working_dir}/memory_system/MAINMEMORY.md — always "
-                    f"address it by this absolute path, never via a relative path."
-                )
-                append_prompt = f"{append_prompt}\n\n{note}" if append_prompt else note
+        working_dir = self._effective_working_dir(request)
+        # A conversation running in the Consult directory is dropped to a unix
+        # account that cannot read the project tree. This is the one place the
+        # isolation is enforced rather than requested: the CLAUDE.md rule asks
+        # the agent to stay put, and the kernel is what makes it so.
+        run_as = CONSULT_USER if self._is_consult_dir(working_dir) else ""
+        append_prompt = self.anchor(request.append_system_prompt, request)
+        if working_dir != self._config.working_dir:
+            # anchor() has already rewritten the prompts; this says plainly
+            # where the workspace is, for anything phrased too loosely to
+            # rewrite ("the workspace", "your tools").
+            note = (
+                f"[ductor] Project cwd override active. The shared bot workspace is at "
+                f"{self._config.working_dir}. Bot memory lives at "
+                f"{self._config.working_dir}/memory_system/MAINMEMORY.md — always address it "
+                f"by this absolute path, never via a relative path."
+            )
+            append_prompt = f"{append_prompt}\n\n{note}" if append_prompt else note
 
         return create_cli(
             CLIConfig(
                 provider=provider,
                 working_dir=working_dir,
+                run_as_user=run_as,
                 model=model,
-                system_prompt=request.system_prompt,
+                system_prompt=self.anchor(request.system_prompt, request),
                 append_system_prompt=append_prompt,
                 max_turns=self._config.max_turns,
                 max_budget_usd=self._config.max_budget_usd,
@@ -401,11 +457,13 @@ class CLIService:
                 reasoning_effort=effort,
                 gemini_api_key=self._config.gemini_api_key,
                 docker_container=self._config.docker_container,
+                claude_account_dir=self._config.claude_account_dir,
                 process_registry=self._process_registry,
                 chat_id=request.chat_id,
                 topic_id=request.topic_id,
                 transport=request.transport,
                 process_label=request.process_label,
+                persona=self._persona_resolver(request) if self._persona_resolver else "",
                 cli_parameters=self._config.cli_parameters_for_provider(provider),
                 agent_name=self._config.agent_name,
                 interagent_port=self._config.interagent_port,
