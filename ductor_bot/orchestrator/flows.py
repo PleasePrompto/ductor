@@ -139,12 +139,30 @@ async def _prepare_normal(
     if files_block:
         append_prompt = f"{append_prompt}\n\n{files_block}" if append_prompt else files_block
 
+    # State the persona where a statement of identity belongs. This used to be
+    # prefixed to the user's message, and the model was right to ignore it: an
+    # identity claim arriving as user text is exactly what a model should
+    # distrust, and it said so, citing a system reminder that contradicted it.
+    # The appended system prompt is recomputed every turn, so it cannot go
+    # stale the way a line written into turn one does.
+    persona = orch._personas.get(key.storage_key) or ""
+    if persona:
+        switch = orch._personas.take_switch(key.storage_key)
+        if switch:
+            was, now = switch
+            logger.info("Persona switch announced: %s -> %s", was, now)
+            line = t("persona.switched_notice", old=was, new=now)
+        else:
+            line = t("persona.active_notice", persona=persona)
+        append_prompt = f"{append_prompt}\n\n{line}" if append_prompt else line
+
     hook_ctx = HookContext(
         chat_id=key.chat_id,
         message_count=session.message_count,
         is_new_session=is_new,
         provider=req_provider,
         model=req_model,
+        workspace=str(orch.paths.workspace),
     )
     prompt = orch._hook_registry.apply(text, hook_ctx)
 

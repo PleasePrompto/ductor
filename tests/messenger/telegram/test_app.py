@@ -1404,3 +1404,57 @@ class TestNotificationService:
             await service.notify_all("hello")
 
         assert sent == [2]
+
+
+class TestPersonaPrompt:
+    """The picker is sent by hand rather than through the usual reply path, so
+    the formatting it relies on has to be asserted here."""
+
+    @pytest.mark.asyncio
+    async def test_prompt_is_sent_as_html_not_raw_markdown(self) -> None:
+        """The bot defaults to HTML, so unconverted markdown renders literally
+        — asterisks and backticks visible in the chat."""
+        from aiogram.enums import ParseMode
+
+        from ductor_bot.personas.store import PersonaStore
+        from ductor_bot.session.key import SessionKey
+
+        cfg = _make_config()
+        cfg.persona_prompt = True
+        tg_bot, bot_instance = _make_tg_bot(cfg)
+
+        orch = MagicMock()
+        orch.personas = PersonaStore(Path("/tmp/does-not-exist/personas.json"))
+        tg_bot._orch_instance = orch
+
+        with (
+            patch.object(type(tg_bot), "_orch", PropertyMock(return_value=orch)),
+            patch(
+                "ductor_bot.orchestrator.selectors.persona_selector.load_personas",
+                return_value=[],
+            ),
+        ):
+            held = await tg_bot._ask_persona_if_needed(SessionKey.telegram(1, 2), "hi")
+
+        assert held is True
+        kwargs = bot_instance.send_message.await_args.kwargs
+        assert kwargs["parse_mode"] == ParseMode.HTML
+        text = (
+            bot_instance.send_message.await_args.args[1]
+            if len(bot_instance.send_message.await_args.args) > 1
+            else kwargs.get("text", "")
+        )
+        assert "**" not in text
+
+    @pytest.mark.asyncio
+    async def test_disabled_prompt_does_not_hold_the_message(self) -> None:
+        from ductor_bot.session.key import SessionKey
+
+        cfg = _make_config()
+        cfg.persona_prompt = False
+        tg_bot, bot_instance = _make_tg_bot(cfg)
+
+        held = await tg_bot._ask_persona_if_needed(SessionKey.telegram(1, 2), "hi")
+
+        assert held is False
+        bot_instance.send_message.assert_not_awaited()
