@@ -528,7 +528,8 @@ ask_header = "**Que persona deve tratar disto?**"
 none_defined = "Nenhuma persona definida. Adicione ficheiros de agente à sua configuração do Claude Code."
 default_label = "Padrão"
 selected = "Persona: **{persona}**"
-switched_notice = "[Persona alterada: esta conversa agora corre como **{new}**, não {old}. As respostas anteriores foram produzidas sob {old}; siga o âmbito e o estilo de trabalho de {new} a partir daqui, e diga-o se isso mudar o que faria.]"
+switched_notice = "Persona ativa: **{new}**. Esta conversa corria antes como {old}; as respostas anteriores no histórico foram produzidas sob essa persona e não descrevem a atual."
+active_notice = "Persona ativa: **{persona}**. Esta indicação vale para este turno; siga o âmbito e o estilo de trabalho desta persona."
 
 [upload]
 btn_upload = "⬆️ Enviar para aqui"

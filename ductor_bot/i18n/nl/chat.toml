@@ -528,7 +528,8 @@ ask_header = "**Welke persona moet dit doen?**"
 none_defined = "Geen persona's gedefinieerd. Voeg agentbestanden toe aan je Claude Code-configuratie."
 default_label = "Standaard"
 selected = "Persona: **{persona}**"
-switched_notice = "[Persona gewijzigd: dit gesprek draait nu als **{new}**, niet als {old}. Eerdere beurten kwamen tot stand onder {old}; volg vanaf hier het werkterrein en de werkwijze van {new}, en zeg het als dat verandert wat je zou doen.]"
+switched_notice = "Actieve persona: **{new}**. Dit gesprek draaide eerder als {old}; eerdere beurten in de geschiedenis kwamen tot stand onder die persona en beschrijven de huidige niet."
+active_notice = "Actieve persona: **{persona}**. Deze vermelding geldt voor deze beurt; volg het werkterrein en de werkwijze van deze persona."
 
 [upload]
 btn_upload = "⬆️ Hierheen uploaden"

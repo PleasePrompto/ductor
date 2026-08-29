@@ -528,7 +528,8 @@ ask_header = "**¿Qué persona debe encargarse?**"
 none_defined = "No hay personas definidas. Añade archivos de agente a tu configuración de Claude Code."
 default_label = "Predeterminada"
 selected = "Persona: **{persona}**"
-switched_notice = "[Persona cambiada: esta conversación ahora se ejecuta como **{new}**, no como {old}. Los turnos anteriores se produjeron con {old}; sigue el ámbito y el estilo de trabajo de {new} a partir de aquí, y dilo si eso cambia lo que harías.]"
+switched_notice = "Persona activa: **{new}**. Esta conversación funcionaba antes como {old}; los turnos anteriores del historial se produjeron con esa persona y no describen la actual."
+active_notice = "Persona activa: **{persona}**. Esta indicación es la vigente en este turno; sigue el ámbito y el estilo de trabajo de esta persona."
 
 [upload]
 btn_upload = "⬆️ Subir aquí"
