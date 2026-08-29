@@ -1,4 +1,11 @@
-"""Tests for the interactive ~/.ductor file browser."""
+"""Tests for the interactive file browser.
+
+Rewritten for token addressing: callback data used to carry a relative path,
+which overflowed Telegram's 64-byte cap on deep trees. Paths are now addressed
+by an opaque token, so the traversal cases below assert that a token resolving
+outside the allowed roots is refused — a crafted "../" string is no longer
+expressible in callback data at all.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +13,10 @@ from pathlib import Path
 
 import pytest
 
+from ductor_bot.files import path_tokens
+from ductor_bot.i18n import init
 from ductor_bot.messenger.telegram.file_browser import (
+    SF_ASK_PREFIX,
     SF_FILE_PREFIX,
     SF_PREFIX,
     file_browser_start,
@@ -16,9 +26,14 @@ from ductor_bot.messenger.telegram.file_browser import (
 from ductor_bot.workspace.paths import DuctorPaths
 
 
+@pytest.fixture(autouse=True)
+def _clean() -> None:
+    path_tokens.clear()
+    init("en")
+
+
 @pytest.fixture
 def paths(tmp_path: Path) -> DuctorPaths:
-    """DuctorPaths with a temporary ductor_home populated with test dirs/files."""
     home = tmp_path / "ductor"
     home.mkdir()
 
@@ -27,12 +42,10 @@ def paths(tmp_path: Path) -> DuctorPaths:
     (home / "workspace").mkdir()
     (home / "workspace" / "skills").mkdir()
     (home / "workspace" / "tools").mkdir()
-    (home / "workspace" / "tools" / "cron_tools").mkdir()
     (home / "workspace" / "CLAUDE.md").write_text("# rules")
-    (home / "logs").mkdir()
     (home / "sessions.json").write_text("[]")
 
-    # Hidden file/dir and __pycache__ should be excluded
+    # Hidden entries and caches must never be listed.
     (home / ".hidden_file").write_text("secret")
     (home / ".hidden_dir").mkdir()
     (home / "workspace" / "__pycache__").mkdir()
@@ -40,179 +53,138 @@ def paths(tmp_path: Path) -> DuctorPaths:
     return DuctorPaths(ductor_home=home)
 
 
-# ---------------------------------------------------------------------------
-# is_file_browser_callback
-# ---------------------------------------------------------------------------
+def _buttons(kb) -> list:
+    return [b for row in kb.inline_keyboard for b in row]
 
 
-class TestIsFileBrowserCallback:
-    @pytest.mark.parametrize(
-        "data",
-        ["sf:", "sf:workspace", "sf:workspace/skills", "sf!config", "sf!workspace/tools"],
-    )
-    def test_valid_callbacks(self, data: str) -> None:
-        assert is_file_browser_callback(data) is True
-
-    @pytest.mark.parametrize(
-        "data",
-        ["", "ms:p:claude", "w:1", "mq:5", "sf", "SF:", "other"],
-    )
-    def test_invalid_callbacks(self, data: str) -> None:
-        assert is_file_browser_callback(data) is False
+def _open(paths: DuctorPaths, target: Path):
+    return handle_file_browser_callback(paths, {}, f"{SF_PREFIX}{path_tokens.token_for(target)}")
 
 
-# ---------------------------------------------------------------------------
-# file_browser_start (root listing)
-# ---------------------------------------------------------------------------
+# -- callback matching ---------------------------------------------------------
 
 
-class TestFileBrowserStart:
-    async def test_root_listing_shows_directories(self, paths: DuctorPaths) -> None:
-        text, _keyboard = await file_browser_start(paths)
+class TestCallbackMatching:
+    def test_matches_own_prefixes(self) -> None:
+        for prefix in (SF_PREFIX, SF_FILE_PREFIX, SF_ASK_PREFIX, "sf@"):
+            assert is_file_browser_callback(f"{prefix}abc")
 
-        assert "File Browser" in text
-        assert "~/.ductor/" in text
-        assert "config/" in text
-        assert "logs/" in text
-        assert "workspace/" in text
-
-    async def test_root_listing_shows_files(self, paths: DuctorPaths) -> None:
-        text, _ = await file_browser_start(paths)
-
-        assert "sessions.json" in text
-
-    async def test_root_listing_excludes_hidden(self, paths: DuctorPaths) -> None:
-        text, _ = await file_browser_start(paths)
-
-        assert ".hidden_file" not in text
-        assert ".hidden_dir" not in text
-
-    async def test_root_has_no_back_button(self, paths: DuctorPaths) -> None:
-        _, keyboard = await file_browser_start(paths)
-
-        assert not any("Back" in btn.text for row in keyboard.inline_keyboard for btn in row)
-
-    async def test_root_has_file_request_button(self, paths: DuctorPaths) -> None:
-        _, keyboard = await file_browser_start(paths)
-
-        last_row = keyboard.inline_keyboard[-1]
-        assert len(last_row) == 1
-        assert last_row[0].callback_data == f"{SF_FILE_PREFIX}"
-        assert "file" in last_row[0].text.lower()
-
-    async def test_root_has_folder_buttons(self, paths: DuctorPaths) -> None:
-        _, keyboard = await file_browser_start(paths)
-
-        folder_callbacks = [
-            btn.callback_data
-            for row in keyboard.inline_keyboard
-            for btn in row
-            if btn.callback_data and btn.callback_data.startswith(SF_PREFIX)
-        ]
-        assert f"{SF_PREFIX}config" in folder_callbacks
-        assert f"{SF_PREFIX}logs" in folder_callbacks
-        assert f"{SF_PREFIX}workspace" in folder_callbacks
+    def test_ignores_other_namespaces(self) -> None:
+        assert not is_file_browser_callback("ms:p:claude")
+        assert not is_file_browser_callback("acc:0")
 
 
-# ---------------------------------------------------------------------------
-# handle_file_browser_callback -- directory navigation
-# ---------------------------------------------------------------------------
+# -- navigation ----------------------------------------------------------------
 
 
 class TestDirectoryNavigation:
-    async def test_navigate_to_subfolder(self, paths: DuctorPaths) -> None:
-        text, keyboard, prompt = await handle_file_browser_callback(paths, "sf:workspace")
+    @pytest.mark.asyncio
+    async def test_root_view_lists_the_ductor_home(self, paths: DuctorPaths) -> None:
+        _text, kb = await file_browser_start(paths, {})
+        assert "~/.ductor/" in [b.text for b in _buttons(kb)]
 
-        assert prompt is None
-        assert keyboard is not None
-        assert "~/.ductor/workspace/" in text
-        assert "skills/" in text
-        assert "tools/" in text
-        assert "CLAUDE.md" in text
+    @pytest.mark.asyncio
+    async def test_opening_home_lists_children(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, paths.ductor_home)
+        assert "config/" in action.text
+        assert "workspace/" in action.text
+        assert "sessions.json" in action.text
 
-    async def test_subfolder_has_back_button(self, paths: DuctorPaths) -> None:
-        _, keyboard, _ = await handle_file_browser_callback(paths, "sf:workspace")
+    @pytest.mark.asyncio
+    async def test_hidden_and_cache_entries_are_excluded(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, paths.ductor_home)
+        assert ".hidden_file" not in action.text
+        assert ".hidden_dir" not in action.text
+        assert "__pycache__" not in action.text
 
-        assert keyboard is not None
-        back_buttons = [
-            btn for row in keyboard.inline_keyboard for btn in row if "Back" in btn.text
-        ]
-        assert len(back_buttons) == 1
-        assert back_buttons[0].callback_data == "sf:"
+    @pytest.mark.asyncio
+    async def test_empty_directory_says_so(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, paths.ductor_home / "workspace" / "skills")
+        assert "empty" in action.text.lower()
 
-    async def test_deep_navigation(self, paths: DuctorPaths) -> None:
-        text, keyboard, _ = await handle_file_browser_callback(paths, "sf:workspace/tools")
+    @pytest.mark.asyncio
+    async def test_subdirectory_offers_a_way_back(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, paths.ductor_home / "workspace")
+        back = [b for b in _buttons(action.keyboard) if "Back" in b.text]
+        assert len(back) == 1
 
-        assert "~/.ductor/workspace/tools/" in text
-        assert "cron_tools/" in text
-        assert keyboard is not None
+    @pytest.mark.asyncio
+    async def test_back_is_present_at_a_root_too(self, paths: DuctorPaths) -> None:
+        """A button that vanishes at certain depths reads as a broken screen."""
+        action = await _open(paths, paths.ductor_home)
+        back = [b for b in _buttons(action.keyboard) if "Back" in b.text]
+        assert len(back) == 1
 
-    async def test_deep_back_goes_to_parent(self, paths: DuctorPaths) -> None:
-        _, keyboard, _ = await handle_file_browser_callback(paths, "sf:workspace/tools")
+    @pytest.mark.asyncio
+    async def test_back_at_a_root_returns_to_the_location_picker(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, paths.ductor_home)
+        back = next(b for b in _buttons(action.keyboard) if "Back" in b.text)
+        assert back.callback_data == SF_PREFIX
 
-        assert keyboard is not None
-        back_buttons = [
-            btn for row in keyboard.inline_keyboard for btn in row if "Back" in btn.text
-        ]
-        assert len(back_buttons) == 1
-        assert back_buttons[0].callback_data == "sf:workspace"
+    @pytest.mark.asyncio
+    async def test_back_inside_a_tree_goes_to_the_parent(self, paths: DuctorPaths) -> None:
+        target = paths.ductor_home / "workspace"
+        action = await _open(paths, target)
+        back = next(b for b in _buttons(action.keyboard) if "Back" in b.text)
+        assert path_tokens.path_for(back.callback_data[len(SF_PREFIX) :]) == target.parent
 
-    async def test_excludes_pycache(self, paths: DuctorPaths) -> None:
-        text, _, _ = await handle_file_browser_callback(paths, "sf:workspace")
+    @pytest.mark.asyncio
+    async def test_navigation_row_is_identical_at_every_depth(self, paths: DuctorPaths) -> None:
+        """Back and Home both show everywhere, including at a root.
 
-        assert "__pycache__" not in text
+        They lead to the same place at a root, which is a cheaper cost than a
+        row whose buttons move around depending on how deep you are.
+        """
+        for target in (paths.ductor_home, paths.ductor_home / "workspace"):
+            action = await _open(paths, target)
+            labels = [b.text for b in _buttons(action.keyboard)]
+            assert sum("Back" in x for x in labels) == 1
+            assert sum("Home" in x for x in labels) == 1
 
-    async def test_empty_directory(self, paths: DuctorPaths) -> None:
-        text, keyboard, _ = await handle_file_browser_callback(paths, "sf:logs")
-
-        assert "(empty)" in text
-        assert keyboard is not None
-
-    async def test_nonexistent_directory(self, paths: DuctorPaths) -> None:
-        text, keyboard, _ = await handle_file_browser_callback(paths, "sf:does_not_exist")
-
-        assert "not found" in text.lower()
-        assert keyboard is not None
-
-
-# ---------------------------------------------------------------------------
-# handle_file_browser_callback -- file request (sf!)
-# ---------------------------------------------------------------------------
-
-
-class TestFileRequest:
-    async def test_file_request_returns_prompt(self, paths: DuctorPaths) -> None:
-        text, keyboard, prompt = await handle_file_browser_callback(paths, "sf!workspace/tools")
-
-        assert prompt is not None
-        assert "file" in prompt.lower()
-        assert text == ""
-        assert keyboard is None
-
-    async def test_file_request_root(self, paths: DuctorPaths) -> None:
-        _, _, prompt = await handle_file_browser_callback(paths, "sf!")
-
-        assert prompt is not None
-        assert str(paths.ductor_home.resolve()) in prompt
+    @pytest.mark.asyncio
+    async def test_nonexistent_directory_falls_back_to_roots(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, paths.ductor_home / "no-such-dir")
+        assert "~/.ductor/" in [b.text for b in _buttons(action.keyboard)]
 
 
-# ---------------------------------------------------------------------------
-# Path traversal safety
-# ---------------------------------------------------------------------------
+# -- containment ---------------------------------------------------------------
 
 
 class TestPathSafety:
-    async def test_parent_traversal_blocked(self, paths: DuctorPaths) -> None:
-        text, _, _ = await handle_file_browser_callback(paths, "sf:..")
+    @pytest.mark.asyncio
+    async def test_parent_of_root_is_refused(self, paths: DuctorPaths, tmp_path: Path) -> None:
+        action = await _open(paths, paths.ductor_home.parent)
+        assert "~/.ductor/" in [b.text for b in _buttons(action.keyboard)]
 
-        assert "not found" in text.lower()
+    @pytest.mark.asyncio
+    async def test_unrelated_absolute_path_is_refused(self, paths: DuctorPaths) -> None:
+        action = await _open(paths, Path("/etc"))
+        assert "passwd" not in action.text
 
-    async def test_double_parent_traversal_blocked(self, paths: DuctorPaths) -> None:
-        text, _, _ = await handle_file_browser_callback(paths, "sf:workspace/../../etc")
+    @pytest.mark.asyncio
+    async def test_traversal_out_of_root_is_refused(self, paths: DuctorPaths) -> None:
+        escaped = paths.ductor_home / ".." / ".."
+        action = await _open(paths, escaped)
+        assert "~/.ductor/" in [b.text for b in _buttons(action.keyboard)]
 
-        assert "not found" in text.lower()
 
-    async def test_absolute_path_blocked(self, paths: DuctorPaths) -> None:
-        text, _, _ = await handle_file_browser_callback(paths, "sf:/etc/passwd")
+# -- agent handoff -------------------------------------------------------------
 
-        assert "not found" in text.lower()
+
+class TestFileRequest:
+    @pytest.mark.asyncio
+    async def test_ask_returns_a_prompt_naming_the_directory(self, paths: DuctorPaths) -> None:
+        target = paths.ductor_home / "workspace"
+        action = await handle_file_browser_callback(
+            paths, {}, f"{SF_ASK_PREFIX}{path_tokens.token_for(target)}"
+        )
+        assert action.agent_prompt is not None
+        assert str(target.resolve()) in action.agent_prompt
+
+    @pytest.mark.asyncio
+    async def test_ask_at_root_uses_the_home_directory(self, paths: DuctorPaths) -> None:
+        action = await handle_file_browser_callback(
+            paths, {}, f"{SF_ASK_PREFIX}{path_tokens.token_for(paths.ductor_home)}"
+        )
+        assert action.agent_prompt is not None
+        assert str(paths.ductor_home.resolve()) in action.agent_prompt
