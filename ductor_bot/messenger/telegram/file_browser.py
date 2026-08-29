@@ -46,11 +46,15 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from ductor_bot.files.browser import list_directory
 from ductor_bot.files.edits import (
     LARGE_DELETE,
+    ClipboardStore,
     EditStore,
     PendingEdit,
     can_delete,
+    can_move,
+    can_paste,
     can_rename,
     plan_delete,
+    plan_tree,
     sample,
     validate_name,
 )
@@ -115,6 +119,13 @@ SF_EDIT_APPLY_PREFIX = "sf_"
 SF_DELETE_PREFIX = "sf,"
 SF_DELETE_AGAIN_PREFIX = "sf|"
 SF_DELETE_DO_PREFIX = "sf$"
+#: Move and copy mark a source, then paste acts on wherever the user has
+#: navigated to since. The pending mark lives in ``ClipboardStore``.
+SF_MOVE_PREFIX = "sf("
+SF_COPY_PREFIX = "sf)"
+SF_PASTE_PREFIX = "sf["
+SF_PASTE_DO_PREFIX = "sf]"
+SF_CLIP_CANCEL_PREFIX = "sf{"
 
 #: One button per file put a folder's whole contents in the main view. They
 #: live behind the download menu now, but a large directory can still overflow
@@ -144,6 +155,7 @@ class BrowserSession:
     key: str
     current_binding: str | None = None
     edits: EditStore | None = None
+    clipboard: ClipboardStore | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +201,11 @@ def is_file_browser_callback(data: str) -> bool:
             SF_DELETE_PREFIX,
             SF_DELETE_AGAIN_PREFIX,
             SF_DELETE_DO_PREFIX,
+            SF_MOVE_PREFIX,
+            SF_COPY_PREFIX,
+            SF_PASTE_PREFIX,
+            SF_PASTE_DO_PREFIX,
+            SF_CLIP_CANCEL_PREFIX,
             SF_HOME_PREFIX,
         )
     )
@@ -274,6 +291,11 @@ def _parse(data: str) -> tuple[str, str] | None:
         SF_DELETE_PREFIX,
         SF_DELETE_AGAIN_PREFIX,
         SF_DELETE_DO_PREFIX,
+        SF_MOVE_PREFIX,
+        SF_COPY_PREFIX,
+        SF_PASTE_DO_PREFIX,
+        SF_PASTE_PREFIX,
+        SF_CLIP_CANCEL_PREFIX,
         SF_PREFIX,
     ):
         if data.startswith(prefix):
@@ -608,6 +630,14 @@ def _manage_action(
         ],
         [
             InlineKeyboardButton(
+                text=t("edits.btn_move"), callback_data=f"{SF_MOVE_PREFIX}{token}"
+            ),
+            InlineKeyboardButton(
+                text=t("edits.btn_copy"), callback_data=f"{SF_COPY_PREFIX}{token}"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
                 text=t("edits.btn_delete"), callback_data=f"{SF_DELETE_PREFIX}{token}"
             )
         ],
@@ -617,6 +647,26 @@ def _manage_action(
             )
         ],
     ]
+
+    # The paste row exists only while something is marked, and only in a
+    # directory: pasting "into" a file has no meaning, and an always-present
+    # button that usually refuses teaches people to ignore the row.
+    clipped = session.clipboard.get(session.key) if session.clipboard else None
+    if clipped is not None and target.is_dir():
+        label = "edits.btn_paste_move" if clipped.operation == "move" else "edits.btn_paste_copy"
+        rows.insert(
+            -1,
+            [
+                InlineKeyboardButton(
+                    text=t(label, name=clipped.source.name),
+                    callback_data=f"{SF_PASTE_PREFIX}{token}",
+                ),
+                InlineKeyboardButton(
+                    text=t("edits.btn_clip_cancel"),
+                    callback_data=f"{SF_CLIP_CANCEL_PREFIX}{token}",
+                ),
+            ],
+        )
     body = t("edits.manage", dir=_display(paths, project_roots, target))
     return BrowserAction(
         text=fmt(t("file_browser.header"), SEP, body),
@@ -799,6 +849,128 @@ def _delete_do(
     return _with_notice(paths, project_roots, parent, t("edits.deleted", name=name))
 
 
+
+def _manage_with_notice(
+    paths: DuctorPaths,
+    project_roots: Mapping[str, str],
+    target: Path,
+    session: BrowserSession,
+    notice: str,
+) -> BrowserAction:
+    """Re-render the Manage panel with a result line appended."""
+    action = _manage_action(paths, project_roots, target, session)
+    return BrowserAction(text=f"{action.text}\n\n{notice}", keyboard=action.keyboard)
+
+
+if TYPE_CHECKING:
+    #: Signature every Manage-panel action shares. Declared here rather than
+    #: beside the other imports because it names classes defined below.
+    EditAction = Callable[[DuctorPaths, Mapping[str, str], Path, BrowserSession], BrowserAction]
+
+
+def _clip_mark(operation: str) -> EditAction:
+    """Mark *target* for a later paste. The destination is wherever they go next."""
+
+    def action(
+        paths: DuctorPaths,
+        project_roots: Mapping[str, str],
+        target: Path,
+        session: BrowserSession,
+    ) -> BrowserAction:
+        if session.clipboard is None:
+            return _open_action(paths, project_roots, target)
+        roots = _roots_map(paths, project_roots)
+        refusal = can_move(target, roots) if operation == "move" else ""
+        if not refusal and not target.exists():
+            refusal = "edits.gone"
+        if refusal:
+            return _with_notice(paths, project_roots, target.parent, t(refusal))
+        session.clipboard.hold(session.key, operation, target)  # type: ignore[arg-type]
+        key = "edits.marked_move" if operation == "move" else "edits.marked_copy"
+        return _manage_with_notice(paths, project_roots, target, session, t(key, name=target.name))
+
+    return action
+
+
+def _clip_cancel(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, session: BrowserSession
+) -> BrowserAction:
+    """Forget the marked source without touching anything on disk."""
+    if session.clipboard is not None:
+        session.clipboard.clear(session.key)
+    return _manage_with_notice(
+        paths, project_roots, target, session, t("edits.clip_cleared")
+    )
+
+
+def _paste_confirm(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, session: BrowserSession
+) -> BrowserAction:
+    """Say what is about to land where, and refuse what no dialog makes safe."""
+    clipped = session.clipboard.get(session.key) if session.clipboard else None
+    if clipped is None:
+        return _open_action(paths, project_roots, target)
+
+    roots = _roots_map(paths, project_roots)
+    refusal = can_paste(clipped.source, target, roots, clipped.operation)
+    if refusal:
+        return _manage_with_notice(paths, project_roots, target, session, t(refusal))
+
+    detail = plan_tree(clipped.source)
+    body = t(
+        "edits.paste_confirm" if clipped.operation == "copy" else "edits.paste_confirm_move",
+        name=clipped.source.name,
+        dir=_display(paths, project_roots, target),
+        count=detail.files,
+        size=_human_size(detail.bytes),
+    )
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("edits.btn_paste_now"),
+                callback_data=f"{SF_PASTE_DO_PREFIX}{token_for(target)}",
+            ),
+            InlineKeyboardButton(
+                text=t("upload.btn_cancel"),
+                callback_data=f"{SF_MANAGE_PREFIX}{token_for(target)}",
+            ),
+        ]
+    ]
+    return BrowserAction(
+        text=fmt(t("file_browser.header"), SEP, body),
+        keyboard=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def _paste_do(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path, session: BrowserSession
+) -> BrowserAction:
+    """Carry it out. Guards re-checked immediately before: the tree may have moved."""
+    from ductor_bot.files.edits import apply_copy, apply_move
+
+    clipped = session.clipboard.get(session.key) if session.clipboard else None
+    if clipped is None:
+        return _open_action(paths, project_roots, target)
+
+    roots = _roots_map(paths, project_roots)
+    refusal = can_paste(clipped.source, target, roots, clipped.operation)
+    if refusal:
+        return _manage_with_notice(paths, project_roots, target, session, t(refusal))
+
+    name = clipped.source.name
+    try:
+        if clipped.operation == "move":
+            apply_move(clipped.source, target)
+        else:
+            apply_copy(clipped.source, target)
+    except (OSError, FileExistsError):
+        return _with_notice(paths, project_roots, target, t("edits.failed", name=name))
+
+    session.clipboard.clear(session.key)  # type: ignore[union-attr]
+    done = "edits.moved" if clipped.operation == "move" else "edits.copied"
+    return _with_notice(paths, project_roots, target, t(done, name=name))
+
+
 _EDIT_ACTIONS = {
     SF_MANAGE_PREFIX: _manage_action,
     SF_RENAME_PREFIX: _ask_name_action("rename"),
@@ -806,6 +978,11 @@ _EDIT_ACTIONS = {
     SF_DELETE_PREFIX: _delete_step_one,
     SF_DELETE_AGAIN_PREFIX: _delete_step_two,
     SF_DELETE_DO_PREFIX: _delete_do,
+    SF_MOVE_PREFIX: _clip_mark("move"),
+    SF_COPY_PREFIX: _clip_mark("copy"),
+    SF_PASTE_PREFIX: _paste_confirm,
+    SF_PASTE_DO_PREFIX: _paste_do,
+    SF_CLIP_CANCEL_PREFIX: _clip_cancel,
 }
 
 
