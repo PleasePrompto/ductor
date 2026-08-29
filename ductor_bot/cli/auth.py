@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.antigravity_runtime import antigravity_process_env
+from ductor_bot.cli.claude_accounts import apply_to_env
 from ductor_bot.cli.gemini_utils import find_gemini_cli
 from ductor_bot.config import NULLISH_TEXT_VALUES
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
@@ -82,9 +83,14 @@ def format_age(dt: datetime) -> str:
     return f"{days}d ago"
 
 
-def check_claude_auth() -> AuthResult:
-    """Check Claude Code CLI auth via credentials file, env var, or CLI fallback."""
-    claude_dir = Path.home() / ".claude"
+def check_claude_auth(account_dir: str | None = None) -> AuthResult:
+    """Check Claude Code CLI auth via credentials file, env var, or CLI fallback.
+
+    *account_dir* is the selected credential store (``/account``). Without it a
+    setup whose only logged-in store is a non-default one reads as unauthenticated
+    and Claude drops out of the available providers, even though execution works.
+    """
+    claude_dir = Path(account_dir).expanduser() if account_dir else Path.home() / ".claude"
     credentials = claude_dir / ".credentials.json"
 
     # Fast path: credentials file (standard OAuth login).
@@ -101,7 +107,7 @@ def check_claude_auth() -> AuthResult:
         return result
 
     # Fallback: ask the CLI itself (covers managed keys, OAuth tokens, etc.).
-    if _claude_cli_logged_in():
+    if _claude_cli_logged_in(account_dir):
         result = AuthResult("claude", AuthStatus.AUTHENTICATED)
         logger.debug("Auth check provider=%s status=%s (cli)", result.provider, result.status)
         return result
@@ -116,11 +122,16 @@ def check_claude_auth() -> AuthResult:
     return result
 
 
-def _claude_cli_logged_in() -> bool:
-    """Run ``claude auth status`` and return True when the CLI reports logged-in."""
+def _claude_cli_logged_in(account_dir: str | None = None) -> bool:
+    """Run ``claude auth status`` and return True when the CLI reports logged-in.
+
+    The subprocess must see the same credential store the agent will use, or the
+    answer describes a different account.
+    """
     # Resolve the executable so the npm shim (claude.cmd on Windows) is found; a
     # bare "claude" raises FileNotFoundError there, so OAuth auth is missed (#149).
     claude_cli = shutil.which("claude") or "claude"
+    env = apply_to_env(dict(os.environ), account_dir)
     try:
         proc = subprocess.run(
             [claude_cli, "auth", "status"],
@@ -128,6 +139,7 @@ def _claude_cli_logged_in() -> bool:
             text=True,
             timeout=10,
             check=False,
+            env=env,
             creationflags=_CREATION_FLAGS,
         )
         data = json.loads(proc.stdout)
@@ -526,6 +538,13 @@ _CHECKERS: dict[str, Callable[[], AuthResult]] = {
 }
 
 
-def check_all_auth() -> dict[str, AuthResult]:
-    """Check auth for all known providers."""
-    return {name: fn() for name, fn in _CHECKERS.items()}
+def check_all_auth(claude_account_dir: str | None = None) -> dict[str, AuthResult]:
+    """Check auth for all known providers.
+
+    *claude_account_dir* scopes the Claude probe to the selected credential
+    store; other providers are unaffected.
+    """
+    return {
+        name: (fn(claude_account_dir) if name == "claude" else fn())  # type: ignore[call-arg]
+        for name, fn in _CHECKERS.items()
+    }

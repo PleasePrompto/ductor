@@ -104,6 +104,10 @@ class CLIConfig:
     disallowed_tools: list[str] = field(default_factory=list)
     permission_mode: str = "bypassPermissions"
     docker_container: str = ""
+    #: Unix account the CLI is dropped to, or "" to stay as the bot's own user.
+    #: Set for topics whose isolation must be enforced by the kernel rather
+    #: than asked for in a rule file.
+    run_as_user: str = ""
     # Reasoning effort: used by Codex (-c model_reasoning_effort) and Claude (--effort).
     reasoning_effort: str = "medium"
     # Codex-specific fields (ignored by Claude provider):
@@ -117,6 +121,11 @@ class CLIConfig:
     process_label: str = "main"
     # Gemini-specific auth fallback:
     gemini_api_key: str | None = None
+    # Claude-specific: CLAUDE_SECURESTORAGE_CONFIG_DIR for the selected account.
+    # Empty string keeps the default credential store.
+    claude_account_dir: str = ""
+    # Claude Code agent governing this run (--agent). Empty means none.
+    persona: str = ""
     # Extra CLI parameters (provider-specific):
     cli_parameters: list[str] = field(default_factory=list)
     # Transport identification (for routing results back):
@@ -178,6 +187,34 @@ def _docker_env_flags(
         ]
     return env_flags
 
+
+
+#: Environment the dropped-to user still needs. PATH is passed explicitly
+#: because sudo replaces it with secure_path, which does not contain the npm
+#: prefix the CLIs are installed under.
+_RUN_AS_KEEP = ("PATH", "NODE_OPTIONS", "LANG", "LC_ALL")
+
+#: Deliberately NOT carried over. They point into the bot's home, which the
+#: dropped-to account cannot read — passing them would send the CLI looking for
+#: a config directory it has no access to. Left unset, the CLI falls back to
+#: $HOME, which is the account's own.
+_RUN_AS_DROP = ("CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+
+
+def run_as_wrap(cmd: list[str], config: CLIConfig, env: dict[str, str]) -> list[str]:
+    """Prefix *cmd* so it runs as ``config.run_as_user``.
+
+    Applied at the single point where a subprocess is spawned, so every
+    provider inherits it. sudo discards most of the environment, so the parts
+    the CLI needs are re-stated explicitly rather than relying on env_keep,
+    which a hardened sudoers would drop.
+    """
+    if not config.run_as_user:
+        return cmd
+    home = f"/home/{config.run_as_user}"
+    passed = [f"HOME={home}"]
+    passed += [f"{k}={env[k]}" for k in _RUN_AS_KEEP if k in env]
+    return ["sudo", "-n", "-u", config.run_as_user, "env", *passed, *cmd]
 
 def docker_wrap(
     cmd: list[str],
