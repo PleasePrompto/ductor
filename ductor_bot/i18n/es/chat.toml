@@ -474,6 +474,10 @@ btn_bind = "📌 Usar esta carpeta"
 btn_bind_confirm = "📌 Reasignar"
 bind_confirm = "Esta conversación ya trabaja en `{current}`. ¿Moverla a `{new}`?"
 bound = "📌 Esta conversación ahora trabaja en `{dir}`."
+btn_path = "📋 Ruta"
+path_dir = "Ruta de la carpeta — toca para copiar:"
+path_file = "Ruta del archivo — toca para copiar:"
+path_pick = "O elige un archivo para ver su propia ruta:"
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"

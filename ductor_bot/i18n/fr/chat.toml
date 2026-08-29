@@ -474,6 +474,10 @@ btn_bind = "📌 Choisir ce dossier"
 btn_bind_confirm = "📌 Réassocier"
 bind_confirm = "Cette conversation travaille déjà dans `{current}`. La déplacer vers `{new}` ?"
 bound = "📌 Cette conversation travaille maintenant dans `{dir}`."
+btn_path = "📋 Chemin"
+path_dir = "Chemin du dossier — touchez pour copier :"
+path_file = "Chemin du fichier — touchez pour copier :"
+path_pick = "Ou choisissez un fichier pour son propre chemin :"
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"

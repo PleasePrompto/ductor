@@ -473,6 +473,10 @@ btn_bind = "📌 Pakai folder ini"
 btn_bind_confirm = "📌 Ganti"
 bind_confirm = "Percakapan ini sudah bekerja di `{current}`. Pindahkan ke `{new}`?"
 bound = "📌 Percakapan ini sekarang bekerja di `{dir}`."
+btn_path = "📋 Jalur"
+path_dir = "Jalur folder — ketuk untuk menyalin:"
+path_file = "Jalur berkas — ketuk untuk menyalin:"
+path_pick = "Atau pilih berkas untuk jalurnya sendiri:"
 
 [upgrade_handler]
 btn_changelog = "Catatan Rilis v{version}"

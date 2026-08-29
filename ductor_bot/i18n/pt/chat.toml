@@ -474,6 +474,10 @@ btn_bind = "📌 Usar esta pasta"
 btn_bind_confirm = "📌 Reassociar"
 bind_confirm = "Esta conversa já trabalha em `{current}`. Mover para `{new}`?"
 bound = "📌 Esta conversa passa a trabalhar em `{dir}`."
+btn_path = "📋 Caminho"
+path_dir = "Caminho da pasta — toque para copiar:"
+path_file = "Caminho do ficheiro — toque para copiar:"
+path_pick = "Ou escolha um ficheiro para ver o seu caminho:"
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
