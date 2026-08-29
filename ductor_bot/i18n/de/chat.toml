@@ -528,6 +528,7 @@ ask_header = "**Welche Persona soll das übernehmen?**"
 none_defined = "Keine Personas definiert. Lege Agent-Dateien in deiner Claude-Code-Konfiguration an."
 default_label = "Standard"
 selected = "Persona: **{persona}**"
+switched_notice = "[Persona geändert: diese Unterhaltung läuft jetzt als **{new}**, nicht mehr als {old}. Frühere Antworten entstanden unter {old}; halte dich ab hier an Auftrag und Arbeitsweise von {new} und sage es, wenn das dein Vorgehen ändert.]"
 
 [upload]
 btn_upload = "⬆️ Hierher hochladen"

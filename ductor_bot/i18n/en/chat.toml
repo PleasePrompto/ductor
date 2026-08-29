@@ -529,6 +529,7 @@ ask_header = "**Which persona should handle this?**"
 none_defined = "No personas are defined. Add agent files to your Claude Code config to use this."
 default_label = "Default"
 selected = "Persona: **{persona}**"
+switched_notice = "[Persona changed: this conversation now runs as **{new}**, not {old}. Earlier turns were produced under {old}; follow {new}'s remit and working style from here, and say so if that changes what you would do.]"
 
 [upload]
 btn_upload = "⬆️ Upload here"
