@@ -33,6 +33,8 @@ class PersonaStore:
         self._chosen: dict[str, str] = self._load()
         # Held prompts stay in memory only; see the module docstring.
         self._pending: dict[str, str] = {}
+        # Announced once, to the next turn; see switched().
+        self._switched: dict[str, tuple[str, str]] = {}
 
     # -- persistence ----------------------------------------------------------
 
@@ -65,8 +67,30 @@ class PersonaStore:
         return self._chosen.get(key)
 
     def set(self, key: str, persona: str) -> None:
+        """Record the choice, and remember a *change* so the next turn is told.
+
+        Changing persona mid-conversation swaps the system prompt and the tool
+        set, but the model keeps answering in the shape the previous turns
+        established — it reads its identity from the history, not from the
+        prompt it was handed. Nothing in the transcript says the rules changed,
+        so the next turn says it.
+
+        Only a change between two real personas is announced. A first answer to
+        the persona gate is not a switch: there is no history to contradict.
+        """
+        previous = self._chosen.get(key)
+        if previous is not None and previous != persona and previous and persona:
+            self._switched[key] = (previous, persona)
         self._chosen[key] = persona
         self._save()
+
+    def take_switch(self, key: str) -> tuple[str, str] | None:
+        """Return and forget a pending ``(old, new)`` persona change.
+
+        In memory only, like the held prompt above: an announcement that
+        survived a restart would arrive with no conversation around it.
+        """
+        return self._switched.pop(key, None)
 
     def clear(self, key: str) -> None:
         """Forget the choice, so the next message asks again.
@@ -77,6 +101,7 @@ class PersonaStore:
         if self._chosen.pop(key, None) is not None:
             self._save()
         self._pending.pop(key, None)
+        self._switched.pop(key, None)
 
     # -- held prompts ---------------------------------------------------------
 

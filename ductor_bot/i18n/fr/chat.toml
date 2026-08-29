@@ -528,6 +528,7 @@ ask_header = "**Quelle persona doit s'en charger ?**"
 none_defined = "Aucune persona définie. Ajoutez des fichiers d'agent à votre configuration Claude Code."
 default_label = "Par défaut"
 selected = "Persona : **{persona}**"
+switched_notice = "[Persona changé : cette conversation s'exécute désormais en tant que **{new}**, et non {old}. Les tours précédents ont été produits sous {old} ; suivez le périmètre et la méthode de {new} à partir d'ici, et dites-le si cela change ce que vous feriez.]"
 
 [upload]
 btn_upload = "⬆️ Envoyer ici"
