@@ -527,7 +527,8 @@ ask_header = "**Persona mana yang menangani ini?**"
 none_defined = "Belum ada persona. Tambahkan berkas agent ke konfigurasi Claude Code-mu."
 default_label = "Bawaan"
 selected = "Persona: **{persona}**"
-switched_notice = "[Persona berubah: percakapan ini kini berjalan sebagai **{new}**, bukan {old}. Giliran sebelumnya dihasilkan di bawah {old}; ikuti lingkup dan gaya kerja {new} mulai sekarang, dan katakan jika itu mengubah apa yang akan kamu lakukan.]"
+switched_notice = "Persona aktif: **{new}**. Percakapan ini sebelumnya berjalan sebagai {old}; giliran sebelumnya dalam riwayat dihasilkan di bawah persona itu dan tidak menggambarkan yang sekarang."
+active_notice = "Persona aktif: **{persona}**. Pernyataan ini berlaku untuk giliran ini; ikuti lingkup dan gaya kerja persona ini."
 
 [upload]
 btn_upload = "⬆️ Unggah ke sini"
