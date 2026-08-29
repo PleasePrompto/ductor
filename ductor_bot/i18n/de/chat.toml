@@ -474,6 +474,10 @@ btn_bind = "📌 Ordner nutzen"
 btn_bind_confirm = "📌 Neu zuordnen"
 bind_confirm = "Diese Unterhaltung arbeitet bereits in `{current}`. Nach `{new}` wechseln?"
 bound = "📌 Diese Unterhaltung arbeitet jetzt in `{dir}`."
+btn_path = "📋 Pfad"
+path_dir = "Ordnerpfad — zum Kopieren antippen:"
+path_file = "Dateipfad — zum Kopieren antippen:"
+path_pick = "Oder wähle eine Datei für ihren eigenen Pfad:"
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"

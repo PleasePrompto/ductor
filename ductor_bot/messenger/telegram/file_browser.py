@@ -126,6 +126,9 @@ SF_COPY_PREFIX = "sf)"
 SF_PASTE_PREFIX = "sf["
 SF_PASTE_DO_PREFIX = "sf]"
 SF_CLIP_CANCEL_PREFIX = "sf{"
+#: Read-only: shows the absolute path so it can be handed to an agent.
+SF_PATH_PREFIX = "sf."
+SF_PATH_FILE_PREFIX = "sf}"
 
 #: One button per file put a folder's whole contents in the main view. They
 #: live behind the download menu now, but a large directory can still overflow
@@ -206,6 +209,8 @@ def is_file_browser_callback(data: str) -> bool:
             SF_PASTE_PREFIX,
             SF_PASTE_DO_PREFIX,
             SF_CLIP_CANCEL_PREFIX,
+            SF_PATH_PREFIX,
+            SF_PATH_FILE_PREFIX,
             SF_HOME_PREFIX,
         )
     )
@@ -296,6 +301,8 @@ def _parse(data: str) -> tuple[str, str] | None:
         SF_PASTE_DO_PREFIX,
         SF_PASTE_PREFIX,
         SF_CLIP_CANCEL_PREFIX,
+        SF_PATH_PREFIX,
+        SF_PATH_FILE_PREFIX,
         SF_PREFIX,
     ):
         if data.startswith(prefix):
@@ -480,6 +487,64 @@ def _file_list_action(
 
     text = fmt(t("file_browser.header"), SEP, body)
     return BrowserAction(text=text, keyboard=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+def _path_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
+) -> BrowserAction:
+    """Show the folder's absolute path, and offer each file's path in turn.
+
+    A bot cannot write to anyone's clipboard, so the path is rendered as a code
+    span, which Telegram makes tap-to-copy. Each path gets its own block: a tap
+    copies a whole block, so putting a folder's worth of paths in one would copy
+    a wall of text nobody wants to paste.
+    """
+    if not target.is_dir():
+        return _path_file_action(paths, project_roots, target)
+
+    _dirs, files = list_directory(target)
+    shown = files[:_MAX_FILE_BUTTONS]
+    rows = _rows(
+        [
+            InlineKeyboardButton(
+                text=f"📄 {f}",
+                callback_data=f"{SF_PATH_FILE_PREFIX}{token_for(target / f)}",
+            )
+            for f in shown
+        ]
+    )
+    rows.append(_nav_row(target))
+
+    body = f"{t('file_browser.path_dir')}\n\n`{target}`"
+    if files:
+        body = f"{body}\n\n{t('file_browser.path_pick')}"
+        if len(files) > len(shown):
+            body = f"{body}\n\n{t('file_browser.file_list_truncated', count=len(shown))}"
+    return BrowserAction(
+        text=fmt(t("file_browser.header"), SEP, body),
+        keyboard=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+def _path_file_action(
+    paths: DuctorPaths, project_roots: Mapping[str, str], target: Path
+) -> BrowserAction:
+    """Show one file's absolute path, with a way back to the folder's list."""
+    if not target.exists():
+        return _root_action(paths, project_roots)
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=t("file_browser.btn_back"),
+                callback_data=f"{SF_PATH_PREFIX}{token_for(target.parent)}",
+            )
+        ]
+    ]
+    body = f"{t('file_browser.path_file')}\n\n`{target}`"
+    return BrowserAction(
+        text=fmt(t("file_browser.header"), SEP, body),
+        keyboard=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
 
 
 def _nav_row(target: Path) -> list[InlineKeyboardButton]:
@@ -996,6 +1061,8 @@ _ACTIONS = {
     SF_PUSH_CONFIRM_PREFIX: _push_confirmed_action,
     SF_DOWNLOAD_PREFIX: _download_menu_action,
     SF_FILE_LIST_PREFIX: _file_list_action,
+    SF_PATH_PREFIX: _path_action,
+    SF_PATH_FILE_PREFIX: _path_file_action,
 }
 
 
@@ -1160,6 +1227,10 @@ def _build_dir_view(
             InlineKeyboardButton(
                 text=t("edits.btn_manage"),
                 callback_data=f"{SF_MANAGE_PREFIX}{token_for(target)}",
+            ),
+            InlineKeyboardButton(
+                text=t("file_browser.btn_path"),
+                callback_data=f"{SF_PATH_PREFIX}{token_for(target)}",
             ),
         ]
     )

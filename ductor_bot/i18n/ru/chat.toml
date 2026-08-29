@@ -474,6 +474,10 @@ btn_bind = "📌 Выбрать папку"
 btn_bind_confirm = "📌 Переназначить"
 bind_confirm = "Этот разговор уже работает в `{current}`. Перенести в `{new}`?"
 bound = "📌 Этот разговор теперь работает в `{dir}`."
+btn_path = "📋 Путь"
+path_dir = "Путь к папке — нажмите, чтобы скопировать:"
+path_file = "Путь к файлу — нажмите, чтобы скопировать:"
+path_pick = "Или выберите файл, чтобы увидеть его путь:"
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"

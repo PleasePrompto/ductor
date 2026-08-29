@@ -53,6 +53,8 @@ Manage gate — all from a phone, as `/files`. Move and copy mark a source, then
 into wherever you navigate to; a paste **never overwrites**, and a folder cannot be
 pasted inside its own subtree. Both are refusals rather than confirmations, because a
 replace dialog agreed to with a thumb is how a file disappears without anyone noticing.
+A `📋 Path` button shows any file's or folder's absolute path in a tap-to-copy block,
+so a location can be handed to an agent in a prompt without moving the file anywhere.
 
 **A Consult topic that is genuinely disposable.** Created and pinned by the bot,
 scoped to its own directory, wiped on a schedule, and running as its own unix account so

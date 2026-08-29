@@ -474,6 +474,10 @@ btn_bind = "📌 Deze map gebruiken"
 btn_bind_confirm = "📌 Opnieuw koppelen"
 bind_confirm = "Dit gesprek werkt al in `{current}`. Verplaatsen naar `{new}`?"
 bound = "📌 Dit gesprek werkt nu in `{dir}`."
+btn_path = "📋 Pad"
+path_dir = "Mappad — tik om te kopiëren:"
+path_file = "Bestandspad — tik om te kopiëren:"
+path_pick = "Of kies een bestand voor zijn eigen pad:"
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"

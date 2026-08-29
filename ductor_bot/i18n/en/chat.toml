@@ -475,6 +475,10 @@ btn_bind = "📌 Use this folder"
 btn_bind_confirm = "📌 Rebind"
 bind_confirm = "This conversation already works in `{current}`. Move it to `{new}`?"
 bound = "📌 This conversation now works in `{dir}`."
+btn_path = "📋 Path"
+path_dir = "Folder path — tap to copy:"
+path_file = "File path — tap to copy:"
+path_pick = "Or pick a file for its own path:"
 
 [upgrade_handler]
 btn_changelog = "Changelog v{version}"
