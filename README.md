@@ -55,6 +55,9 @@ pasted inside its own subtree. Both are refusals rather than confirmations, beca
 replace dialog agreed to with a thumb is how a file disappears without anyone noticing.
 A `📋 Path` button shows any file's or folder's absolute path in a tap-to-copy block,
 so a location can be handed to an agent in a prompt without moving the file anywhere.
+The old "ask the agent about this folder" button is gone: it spent a model turn listing
+a directory already on screen, and it was the only code path that injected a fabricated
+user message into a real session.
 
 **A Consult topic that is genuinely disposable.** Created and pinned by the bot,
 scoped to its own directory, wiped on a schedule, and running as its own unix account so

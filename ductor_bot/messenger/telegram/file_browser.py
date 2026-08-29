@@ -82,7 +82,6 @@ if TYPE_CHECKING:
 SF_PREFIX = "sf:"
 SF_FILE_PREFIX = "sf!"
 SF_ZIP_PREFIX = "sf@"
-SF_ASK_PREFIX = "sf?"
 SF_PULL_PREFIX = "sf<"
 SF_PUSH_PREFIX = "sf>"
 #: Push is confirmed before it runs: the tap that authorises it should be made
@@ -169,7 +168,6 @@ class BrowserAction:
     keyboard: InlineKeyboardMarkup | None = None
     send_path: Path | None = None
     zip_dir: Path | None = None
-    agent_prompt: str | None = None
     #: True when the edited message becomes the one staging is reported into.
     upload_message: bool = False
     #: True when this message becomes the one a typed name is answered into.
@@ -185,7 +183,6 @@ def is_file_browser_callback(data: str) -> bool:
             SF_PREFIX,
             SF_FILE_PREFIX,
             SF_ZIP_PREFIX,
-            SF_ASK_PREFIX,
             SF_PULL_PREFIX,
             SF_PUSH_PREFIX,
             SF_PUSH_CONFIRM_PREFIX,
@@ -279,7 +276,6 @@ def _parse(data: str) -> tuple[str, str] | None:
         SF_BIND_CONFIRM_PREFIX,
         SF_FILE_PREFIX,
         SF_ZIP_PREFIX,
-        SF_ASK_PREFIX,
         SF_PULL_PREFIX,
         SF_PUSH_PREFIX,
         SF_UPLOAD_PREFIX,
@@ -322,10 +318,6 @@ def _send_file_action(
     text, kb = _build_dir_view(paths, project_roots, target.parent)
     note = t("file_browser.too_large", name=target.name, mb=size // 1048576)
     return BrowserAction(text=f"{text}\n\n{note}", keyboard=kb)
-
-
-def _ask_action(_paths: DuctorPaths, _roots: Mapping[str, str], target: Path) -> BrowserAction:
-    return BrowserAction(agent_prompt=t("file_browser.file_request_prompt", dir=target))
 
 
 def _zip_action(
@@ -1052,7 +1044,6 @@ _EDIT_ACTIONS = {
 
 
 _ACTIONS = {
-    SF_ASK_PREFIX: _ask_action,
     SF_FILE_PREFIX: _send_file_action,
     SF_ZIP_PREFIX: _zip_action,
     SF_PREFIX: _open_action,
@@ -1205,16 +1196,6 @@ def _build_dir_view(
             InlineKeyboardButton(
                 text=t("upload.btn_upload"),
                 callback_data=f"{SF_UPLOAD_PREFIX}{token_for(target)}",
-            ),
-        ]
-    )
-    # "Ask" gets its own row: three long labels on one row squeeze each other
-    # down to a few characters on a phone.
-    rows.append(
-        [
-            InlineKeyboardButton(
-                text=t("file_browser.btn_ask"),
-                callback_data=f"{SF_ASK_PREFIX}{token_for(target)}",
             ),
         ]
     )
