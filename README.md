@@ -48,8 +48,11 @@ General thread can never hold a binding at all: its messages carry no
 fresh conversation in another topic's project folder.
 
 **A file browser over the project roots.** Browse bound directories, pull and push, send
-files up and pull them down, and rename, create or delete behind an explicit Manage
-gate — all from a phone, as `/files`.
+files up and pull them down, and rename, create, delete, move or copy behind an explicit
+Manage gate — all from a phone, as `/files`. Move and copy mark a source, then paste
+into wherever you navigate to; a paste **never overwrites**, and a folder cannot be
+pasted inside its own subtree. Both are refusals rather than confirmations, because a
+replace dialog agreed to with a thumb is how a file disappears without anyone noticing.
 
 **A Consult topic that is genuinely disposable.** Created and pinned by the bot,
 scoped to its own directory, wiped on a schedule, and running as its own unix account so

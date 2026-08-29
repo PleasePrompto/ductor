@@ -32,7 +32,7 @@ from ductor_bot.files.archive import (
     extract_archive,
     inspect_archive,
 )
-from ductor_bot.files.edits import EditStore
+from ductor_bot.files.edits import ClipboardStore, EditStore
 from ductor_bot.files.uploads import UploadSession, UploadStore
 from ductor_bot.i18n import t
 from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
@@ -282,6 +282,7 @@ class TelegramBot:
         self._lock_pool = lock_pool or LockPool()
         self._upload_store: UploadStore | None = None
         self._edit_store = EditStore()
+        self._clipboard = ClipboardStore()
         self._bus = bus or MessageBus(lock_pool=self._lock_pool)
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
@@ -1677,6 +1678,7 @@ class TelegramBot:
                 key=key.storage_key,
                 current_binding=self._orch.bindings.get(key.storage_key) or None,
                 edits=self._edit_store,
+                clipboard=self._clipboard,
             ),
         )
 
