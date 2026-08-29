@@ -16,7 +16,6 @@ import pytest
 from ductor_bot.files import path_tokens
 from ductor_bot.i18n import init
 from ductor_bot.messenger.telegram.file_browser import (
-    SF_ASK_PREFIX,
     SF_FILE_PREFIX,
     SF_PREFIX,
     file_browser_start,
@@ -66,7 +65,7 @@ def _open(paths: DuctorPaths, target: Path):
 
 class TestCallbackMatching:
     def test_matches_own_prefixes(self) -> None:
-        for prefix in (SF_PREFIX, SF_FILE_PREFIX, SF_ASK_PREFIX, "sf@"):
+        for prefix in (SF_PREFIX, SF_FILE_PREFIX, "sf@"):
             assert is_file_browser_callback(f"{prefix}abc")
 
     def test_ignores_other_namespaces(self) -> None:
@@ -171,20 +170,3 @@ class TestPathSafety:
 # -- agent handoff -------------------------------------------------------------
 
 
-class TestFileRequest:
-    @pytest.mark.asyncio
-    async def test_ask_returns_a_prompt_naming_the_directory(self, paths: DuctorPaths) -> None:
-        target = paths.ductor_home / "workspace"
-        action = await handle_file_browser_callback(
-            paths, {}, f"{SF_ASK_PREFIX}{path_tokens.token_for(target)}"
-        )
-        assert action.agent_prompt is not None
-        assert str(target.resolve()) in action.agent_prompt
-
-    @pytest.mark.asyncio
-    async def test_ask_at_root_uses_the_home_directory(self, paths: DuctorPaths) -> None:
-        action = await handle_file_browser_callback(
-            paths, {}, f"{SF_ASK_PREFIX}{path_tokens.token_for(paths.ductor_home)}"
-        )
-        assert action.agent_prompt is not None
-        assert str(paths.ductor_home.resolve()) in action.agent_prompt

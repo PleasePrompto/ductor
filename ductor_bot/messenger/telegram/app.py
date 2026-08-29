@@ -1713,26 +1713,7 @@ class TelegramBot:
             await self._send_browser_zip(chat_id, action.zip_dir, thread_id=thread_id)
             return
 
-        text, keyboard, prompt = action.text, action.keyboard, action.agent_prompt
-
-        if prompt:
-            # File request: remove the keyboard and send prompt to orchestrator
-            with contextlib.suppress(TelegramBadRequest):
-                await self._bot.edit_message_reply_markup(
-                    chat_id=chat_id, message_id=message_id, reply_markup=None
-                )
-            async with self._sequential.get_lock(key.lock_key):
-                if self._config.streaming.enabled:
-                    fake_msg = await self._bot.send_message(
-                        chat_id,
-                        prompt,
-                        parse_mode=None,
-                        message_thread_id=thread_id,
-                    )
-                    await self._handle_streaming(fake_msg, key, prompt, thread_id=thread_id)
-                else:
-                    await self._handle_non_streaming(None, key, prompt, thread_id=thread_id)
-            return
+        text, keyboard = action.text, action.keyboard
 
         # Directory navigation: edit message in-place
         with contextlib.suppress(TelegramBadRequest):
