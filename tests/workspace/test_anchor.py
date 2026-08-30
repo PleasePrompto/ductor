@@ -76,14 +76,12 @@ def test_the_actual_shipped_prompts_are_anchored() -> None:
         _DEFAULT_COMPACT_PROMPT,
         _DEFAULT_FLUSH_PROMPT,
         _DEFAULT_HEARTBEAT_PROMPT,
-        _DEFAULT_MEMORY_REFLECTION_PROMPT,
     )
 
     shipped = (
         _DEFAULT_HEARTBEAT_PROMPT,
         _DEFAULT_FLUSH_PROMPT,
         _DEFAULT_COMPACT_PROMPT,
-        _DEFAULT_MEMORY_REFLECTION_PROMPT,
     )
     assert any("memory_system/" in p for p in shipped), "test is stale; the prompts moved"
 
@@ -108,3 +106,15 @@ def test_media_prompts_are_anchored() -> None:
 
     out = anchor_workspace_paths("Use tools/media_tools/transcribe_audio.py --file x", WS)
     assert out.startswith(f"Use {WS}/tools/media_tools/")
+
+
+def test_the_project_handoff_path_is_not_anchored_to_the_workspace() -> None:
+    """handoffs/ belongs to the conversation's project folder, not the shared
+    workspace: anchoring it would put project knowledge in ductor's home and
+    quietly re-create the mixing this split exists to end."""
+    from ductor_bot.config import _DEFAULT_FLUSH_PROMPT
+
+    out = anchor_workspace_paths(_DEFAULT_FLUSH_PROMPT, WS)
+
+    assert "handoffs/knowledge.md" in out
+    assert f"{WS}/handoffs/" not in out

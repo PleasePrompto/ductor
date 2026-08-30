@@ -65,23 +65,28 @@ _DEFAULT_HEARTBEAT_PROMPT = (
 
 _DEFAULT_HEARTBEAT_ACK = "HEARTBEAT_OK"
 
+# Facts are routed by scope, never dumped in one place. Without the routing
+# question this prompt sent everything to the global file, which is how a
+# WordPress post id ended up being injected into every unrelated conversation.
 _DEFAULT_FLUSH_PROMPT = (
     "## PRE-COMPACTION MEMORY FLUSH\n"
-    "The conversation context is about to be compacted. Before that happens: "
-    "review the recent conversation and APPEND any durable facts, decisions, "
-    "preferences, or learnings to memory_system/MAINMEMORY.md that are not "
-    "already captured there. Do NOT overwrite existing entries. If there is "
-    "nothing new worth saving, reply exactly: FLUSH_NOOP"
+    "The conversation context is about to be compacted. Before that happens, "
+    "review the recent conversation and record anything durable. For each fact, "
+    "ask FIRST which scope it belongs to:\n"
+    "- true only of the task in hand -> it belongs in this conversation's "
+    "handoff, not here;\n"
+    "- true of this project, beyond the current task (a quirk of the codebase, "
+    "an id, a workaround) -> APPEND it to handoffs/knowledge.md in the working "
+    "directory;\n"
+    "- true of the user or of how they want to be worked with, or something "
+    "they asked to be remembered -> APPEND it to memory_system/MAINMEMORY.md.\n"
+    "Do NOT overwrite existing entries anywhere. Project detail must not reach "
+    "MAINMEMORY.md: that file is read at the start of every conversation in "
+    "every topic, so anything project-specific there is a cost paid forever by "
+    "work it has nothing to do with. If there is nothing new worth saving, "
+    "reply exactly: FLUSH_NOOP"
 )
 
-_DEFAULT_MEMORY_REFLECTION_PROMPT = (
-    "## MEMORY REFLECTION\n"
-    "Review the last several messages in this conversation.\n"
-    "Check: were there any new decisions, corrections, error solutions, user "
-    "preferences, or important facts that you did NOT yet write to memory?\n"
-    "If yes -- update memory_system/MAINMEMORY.md silently.\n"
-    "If everything is already recorded -- do nothing."
-)
 
 _DEFAULT_COMPACT_PROMPT = (
     "## MEMORY COMPACTION\n"
@@ -160,15 +165,6 @@ class MemoryFlushConfig(BaseModel):
     flush_prompt: str = _DEFAULT_FLUSH_PROMPT
     # ``0`` disables the dedup window (flush fires on every boundary).
     dedup_seconds: int = Field(default=300, ge=0)
-
-
-class MemoryReflectionConfig(BaseModel):
-    """Settings for the periodic memory reflection hook (#65)."""
-
-    enabled: bool = False
-    # Must be >= 1 to avoid ``ZeroDivisionError`` in modulo check (hooks.py).
-    every_n_messages: int = Field(default=10, ge=1)
-    prompt: str = _DEFAULT_MEMORY_REFLECTION_PROMPT
 
 
 class MemoryCompactionConfig(BaseModel):
@@ -468,7 +464,6 @@ class AgentConfig(BaseModel):
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     cleanup: CleanupConfig = Field(default_factory=CleanupConfig)
     memory_flush: MemoryFlushConfig = Field(default_factory=MemoryFlushConfig)
-    memory_reflection: MemoryReflectionConfig = Field(default_factory=MemoryReflectionConfig)
     memory_compaction: MemoryCompactionConfig = Field(default_factory=MemoryCompactionConfig)
     webhooks: WebhookConfig = Field(default_factory=WebhookConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)

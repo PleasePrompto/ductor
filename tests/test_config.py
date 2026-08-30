@@ -12,7 +12,6 @@ from ductor_bot.config import (
     DockerConfig,
     MemoryCompactionConfig,
     MemoryFlushConfig,
-    MemoryReflectionConfig,
     ModelRegistry,
     StreamingConfig,
     deep_merge_config,
@@ -239,18 +238,6 @@ def test_transports_default_is_telegram() -> None:
 
 
 # -- Memory* config bounds (MED #4) --
-
-
-def test_memory_reflection_rejects_zero_every_n_messages() -> None:
-    """``every_n_messages=0`` would trigger ZeroDivisionError in hooks.py modulo check."""
-    with pytest.raises(ValidationError, match="every_n_messages"):
-        MemoryReflectionConfig(every_n_messages=0)
-
-
-def test_memory_reflection_rejects_negative_every_n_messages() -> None:
-    """Negative cadence is nonsense."""
-    with pytest.raises(ValidationError, match="every_n_messages"):
-        MemoryReflectionConfig(every_n_messages=-5)
 
 
 def test_memory_flush_rejects_negative_dedup_seconds() -> None:

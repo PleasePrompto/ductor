@@ -65,7 +65,6 @@ from ductor_bot.orchestrator.hooks import (
     DELEGATION_REMINDER,
     MAINMEMORY_REMINDER,
     MessageHookRegistry,
-    build_memory_reflection_hook,
 )
 from ductor_bot.orchestrator.memory_flush import MemoryFlusher
 from ductor_bot.orchestrator.observers import ObserverManager
@@ -231,8 +230,6 @@ class Orchestrator:
         self._hook_registry.register(MAINMEMORY_REMINDER)
         self._hook_registry.register(DELEGATION_BRIEF)
         self._hook_registry.register(DELEGATION_REMINDER)
-        if config.memory_reflection.enabled:
-            self._hook_registry.register(build_memory_reflection_hook(config.memory_reflection))
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
         self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
         self._command_registry = CommandRegistry()
