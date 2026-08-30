@@ -80,7 +80,21 @@ async def cmd_compact(orch: Orchestrator, key: SessionKey, _text: str) -> Orches
     has changed, only how much of it the model can see.
     """
     logger.info("Compact requested")
+    session = await orch._sessions.get_active(key)
+    if session is None or not session.session_id:
+        # Nothing to carry and nothing to reclaim. Resetting anyway would look
+        # like it worked while quietly doing the opposite of the point.
+        return OrchestratorResult(text=t("handoff.nothing_to_compact"))
+
+    folder = orch.bindings.resolve(key.storage_key)
     await _consolidate_handoff(orch, key)
+
+    if not orch.handoffs.read(key, folder).strip():
+        # Compacting without a handoff is just losing the conversation. Refuse,
+        # and leave the session exactly as it was.
+        logger.warning("Compact aborted chat=%d: consolidation produced no handoff", key.chat_id)
+        return OrchestratorResult(text=t("handoff.compact_no_handoff"))
+
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
     await orch.reset_active_provider_session(key)
     orch.reinject.mark(key)

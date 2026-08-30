@@ -652,6 +652,8 @@ item_consult = "🧭 Consult"
 item_help = "❓ Aide"
 
 [handoff]
+nothing_to_compact = "Rien à compacter — cette conversation n'a pas encore de session active. Envoyez d'abord un message."
+compact_no_handoff = "⚠️ Compactage arrêté : aucun handoff n'a été écrit, il n'y aurait donc rien à emporter. La session est inchangée."
 compacting = "🗜 Compactage — consolidation du handoff, puis nouvelle session. Cela prend un instant."
 clearing = "🧹 Nettoyage — consolidation et archivage du handoff, puis redémarrage. Cela prend un instant."
 ready_now = "✅ L'espace de travail est prêt. Renvoyez votre message."

@@ -653,6 +653,8 @@ item_consult = "🧭 Consult"
 item_help = "❓ Help"
 
 [handoff]
+nothing_to_compact = "Nothing to compact — this conversation has no active session yet. Send a message first."
+compact_no_handoff = "⚠️ Compact stopped: no handoff was written, so there would be nothing to carry into the new session. The session is unchanged."
 compacting = "🗜 Compacting — consolidating the handoff, then starting a fresh session. This takes a moment."
 clearing = "🧹 Clearing — consolidating and archiving the handoff, then starting fresh. This takes a moment."
 ready_now = "✅ The workspace is ready now. Send your message again."

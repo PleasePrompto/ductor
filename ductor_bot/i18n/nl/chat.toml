@@ -652,6 +652,8 @@ item_consult = "🧭 Consult"
 item_help = "❓ Help"
 
 [handoff]
+nothing_to_compact = "Niets te compacteren — dit gesprek heeft nog geen actieve sessie. Stuur eerst een bericht."
+compact_no_handoff = "⚠️ Compacteren gestopt: er is geen handoff geschreven, dus er valt niets mee te nemen. De sessie is ongewijzigd."
 compacting = "🗜 Compacteren — de handoff wordt samengevoegd en daarna start een nieuwe sessie. Dit duurt even."
 clearing = "🧹 Wissen — de handoff wordt samengevoegd en gearchiveerd, daarna opnieuw beginnen. Dit duurt even."
 ready_now = "✅ De werkruimte is nu klaar. Stuur je bericht opnieuw."

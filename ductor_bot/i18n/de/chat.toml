@@ -652,6 +652,8 @@ item_consult = "🧭 Consult"
 item_help = "❓ Hilfe"
 
 [handoff]
+nothing_to_compact = "Nichts zu verdichten — diese Unterhaltung hat noch keine aktive Sitzung. Sende zuerst eine Nachricht."
+compact_no_handoff = "⚠️ Verdichten gestoppt: Es wurde kein Handoff geschrieben, es gäbe also nichts mitzunehmen. Die Sitzung bleibt unverändert."
 compacting = "🗜 Verdichte — der Handoff wird zusammengefasst, dann startet eine frische Sitzung. Das dauert einen Moment."
 clearing = "🧹 Leere — der Handoff wird zusammengefasst und archiviert, dann geht es frisch los. Das dauert einen Moment."
 ready_now = "✅ Der Arbeitsbereich ist jetzt bereit. Sende deine Nachricht erneut."

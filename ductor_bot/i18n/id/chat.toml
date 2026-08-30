@@ -651,6 +651,8 @@ item_consult = "🧭 Consult"
 item_help = "❓ Bantuan"
 
 [handoff]
+nothing_to_compact = "Tidak ada yang dipadatkan — percakapan ini belum punya sesi aktif. Kirim pesan dulu."
+compact_no_handoff = "⚠️ Pemadatan dihentikan: tidak ada handoff yang ditulis, jadi tidak ada yang bisa dibawa. Sesi tidak berubah."
 compacting = "🗜 Memadatkan — mengonsolidasikan handoff, lalu memulai sesi baru. Perlu sebentar."
 clearing = "🧹 Membersihkan — mengonsolidasikan dan mengarsipkan handoff, lalu mulai baru. Perlu sebentar."
 ready_now = "✅ Ruang kerja sudah siap. Kirim ulang pesanmu."
