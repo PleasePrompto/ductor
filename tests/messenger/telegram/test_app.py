@@ -80,6 +80,13 @@ def _make_orchestrator(
     paths.ductor_home = Path("/tmp/test-ductor")
     paths.telegram_files_dir = Path("/tmp/test-workspace/telegram_files")
     orch.paths = paths
+
+    # The readiness gate runs before the agent and needs a real answer from
+    # both of these: an unbound conversation (None, like General) writing into
+    # a directory that actually exists. A MagicMock here reads as "some folder
+    # that is not writable" and the gate correctly refuses the turn.
+    orch.bindings.resolve.return_value = None
+    paths.ductor_home.mkdir(parents=True, exist_ok=True)
     return orch
 
 

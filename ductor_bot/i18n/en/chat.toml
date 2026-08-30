@@ -651,6 +651,7 @@ item_consult = "🧭 Consult"
 item_help = "❓ Help"
 
 [handoff]
+ready_now = "✅ The workspace is ready now. Send your message again."
 folder_missing = "⚠️ Handoff cannot be written: `{detail}` does not exist. Nothing was sent to the agent."
 not_writable = "⚠️ Handoff cannot be written: `{detail}` is not writable. Nothing was sent to the agent."
 exclude_unwritable = "⚠️ Handoff cannot be protected from git: `{detail}`. Fix it and tap Retry — nothing was sent to the agent."

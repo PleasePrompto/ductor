@@ -650,6 +650,7 @@ item_consult = "🧭 Consult"
 item_help = "❓ Ajuda"
 
 [handoff]
+ready_now = "✅ O espaço de trabalho já está pronto. Envie a sua mensagem novamente."
 folder_missing = "⚠️ O handoff não pode ser escrito: `{detail}` não existe. Nada foi enviado ao agente."
 not_writable = "⚠️ O handoff não pode ser escrito: `{detail}` não permite escrita. Nada foi enviado ao agente."
 exclude_unwritable = "⚠️ O handoff não pode ser protegido do git: `{detail}`. Corrija e toque em Repetir — nada foi enviado."

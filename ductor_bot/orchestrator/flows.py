@@ -16,6 +16,7 @@ from ductor_bot.cli.timeout_controller import TimeoutConfig as TCConfig
 from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import AgentRequest, AgentResponse
 from ductor_bot.config import NULLISH_TEXT_VALUES, resolve_timeout
+from ductor_bot.handoff.prompts import DELTA_SUFFIX, injection_block
 from ductor_bot.i18n import t
 from ductor_bot.infra.inflight import InflightTurn
 from ductor_bot.log_context import set_log_context
@@ -145,6 +146,16 @@ async def _prepare_normal(
     # distrust, and it said so, citing a system reminder that contradicted it.
     # The appended system prompt is recomputed every turn, so it cannot go
     # stale the way a line written into turn one does.
+    # The handoff is what lets a conversation survive a compaction or a fresh
+    # session. It goes into the system prompt for the same reason the persona
+    # line does: a claim arriving as user text is correctly distrusted.
+    folder = orch.bindings.resolve(key.storage_key)
+    if is_new or orch.reinject.take(key):
+        handoff = orch.handoffs.read(key, folder)
+        if handoff.strip():
+            block = injection_block(handoff)
+            append_prompt = f"{append_prompt}\n\n{block}" if append_prompt else block
+
     persona = orch._personas.get(key.storage_key) or ""
     if persona:
         switch = orch._personas.take_switch(key.storage_key)
@@ -165,6 +176,7 @@ async def _prepare_normal(
         workspace=str(orch.paths.workspace),
     )
     prompt = orch._hook_registry.apply(text, hook_ctx)
+    prompt = f"{prompt}\n{DELTA_SUFFIX}"
 
     timeout_secs = resolve_timeout(orch._config, "normal")
     request = AgentRequest(

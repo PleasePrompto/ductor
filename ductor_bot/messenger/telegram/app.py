@@ -17,7 +17,14 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
-from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParameters
+from aiogram.types import (
+    BotCommand,
+    ChatMemberUpdated,
+    FSInputFile,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyParameters,
+)
 
 from ductor_bot.bus.bus import MessageBus
 from ductor_bot.bus.lock_pool import LockPool
@@ -34,6 +41,7 @@ from ductor_bot.files.archive import (
 )
 from ductor_bot.files.edits import ClipboardStore, EditStore
 from ductor_bot.files.uploads import UploadSession, UploadStore
+from ductor_bot.handoff.readiness import check_readiness
 from ductor_bot.i18n import t
 from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
 from ductor_bot.infra.updater import UpdateObserver
@@ -121,7 +129,7 @@ from ductor_bot.text.response_format import SEP, fmt
 from ductor_bot.workspace.paths import DuctorPaths
 
 if TYPE_CHECKING:
-    from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+    from aiogram.types import CallbackQuery, Message
 
     from ductor_bot.orchestrator.core import Orchestrator
 
@@ -235,6 +243,20 @@ class TelegramNotificationService:
                 # not found") must not abort the notification fan-out — or, at
                 # startup, the whole boot.
                 logger.warning("Notification to user %d failed, skipping", uid)
+
+
+#: Callback data for the readiness gate's Retry button. Short on purpose:
+#: Telegram caps callback data at 64 bytes.
+HANDOFF_RETRY = "hor"
+
+
+def _retry_keyboard() -> InlineKeyboardMarkup:
+    """A single Retry button for the readiness gate."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=t("handoff.btn_retry"), callback_data=HANDOFF_RETRY)]
+        ]
+    )
 
 
 class TelegramBot:
@@ -1519,6 +1541,10 @@ class TelegramBot:
             await self._handle_upgrade_callback(chat_id, message_id, data, thread_id=thread_id)
             return True
 
+        if data == HANDOFF_RETRY:
+            await self._handle_handoff_retry(key, message_id)
+            return True
+
         from ductor_bot.orchestrator.selectors.session_selector import is_session_selector_callback
         from ductor_bot.orchestrator.selectors.task_selector import is_task_selector_callback
 
@@ -1761,6 +1787,12 @@ class TelegramBot:
         if await self._ask_folder_if_needed(key, text, thread_id=thread_id):
             return
 
+        # Before the persona gate and before any token is spent: a workspace
+        # that cannot hold a protected handoff should stop the turn, not divert
+        # the file somewhere nobody is looking.
+        if await self._block_if_not_ready(key, thread_id=thread_id):
+            return
+
         if await self._ask_persona_if_needed(key, text, thread_id=thread_id):
             return
 
@@ -1921,6 +1953,48 @@ class TelegramBot:
                 await self._handle_streaming(sent, key, held, thread_id=thread_id)
             else:
                 await self._handle_non_streaming(None, key, held, thread_id=thread_id)
+
+    async def _block_if_not_ready(
+        self, key: SessionKey, *, thread_id: int | None = None
+    ) -> bool:
+        """Stop the turn when a protected handoff cannot be written here.
+
+        Returns True when the message was refused, in which case the caller must
+        not process it. Nothing is held: a queued message replayed later, after
+        the user has fixed something and moved on, is its own surprise.
+        """
+        folder = self._orch.bindings.resolve(key.storage_key)
+        result = check_readiness(folder, self._orch.paths)
+        if result.ok:
+            return False
+
+        logger.warning("Handoff not ready: %s (%s)", result.key, result.detail)
+        await self._bot.send_message(
+            key.chat_id,
+            markdown_to_telegram_html(t(result.key, detail=result.detail)),
+            reply_markup=_retry_keyboard(),
+            message_thread_id=thread_id,
+            parse_mode=ParseMode.HTML,
+        )
+        return True
+
+    async def _handle_handoff_retry(self, key: SessionKey, message_id: int) -> None:
+        """Re-run the readiness check and say what it found now."""
+        folder = self._orch.bindings.resolve(key.storage_key)
+        result = check_readiness(folder, self._orch.paths)
+        text = (
+            t("handoff.ready_now")
+            if result.ok
+            else t(result.key, detail=result.detail)
+        )
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                chat_id=key.chat_id,
+                message_id=message_id,
+                text=markdown_to_telegram_html(text),
+                parse_mode=ParseMode.HTML,
+                reply_markup=None if result.ok else _retry_keyboard(),
+            )
 
     async def _ask_persona_if_needed(
         self, key: SessionKey, text: str, *, thread_id: int | None = None

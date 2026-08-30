@@ -28,6 +28,8 @@ from ductor_bot.errors import (
     WebhookError,
     WorkspaceError,
 )
+from ductor_bot.handoff.reinject import ReinjectFlags
+from ductor_bot.handoff.store import HandoffStore
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
@@ -183,6 +185,8 @@ class Orchestrator:
         )
         self._personas = PersonaStore(paths.ductor_home / "personas.json")
         self._bindings = BindingStore(paths.ductor_home / "topic_bindings.json")
+        self._handoffs = HandoffStore(paths)
+        self._reinject = ReinjectFlags()
         self._cli_service.set_working_dir_resolver(self._resolve_request_working_dir)
         self._cli_service.set_persona_resolver(self._resolve_request_persona)
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
@@ -283,6 +287,16 @@ class Orchestrator:
     def bindings(self) -> BindingStore:
         """Per-conversation folder bindings."""
         return self._bindings
+
+    @property
+    def handoffs(self) -> HandoffStore:
+        """Per-conversation handoff files."""
+        return self._handoffs
+
+    @property
+    def reinject(self) -> ReinjectFlags:
+        """Conversations owed a handoff re-injection after a compaction."""
+        return self._reinject
 
     @property
     def paths(self) -> DuctorPaths:

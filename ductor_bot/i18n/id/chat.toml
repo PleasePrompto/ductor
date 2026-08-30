@@ -649,6 +649,7 @@ item_consult = "🧭 Consult"
 item_help = "❓ Bantuan"
 
 [handoff]
+ready_now = "✅ Ruang kerja sudah siap. Kirim ulang pesanmu."
 folder_missing = "⚠️ Handoff tidak bisa ditulis: `{detail}` tidak ada. Tidak ada yang dikirim ke agen."
 not_writable = "⚠️ Handoff tidak bisa ditulis: `{detail}` tidak dapat ditulisi. Tidak ada yang dikirim ke agen."
 exclude_unwritable = "⚠️ Handoff tidak bisa dilindungi dari git: `{detail}`. Perbaiki lalu ketuk Coba lagi — tidak ada yang dikirim."
