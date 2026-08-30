@@ -250,6 +250,14 @@ class TelegramNotificationService:
 #: Telegram caps callback data at 64 bytes.
 HANDOFF_RETRY = "hor"
 
+#: Commands that consolidate the handoff first, which is a full model turn.
+#: Without an acknowledgement the screen does not change and the button gets
+#: pressed repeatedly, queueing several of them.
+_SLOW_COMMANDS = {
+    "/compact": "handoff.compacting",
+    "/clear": "handoff.clearing",
+}
+
 
 def _retry_keyboard() -> InlineKeyboardMarkup:
     """A single Retry button for the readiness gate."""
@@ -1009,6 +1017,18 @@ class TelegramBot:
         if command in transport:
             await transport[command](key, thread_id)
             return
+
+        # Commands that run a model turn before answering leave the user
+        # staring at an unchanged screen for a minute, so they press the button
+        # again — and again. Say something first.
+        if command in _SLOW_COMMANDS:
+            with contextlib.suppress(TelegramAPIError):
+                await self._bot.send_message(
+                    key.chat_id,
+                    markdown_to_telegram_html(t(_SLOW_COMMANDS[command])),
+                    message_thread_id=thread_id,
+                    parse_mode=ParseMode.HTML,
+                )
 
         # handle_message routes a leading slash through the same registry the
         # typed command uses, so a menu item cannot drift from its command.

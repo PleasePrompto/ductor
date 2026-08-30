@@ -652,6 +652,8 @@ item_consult = "🧭 Consult"
 item_help = "❓ Help"
 
 [handoff]
+compacting = "🗜 Compacteren — de handoff wordt samengevoegd en daarna start een nieuwe sessie. Dit duurt even."
+clearing = "🧹 Wissen — de handoff wordt samengevoegd en gearchiveerd, daarna opnieuw beginnen. Dit duurt even."
 ready_now = "✅ De werkruimte is nu klaar. Stuur je bericht opnieuw."
 folder_missing = "⚠️ Handoff kan niet worden geschreven: `{detail}` bestaat niet. Er is niets naar de agent gestuurd."
 not_writable = "⚠️ Handoff kan niet worden geschreven: `{detail}` is niet beschrijfbaar. Er is niets naar de agent gestuurd."

@@ -27,11 +27,15 @@ from typing import TYPE_CHECKING
 
 from ductor_bot.cli.types import AgentRequest
 from ductor_bot.errors import CLIError
-from ductor_bot.handoff.prompts import CONSOLIDATION_PROMPT
+from ductor_bot.handoff.paths import handoff_file
+from ductor_bot.handoff.prompts import consolidation_prompt
 from ductor_bot.handoff.reinject import ReinjectFlags
 from ductor_bot.workspace.loader import read_mainmemory
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from ductor_bot.bus.lock_pool import LockPool
     from ductor_bot.cli.service import CLIService
     from ductor_bot.config import MemoryCompactionConfig, MemoryFlushConfig
@@ -60,8 +64,18 @@ class MemoryFlusher:
         self._paths = paths
         self._lock_pool = lock_pool
         self._reinject: ReinjectFlags | None = None
+        self._folder_resolver: Callable[[SessionKey], Path | None] | None = None
         self._boundary_seen: set[SessionKey] = set()
         self._last_flushed: dict[SessionKey, float] = {}
+
+    def set_folder_resolver(self, resolver: Callable[[SessionKey], Path | None]) -> None:
+        """Attach the binding lookup, so the flush turn can name the handoff."""
+        self._folder_resolver = resolver
+
+    def _consolidation_for(self, key: SessionKey) -> str:
+        """The consolidation instruction, naming this conversation's handoff."""
+        folder = self._folder_resolver(key) if self._folder_resolver else None
+        return consolidation_prompt(handoff_file(key, folder, self._paths))
 
     def set_reinject(self, reinject: ReinjectFlags) -> None:
         """Attach the handoff re-injection flags (late wiring, like the lock pool)."""
@@ -127,7 +141,7 @@ class MemoryFlusher:
             return
 
         request = AgentRequest(
-            prompt=f"{self._config.flush_prompt}\n{CONSOLIDATION_PROMPT}",
+            prompt=f"{self._config.flush_prompt}\n{self._consolidation_for(key)}",
             chat_id=key.chat_id,
             topic_id=key.topic_id,
             transport=key.transport,

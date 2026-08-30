@@ -11,7 +11,8 @@ from ductor_bot.cli.auth import check_all_auth
 from ductor_bot.cli.claude_accounts import active_claude_account_dir
 from ductor_bot.cli.types import AgentRequest
 from ductor_bot.errors import CLIError
-from ductor_bot.handoff.prompts import CONSOLIDATION_PROMPT
+from ductor_bot.handoff.paths import handoff_file
+from ductor_bot.handoff.prompts import consolidation_prompt
 from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
@@ -55,8 +56,9 @@ async def _consolidate_handoff(orch: Orchestrator, key: SessionKey) -> None:
     session = await orch._sessions.get_active(key)
     if session is None or not session.session_id:
         return
+    folder = orch.bindings.resolve(key.storage_key)
     request = AgentRequest(
-        prompt=CONSOLIDATION_PROMPT,
+        prompt=consolidation_prompt(handoff_file(key, folder, orch.paths)),
         chat_id=key.chat_id,
         topic_id=key.topic_id,
         transport=key.transport,

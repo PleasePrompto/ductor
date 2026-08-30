@@ -16,7 +16,8 @@ from ductor_bot.cli.timeout_controller import TimeoutConfig as TCConfig
 from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import AgentRequest, AgentResponse
 from ductor_bot.config import NULLISH_TEXT_VALUES, resolve_timeout
-from ductor_bot.handoff.prompts import DELTA_SUFFIX, injection_block
+from ductor_bot.handoff.paths import handoff_file
+from ductor_bot.handoff.prompts import delta_suffix, injection_block
 from ductor_bot.i18n import t
 from ductor_bot.infra.inflight import InflightTurn
 from ductor_bot.log_context import set_log_context
@@ -176,7 +177,7 @@ async def _prepare_normal(
         workspace=str(orch.paths.workspace),
     )
     prompt = orch._hook_registry.apply(text, hook_ctx)
-    prompt = f"{prompt}\n{DELTA_SUFFIX}"
+    prompt = f"{prompt}\n{delta_suffix(handoff_file(key, orch.bindings.resolve(key.storage_key), orch.paths))}"
 
     timeout_secs = resolve_timeout(orch._config, "normal")
     request = AgentRequest(

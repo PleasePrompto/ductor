@@ -226,6 +226,9 @@ class Orchestrator:
         )
         if self._memory_flusher is not None:
             self._memory_flusher.set_reinject(self._reinject)
+            self._memory_flusher.set_folder_resolver(
+                lambda key: self._bindings.resolve(key.storage_key)
+            )
         self._hook_registry = MessageHookRegistry()
         self._hook_registry.register(MAINMEMORY_REMINDER)
         self._hook_registry.register(DELEGATION_BRIEF)

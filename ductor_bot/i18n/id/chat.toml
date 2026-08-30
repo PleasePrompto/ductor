@@ -651,6 +651,8 @@ item_consult = "🧭 Consult"
 item_help = "❓ Bantuan"
 
 [handoff]
+compacting = "🗜 Memadatkan — mengonsolidasikan handoff, lalu memulai sesi baru. Perlu sebentar."
+clearing = "🧹 Membersihkan — mengonsolidasikan dan mengarsipkan handoff, lalu mulai baru. Perlu sebentar."
 ready_now = "✅ Ruang kerja sudah siap. Kirim ulang pesanmu."
 folder_missing = "⚠️ Handoff tidak bisa ditulis: `{detail}` tidak ada. Tidak ada yang dikirim ke agen."
 not_writable = "⚠️ Handoff tidak bisa ditulis: `{detail}` tidak dapat ditulisi. Tidak ada yang dikirim ke agen."
