@@ -16,8 +16,9 @@ def get_bot_commands() -> list[tuple[str, str]]:
     """Return bot commands with translated descriptions."""
     return [
         # Daily
-        ("new", t_cmd("bot.new")),
-        ("reset", t_cmd("bot.reset")),
+        ("clear", t_cmd("bot.clear")),
+        ("compact", t_cmd("bot.compact")),
+        ("handoff", t_cmd("bot.handoff")),
         ("stop", t_cmd("bot.stop")),
         ("interrupt", t_cmd("bot.interrupt")),
         ("model", t_cmd("bot.model")),
@@ -61,7 +62,9 @@ MENU_DUPLICATES = frozenset(
         "model",
         "account",
         "skills",
-        "new",
+        "compact",
+        "clear",
+        "handoff",
         "status",
         "consult",
     }

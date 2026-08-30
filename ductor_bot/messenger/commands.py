@@ -14,7 +14,9 @@ DIRECT_COMMANDS: frozenset[str] = frozenset(
         "interrupt",
         "stop_all",
         "restart",
-        "new",
+        "clear",
+        "compact",
+        "handoff",
         "help",
         "start",
         "info",
@@ -41,9 +43,8 @@ ORCHESTRATOR_COMMANDS: frozenset[str] = frozenset(
         "cron",
         "diagnose",
         "upgrade",
-        "sessions",
+        "named",
         "tasks",
-        "reset",
     }
 )
 

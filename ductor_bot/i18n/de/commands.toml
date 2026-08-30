@@ -1,8 +1,9 @@
 # Deutsche Bot-Command-Beschreibungen (≤22 Zeichen für Telegram).
 
 [bot]
-new = "Neuer Chat"
-reset = "Chat zurücksetzen"
+clear = "Leeren und neu starten"
+compact = "Gleiche Arbeit, leerer Kontext"
+handoff = "Handoff dieser Unterhaltung"
 stop = "Aktuelles + Wartende stoppen"
 interrupt = "Unterbrechen, Queue behalten"
 model = "Modell anzeigen/wechseln"

@@ -9,6 +9,9 @@ from typing import TYPE_CHECKING
 
 from ductor_bot.cli.auth import check_all_auth
 from ductor_bot.cli.claude_accounts import active_claude_account_dir
+from ductor_bot.cli.types import AgentRequest
+from ductor_bot.errors import CLIError
+from ductor_bot.handoff.prompts import CONSOLIDATION_PROMPT
 from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
@@ -29,7 +32,7 @@ from ductor_bot.orchestrator.selectors.persona_selector import persona_selector
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
 from ductor_bot.orchestrator.selectors.skills_selector import skill_detail, skills_root
 from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
-from ductor_bot.text.response_format import SEP, fmt, new_session_text
+from ductor_bot.text.response_format import SEP, fmt
 from ductor_bot.workspace.loader import read_mainmemory
 
 if TYPE_CHECKING:
@@ -42,22 +45,76 @@ logger = logging.getLogger(__name__)
 # -- Command wrappers (registered by Orchestrator._register_commands) --
 
 
-async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /new: kill processes and reset only active provider session."""
-    logger.info("Reset requested")
-    orch.personas.clear(key.storage_key)
-    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
-    provider = await orch.reset_active_provider_session(key)
-    return OrchestratorResult(text=new_session_text(provider))
+async def _consolidate_handoff(orch: Orchestrator, key: SessionKey) -> None:
+    """Run one silent turn asking the model to write the handoff up properly.
+
+    Best effort by design: a consolidation that fails must not block the user
+    from compacting or clearing, and the previous handoff stays on disk either
+    way — the store refuses to replace a good file with an empty one.
+    """
+    session = await orch._sessions.get_active(key)
+    if session is None or not session.session_id:
+        return
+    request = AgentRequest(
+        prompt=CONSOLIDATION_PROMPT,
+        chat_id=key.chat_id,
+        topic_id=key.topic_id,
+        transport=key.transport,
+        resume_session=session.session_id,
+        process_label="handoff_consolidation",
+    )
+    try:
+        await orch._cli_service.execute(request)
+    except (CLIError, RuntimeError, OSError) as exc:
+        logger.warning("Handoff consolidation failed chat=%d: %s", key.chat_id, exc)
 
 
-async def cmd_reset_current(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /reset: kill processes and reset the *current* provider session."""
-    logger.info("Reset (current) requested")
+async def cmd_compact(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /compact: same work, empty context window.
+
+    There is no on-demand compaction in print mode, so this reclaims the window
+    the only way available — a new session — and carries the work across in the
+    handoff. The persona and the folder binding stay: nothing about the task
+    has changed, only how much of it the model can see.
+    """
+    logger.info("Compact requested")
+    await _consolidate_handoff(orch, key)
+    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
+    await orch.reset_active_provider_session(key)
+    orch.reinject.mark(key)
+    return OrchestratorResult(text=t("handoff.compacted"))
+
+
+async def cmd_clear(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /clear: this task is finished, start another in the same topic.
+
+    The handoff is consolidated first and then archived, so it stays available
+    under Archived without being read back automatically. If archiving fails the
+    session is left alone: losing a handoff is worse than not clearing.
+    """
+    logger.info("Clear requested")
+    folder = orch.bindings.resolve(key.storage_key)
+    await _consolidate_handoff(orch, key)
+
+    had_handoff = bool(orch.handoffs.read(key, folder).strip())
+    archived = orch.handoffs.archive(key, folder)
+    if had_handoff and archived is None:
+        return OrchestratorResult(text=t("handoff.archive_failed"))
+
     orch.personas.clear(key.storage_key)
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
-    provider = await orch.reset_current_provider_session(key)
-    return OrchestratorResult(text=new_session_text(provider))
+    await orch.reset_active_provider_session(key)
+    return OrchestratorResult(text=t("handoff.cleared"))
+
+
+async def cmd_handoff(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /handoff: the current handoff, and this conversation's archives."""
+    logger.info("Handoff requested")
+    folder = orch.bindings.resolve(key.storage_key)
+    body = orch.handoffs.read(key, folder)
+    if not body.strip():
+        return OrchestratorResult(text=t("handoff.none_yet"))
+    return OrchestratorResult(text=f"{body[:3000]}")
 
 
 async def cmd_status(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:

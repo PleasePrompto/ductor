@@ -61,7 +61,10 @@ def test_the_way_out_is_never_hidden() -> None:
 
 def test_urgent_commands_stay_one_keystroke_away() -> None:
     """Reaching for /stop is not a moment to open a menu."""
-    for urgent in ("stop", "interrupt", "reset"):
+    # /reset is gone: it reset a non-active provider's session, a distinction
+    # that only existed for multi-provider setups and read as a near-duplicate
+    # of the command beside it.
+    for urgent in ("stop", "interrupt"):
         assert urgent in _picker(), f"/{urgent} must stay in the picker"
 
 

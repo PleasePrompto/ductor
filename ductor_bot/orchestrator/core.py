@@ -34,16 +34,17 @@ from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
 from ductor_bot.orchestrator.commands import (
     cmd_account,
+    cmd_clear,
+    cmd_compact,
     cmd_consult,
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
     cmd_folder,
+    cmd_handoff,
     cmd_memory,
     cmd_model,
     cmd_persona,
-    cmd_reset,
-    cmd_reset_current,
     cmd_sessions,
     cmd_skills,
     cmd_status,
@@ -507,9 +508,9 @@ class Orchestrator:
 
     def _register_commands(self) -> None:
         reg = self._command_registry
-        reg.register_async("/new", cmd_reset)
-        reg.register_async("/reset", cmd_reset_current)
-        reg.register_async("/reset ", cmd_reset_current)
+        reg.register_async("/clear", cmd_clear)
+        reg.register_async("/compact", cmd_compact)
+        reg.register_async("/handoff", cmd_handoff)
         # /stop is handled entirely by the Middleware abort path (before the lock)
         # and never reaches the orchestrator command registry.
         reg.register_async("/status", cmd_status)
@@ -527,7 +528,7 @@ class Orchestrator:
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
-        reg.register_async("/sessions", cmd_sessions)
+        reg.register_async("/named", cmd_sessions)
         reg.register_async("/tasks", cmd_tasks)
 
     def register_multiagent_commands(self) -> None:

@@ -1,8 +1,9 @@
 # Nederlandse botcommandobeschrijvingen (≤22 tekens voor Telegram).
 
 [bot]
-new = "Nieuw gesprek"
-reset = "Chat resetten"
+clear = "Wissen en opnieuw beginnen"
+compact = "Zelfde werk, lege context"
+handoff = "Handoff van dit gesprek"
 stop = "Huidig + wachtrij stoppen"
 interrupt = "Onderbreken, wachtrij bewaren"
 model = "Model tonen/wisselen"

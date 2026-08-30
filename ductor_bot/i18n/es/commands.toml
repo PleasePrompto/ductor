@@ -1,8 +1,9 @@
 # Descripciones de comandos del bot (≤22 caracteres para Telegram móvil).
 
 [bot]
-new = "Nuevo chat"
-reset = "Reiniciar chat"
+clear = "Limpiar y empezar de nuevo"
+compact = "Mismo trabajo, contexto vacío"
+handoff = "Handoff de esta conversación"
 stop = "Detener actual + cola"
 interrupt = "Interrumpir, mantener cola"
 model = "Ver/cambiar modelo"

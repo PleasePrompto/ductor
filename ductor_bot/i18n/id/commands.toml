@@ -1,8 +1,9 @@
 # Deskripsi perintah bot (maks 22 karakter untuk klien Telegram mobile).
 
 [bot]
-new = "Mulai obrolan baru"
-reset = "Reset chat ini"
+clear = "Bersihkan dan mulai baru"
+compact = "Kerja sama, konteks kosong"
+handoff = "Handoff percakapan ini"
 stop = "Hentikan + kosongkan antrean"
 interrupt = "Interupsi + simpan"
 model = "Tampilkan/ganti model"

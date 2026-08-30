@@ -36,15 +36,15 @@ def _mock_response(**kwargs: object) -> AgentResponse:
 # -- command dispatch --
 
 
-async def test_new_command(orch: Orchestrator) -> None:
+async def test_clear_command(orch: Orchestrator) -> None:
     mock_kill = AsyncMock(return_value=0)
     object.__setattr__(orch._process_registry, "kill_by_chat_topic", mock_kill)
-    result = await orch.handle_message(SessionKey(chat_id=1), "/new")
-    assert "session reset" in result.text.lower()
+    result = await orch.handle_message(SessionKey(chat_id=1), "/clear")
+    assert "cleared" in result.text.lower()
     mock_kill.assert_called_once_with(1, None)
 
 
-async def test_new_command_resets_only_active_provider_bucket(orch: Orchestrator) -> None:
+async def test_clear_command_resets_only_active_provider_bucket(orch: Orchestrator) -> None:
     """#82: /new resets the CONFIG-DEFAULT provider's bucket, not whatever the
     user last switched to via /model. The sibling bucket is preserved.
 
@@ -61,9 +61,11 @@ async def test_new_command_resets_only_active_provider_bucket(orch: Orchestrator
     codex.session_id = "codex-sid"
     await orch._sessions.update_session(codex)
 
-    result = await orch.handle_message(key, "/new")
-    # Config default provider (claude) is reported, not the currently active provider (codex).
-    assert "Session reset for Claude" in result.text
+    result = await orch.handle_message(key, "/clear")
+    # The message no longer names a provider — /clear is about ending a task,
+    # not about which backend was reset. The bucket assertions below are what
+    # #82 was actually protecting.
+    assert "Cleared" in result.text
 
     active = await orch._sessions.get_active(key)
     assert active is not None
@@ -71,73 +73,6 @@ async def test_new_command_resets_only_active_provider_bucket(orch: Orchestrator
     assert "claude" not in active.provider_sessions
     assert "codex" in active.provider_sessions
     assert active.provider_sessions["codex"].session_id == "codex-sid"
-
-
-async def test_reset_command_resets_current_non_default_provider_bucket(
-    orch: Orchestrator,
-) -> None:
-    """/reset clears the current provider bucket and keeps that provider active."""
-    key = SessionKey(chat_id=11)
-    claude, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
-    claude.session_id = "claude-sid"
-    await orch._sessions.update_session(claude)
-
-    codex, _ = await orch._sessions.resolve_session(key, provider="codex", model="gpt-5.2-codex")
-    codex.session_id = "codex-sid"
-    await orch._sessions.update_session(codex)
-
-    result = await orch.handle_message(key, "/reset")
-
-    assert "Session reset for Codex" in result.text
-    active = await orch._sessions.get_active(key)
-    assert active is not None
-    assert active.provider == "codex"
-    assert active.model == "gpt-5.2-codex"
-    assert orch.config.model == "opus"
-    assert "codex" not in active.provider_sessions
-    assert active.provider_sessions["claude"].session_id == "claude-sid"
-
-
-async def test_reset_command_reports_active_provider_while_new_reports_config_default(
-    orch: Orchestrator,
-) -> None:
-    reset_key = SessionKey(chat_id=12)
-    await orch._sessions.resolve_session(reset_key, provider="claude", model="opus")
-    codex, _ = await orch._sessions.resolve_session(
-        reset_key, provider="codex", model="gpt-5.2-codex"
-    )
-    codex.session_id = "codex-sid"
-    await orch._sessions.update_session(codex)
-
-    reset_result = await orch.handle_message(reset_key, "/reset")
-    assert "Session reset for Codex" in reset_result.text
-
-    new_key = SessionKey(chat_id=13)
-    await orch._sessions.resolve_session(new_key, provider="claude", model="opus")
-    new_codex, _ = await orch._sessions.resolve_session(
-        new_key, provider="codex", model="gpt-5.2-codex"
-    )
-    new_codex.session_id = "codex-sid"
-    await orch._sessions.update_session(new_codex)
-
-    new_result = await orch.handle_message(new_key, "/new")
-    assert "Session reset for Claude" in new_result.text
-
-
-async def test_reset_command_resets_default_active_provider_bucket(orch: Orchestrator) -> None:
-    key = SessionKey(chat_id=14)
-    claude, _ = await orch._sessions.resolve_session(key, provider="claude", model="opus")
-    claude.session_id = "claude-sid"
-    await orch._sessions.update_session(claude)
-
-    result = await orch.handle_message(key, "/reset")
-
-    assert "Session reset for Claude" in result.text
-    active = await orch._sessions.get_active(key)
-    assert active is not None
-    assert active.provider == "claude"
-    assert active.model == "opus"
-    assert "claude" not in active.provider_sessions
 
 
 async def test_reset_current_provider_session_falls_back_to_config_default_without_active(
@@ -166,22 +101,6 @@ async def test_reset_current_provider_session_delegates_to_active_provider(
 
     mock_reset.assert_awaited_once_with(key, provider="codex", model="gpt-5.2-codex")
     assert provider == "codex"
-
-
-async def test_reset_command_with_args_uses_reset_dispatch(orch: Orchestrator) -> None:
-    mock_kill = AsyncMock(return_value=0)
-    mock_reset = AsyncMock(return_value="codex")
-    mock_execute = AsyncMock()
-    object.__setattr__(orch._process_registry, "kill_by_chat_topic", mock_kill)
-    object.__setattr__(orch, "reset_current_provider_session", mock_reset)
-    object.__setattr__(orch._cli_service, "execute", mock_execute)
-
-    result = await orch.handle_message(SessionKey(chat_id=17), "/reset extra")
-
-    assert "Session reset for Codex" in result.text
-    mock_kill.assert_awaited_once_with(17, None)
-    mock_reset.assert_awaited_once_with(SessionKey(chat_id=17))
-    mock_execute.assert_not_called()
 
 
 async def test_stop_aborts_nothing_running(orch: Orchestrator) -> None:

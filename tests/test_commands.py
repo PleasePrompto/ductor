@@ -14,7 +14,7 @@ def test_commands_is_list_of_tuples() -> None:
 
 def test_expected_commands_present() -> None:
     names = {cmd for cmd, _ in BOT_COMMANDS}
-    expected = {"new", "stop", "status", "model", "memory", "cron", "restart", "diagnose"}
+    expected = {"clear", "compact", "handoff", "stop", "status", "model", "memory", "cron", "restart", "diagnose"}
     assert expected.issubset(names)
 
 

@@ -1,8 +1,9 @@
 # Descriptions des commandes bot en français (≤22 caractères pour Telegram).
 
 [bot]
-new = "Nouveau chat"
-reset = "Réinitialiser chat"
+clear = "Vider et recommencer"
+compact = "Même travail, contexte vide"
+handoff = "Handoff de cette conversation"
 stop = "Stopper actuel + file"
 interrupt = "Interrompre, garder file"
 model = "Modèle actuel/changer"

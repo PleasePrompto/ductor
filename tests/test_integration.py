@@ -264,7 +264,7 @@ class TestCommandRouting:
 
 
 class TestNewSessionFlow:
-    async def test_new_command_resets_session(
+    async def test_clear_command_resets_session(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
     ) -> None:
         orch, _mock_execute = orch_with_mock_cli
@@ -275,9 +275,9 @@ class TestNewSessionFlow:
         assert session_before is not None
         assert session_before.session_id == "sess-abc-123"
 
-        result = await orch.handle_message(KEY, "/new")
+        result = await orch.handle_message(KEY, "/clear")
 
-        assert "Session Reset" in result.text
+        assert "Cleared" in result.text
 
         session_after = await orch._sessions.get_active(KEY)
         assert session_after is not None
@@ -289,7 +289,7 @@ class TestNewSessionFlow:
     ) -> None:
         orch, mock_execute = orch_with_mock_cli
 
-        await orch.handle_message(KEY, "/new")
+        await orch.handle_message(KEY, "/clear")
 
         mock_execute.reset_mock()
         mock_execute.return_value = _make_agent_response(result="Fresh start!")

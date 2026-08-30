@@ -179,7 +179,8 @@ def _build_help_text() -> str:
     return fmt(
         t("help.header"),
         SEP,
-        f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('reset')}\n{_help_line('stop')}\n"
+        f"{t('help.cat_daily')}\n{_help_line('clear')}\n{_help_line('compact')}\n"
+        f"{_help_line('handoff')}\n{_help_line('stop')}\n"
         f"{_help_line('interrupt')}\n{_help_line('stop_all')}\n"
         f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('account')}\n"
         f"{_help_line('persona')}\n{_help_line('folder')}\n{_help_line('consult')}\n"
