@@ -71,7 +71,11 @@ async def test_memory_flusher_fires_silent_turn_after_boundary(tmp_path: Path) -
 
     assert cli.execute.await_count == 1
     request = cli.execute.await_args[0][0]
-    assert request.prompt == MemoryFlushConfig().flush_prompt
+    # One silent turn carries both jobs: the memory flush and the handoff
+    # consolidation. The boundary is the same, and a second turn would double
+    # the cost of every compaction.
+    assert request.prompt.startswith(MemoryFlushConfig().flush_prompt)
+    assert "HANDOFF CONSOLIDATION" in request.prompt
     assert request.resume_session == "sess-abc"
     assert request.chat_id == 101
     assert request.process_label == "memory_flush"

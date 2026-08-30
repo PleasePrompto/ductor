@@ -224,6 +224,8 @@ class Orchestrator:
             if config.memory_flush.enabled
             else None
         )
+        if self._memory_flusher is not None:
+            self._memory_flusher.set_reinject(self._reinject)
         self._hook_registry = MessageHookRegistry()
         self._hook_registry.register(MAINMEMORY_REMINDER)
         self._hook_registry.register(DELEGATION_BRIEF)
