@@ -89,7 +89,7 @@ async def cmd_compact(orch: Orchestrator, key: SessionKey, _text: str) -> Orches
     folder = orch.bindings.resolve(key.storage_key)
     await _consolidate_handoff(orch, key)
 
-    if not orch.handoffs.read(key, folder).strip():
+    if not orch.handoffs.has_content(key, folder):
         # Compacting without a handoff is just losing the conversation. Refuse,
         # and leave the session exactly as it was.
         logger.warning("Compact aborted chat=%d: consolidation produced no handoff", key.chat_id)
@@ -112,7 +112,7 @@ async def cmd_clear(orch: Orchestrator, key: SessionKey, _text: str) -> Orchestr
     folder = orch.bindings.resolve(key.storage_key)
     await _consolidate_handoff(orch, key)
 
-    had_handoff = bool(orch.handoffs.read(key, folder).strip())
+    had_handoff = orch.handoffs.has_content(key, folder)
     archived = orch.handoffs.archive(key, folder)
     if had_handoff and archived is None:
         return OrchestratorResult(text=t("handoff.archive_failed"))
@@ -127,9 +127,9 @@ async def cmd_handoff(orch: Orchestrator, key: SessionKey, _text: str) -> Orches
     """Handle /handoff: the current handoff, and this conversation's archives."""
     logger.info("Handoff requested")
     folder = orch.bindings.resolve(key.storage_key)
-    body = orch.handoffs.read(key, folder)
-    if not body.strip():
+    if not orch.handoffs.has_content(key, folder):
         return OrchestratorResult(text=t("handoff.none_yet"))
+    body = orch.handoffs.read(key, folder)
     return OrchestratorResult(text=f"{body[:3000]}")
 
 

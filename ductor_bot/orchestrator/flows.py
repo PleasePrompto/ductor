@@ -151,9 +151,19 @@ async def _prepare_normal(
     # session. It goes into the system prompt for the same reason the persona
     # line does: a claim arriving as user text is correctly distrusted.
     folder = orch.bindings.resolve(key.storage_key)
+
+    # The delta belongs in the system channel, not appended to the user's
+    # message. An instruction arriving as user text is discounted — the model
+    # read this one and wrote nothing eleven tool calls in a row — while the
+    # appended system prompt is where the persona line already proved
+    # authoritative.
+    orch.handoffs.ensure_exists(key, folder)
+    delta = delta_suffix(handoff_file(key, folder, orch.paths))
+    append_prompt = f"{append_prompt}\n\n{delta}" if append_prompt else delta
+
     if is_new or orch.reinject.take(key):
         handoff = orch.handoffs.read(key, folder)
-        if handoff.strip():
+        if orch.handoffs.has_content(key, folder):
             block = injection_block(handoff)
             append_prompt = f"{append_prompt}\n\n{block}" if append_prompt else block
 
@@ -177,7 +187,6 @@ async def _prepare_normal(
         workspace=str(orch.paths.workspace),
     )
     prompt = orch._hook_registry.apply(text, hook_ctx)
-    prompt = f"{prompt}\n{delta_suffix(handoff_file(key, orch.bindings.resolve(key.storage_key), orch.paths))}"
 
     timeout_secs = resolve_timeout(orch._config, "normal")
     request = AgentRequest(

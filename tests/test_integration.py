@@ -604,7 +604,9 @@ class TestFullRoundTrip:
         await orch.handle_message(KEY, "First message")
 
         request = mock_execute.call_args[0][0]
-        assert request.append_system_prompt == memory_text
+        # The delta shares this channel now, so mainmemory is one part of it.
+        assert memory_text in request.append_system_prompt
+        assert "HANDOFF LOG" in request.append_system_prompt
 
     async def test_resumed_session_skips_mainmemory_injection(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
@@ -621,4 +623,7 @@ class TestFullRoundTrip:
         await orch.handle_message(KEY, "Second")
 
         request = mock_execute.call_args[0][0]
-        assert request.append_system_prompt is None
+        # Always non-empty now: the handoff instruction lives here. The point
+        # of this assertion is that MAINMEMORY is not re-injected.
+        assert "HANDOFF LOG" in (request.append_system_prompt or "")
+        assert "Main Memory" not in (request.append_system_prompt or "")

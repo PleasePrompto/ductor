@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from ductor_bot.handoff.guard import assert_ignored, ensure_protected, is_git_repo
 from ductor_bot.handoff.paths import archive_dir, handoff_dir, handoff_file
+from ductor_bot.handoff.prompts import TEMPLATE
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -109,6 +110,25 @@ class HandoffStore:
             target.unlink(missing_ok=True)
             return False
         return True
+
+    def ensure_exists(self, key: SessionKey, folder: Path | None) -> bool:
+        """Create the handoff skeleton if it is missing. True when it now exists.
+
+        Existence must not depend on the model choosing to act. Asking it to
+        create the file worked in the prompt and not in practice: the
+        instruction arrived, and eleven tool calls later nothing had been
+        written. Code makes the file; the model fills it.
+        """
+        if self.read(key, folder).strip():
+            return True
+        return self.write(key, folder, TEMPLATE)
+
+    def has_content(self, key: SessionKey, folder: Path | None) -> bool:
+        """True when the handoff holds more than the empty skeleton."""
+        body = self.read(key, folder)
+        return any(
+            line.strip() and not line.lstrip().startswith("#") for line in body.splitlines()
+        )
 
     def archive(self, key: SessionKey, folder: Path | None) -> Path | None:
         """Move the active handoff out of the folder. ``None`` when absent."""

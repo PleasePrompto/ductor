@@ -100,3 +100,41 @@ def test_an_unbound_conversation_writes_under_ductor_home(tmp_path: Path) -> Non
     assert store.write(general, None, "## Objective\ngeneral chatter\n")
 
     assert "general chatter" in store.read(general, None)
+
+
+def test_the_skeleton_is_created_by_code_not_by_asking(tmp_path: Path) -> None:
+    """The model was asked to create the file, received the instruction, and
+    made eleven tool calls without writing it. Existence is code's job."""
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+
+    assert store.ensure_exists(KEY, folder)
+
+    assert "## Objective" in store.read(KEY, folder)
+
+
+def test_a_bare_skeleton_does_not_count_as_a_handoff(tmp_path: Path) -> None:
+    """Otherwise /handoff shows empty headings and /compact carries nothing."""
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+    store.ensure_exists(KEY, folder)
+
+    assert not store.has_content(KEY, folder)
+
+
+def test_content_under_a_heading_counts(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+    store.write(KEY, folder, "# Handoff\n\n## Objective\nship the redesign\n")
+
+    assert store.has_content(KEY, folder)
+
+
+def test_ensure_exists_never_overwrites_real_content(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+    store.write(KEY, folder, "## Objective\nreal work in progress\n")
+
+    store.ensure_exists(KEY, folder)
+
+    assert "real work in progress" in store.read(KEY, folder)
