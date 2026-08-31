@@ -32,6 +32,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Long enough to identify the request, short enough to stay a log.
+_LOG_LINE_MAX = 160
+
 
 @dataclass(slots=True)
 class StreamingCallbacks:
@@ -158,6 +161,7 @@ async def _prepare_normal(
     # appended system prompt is where the persona line already proved
     # authoritative.
     orch.handoffs.ensure_exists(key, folder)
+    _log_turn(orch, key, text)
     delta = delta_suffix(handoff_file(key, folder, orch.paths))
     append_prompt = f"{append_prompt}\n\n{delta}" if append_prompt else delta
 
@@ -210,6 +214,24 @@ async def _prepare_normal(
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
     return request, session
+
+
+def _log_turn(orch: Orchestrator, key: SessionKey, text: str) -> None:
+    """Record what was asked, in the handoff, without asking the model to.
+
+    Only facts code can vouch for: when, and what the user said. Anything
+    requiring judgement is left to the consolidation, which has nothing else
+    competing for its attention.
+    """
+    line = " ".join(text.split())
+    if len(line) > _LOG_LINE_MAX:
+        line = f"{line[:_LOG_LINE_MAX]}..."
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
+    folder = orch.bindings.resolve(key.storage_key)
+    try:
+        orch.handoffs.append_log(key, folder, f"- {stamp} — asked: {line}")
+    except OSError as exc:  # never cost the user their turn
+        logger.warning("Handoff log append failed: %s", exc)
 
 
 async def _update_session(

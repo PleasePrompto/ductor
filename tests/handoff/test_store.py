@@ -138,3 +138,49 @@ def test_ensure_exists_never_overwrites_real_content(tmp_path: Path) -> None:
     store.ensure_exists(KEY, folder)
 
     assert "real work in progress" in store.read(KEY, folder)
+
+
+def test_a_turn_is_logged_without_asking_the_model(tmp_path: Path) -> None:
+    """The model was told the path, the sections and the rule, and across three
+    turns wrote nothing. Facts code can vouch for get recorded by code."""
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+
+    assert store.append_log(KEY, folder, "- 2026-08-31 09:00 — asked: rebuild the About page")
+
+    body = store.read(KEY, folder)
+    assert "rebuild the About page" in body
+    assert store.has_content(KEY, folder)
+
+
+def test_log_lines_accumulate_in_order(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+
+    store.append_log(KEY, folder, "- first")
+    store.append_log(KEY, folder, "- second")
+
+    body = store.read(KEY, folder)
+    assert body.index("- first") < body.index("- second")
+
+
+def test_logging_creates_the_handoff_when_missing(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+
+    assert store.append_log(KEY, folder, "- only line")
+
+    assert "## Objective" in store.read(KEY, folder)
+
+
+def test_logging_leaves_the_sections_above_it_alone(tmp_path: Path) -> None:
+    """A log append must never disturb consolidated state."""
+    store = _store(tmp_path)
+    folder = _folder(tmp_path)
+    store.write(KEY, folder, "# Handoff\n\n## Objective\nship the redesign\n\n## Log\n")
+
+    store.append_log(KEY, folder, "- new line")
+
+    body = store.read(KEY, folder)
+    assert "ship the redesign" in body
+    assert body.index("ship the redesign") < body.index("- new line")

@@ -18,6 +18,8 @@ from ductor_bot.handoff.guard import assert_ignored, ensure_protected, is_git_re
 from ductor_bot.handoff.paths import archive_dir, handoff_dir, handoff_file
 from ductor_bot.handoff.prompts import TEMPLATE
 
+_LOG_HEADING = "## Log"
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -129,6 +131,27 @@ class HandoffStore:
         return any(
             line.strip() and not line.lstrip().startswith("#") for line in body.splitlines()
         )
+
+    def append_log(self, key: SessionKey, folder: Path | None, line: str) -> bool:
+        """Append one factual line to the handoff's ``## Log``.
+
+        Written by code, not by asking. The model was given the path, the
+        sections and an explicit instruction, and across three turns and a
+        hundred tool calls it wrote nothing — it is busy doing the user's work,
+        and a logging chore loses every time. So the mechanical part (what was
+        asked, when) is recorded here, and the model's judgement is spent at
+        consolidation instead, where it is the only thing being asked for.
+        """
+        body = self.read(key, folder)
+        if not body:
+            if not self.ensure_exists(key, folder):
+                return False
+            body = self.read(key, folder)
+        if _LOG_HEADING not in body:
+            body = body.rstrip("\n") + f"\n\n{_LOG_HEADING}\n"
+        head, _, tail = body.partition(_LOG_HEADING)
+        updated = f"{head}{_LOG_HEADING}{tail.rstrip()}\n{line.rstrip()}\n"
+        return self.write(key, folder, updated)
 
     def archive(self, key: SessionKey, folder: Path | None) -> Path | None:
         """Move the active handoff out of the folder. ``None`` when absent."""
