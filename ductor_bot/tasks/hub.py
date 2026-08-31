@@ -9,6 +9,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.timeout_controller import TimeoutConfig as TCConfig
+from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import AgentRequest
 from ductor_bot.tasks.models import (
     TaskEntry,
@@ -30,8 +32,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_FINISHED = frozenset({"done", "failed", "cancelled"})
-_RESUMABLE = frozenset({"done", "failed", "cancelled", "waiting"})
+_FINISHED = frozenset({"done", "failed", "cancelled", "interrupted"})
+_RESUMABLE = frozenset({"done", "failed", "cancelled", "waiting", "interrupted"})
 _MAINTENANCE_INTERVAL = 5 * 3600  # 5 hours
 
 TaskResultCallback = Callable[[TaskResult], Awaitable[None]]
@@ -156,6 +158,69 @@ class TaskHub:
     def set_agent_chat_id(self, agent_name: str, chat_id: int) -> None:
         """Register the primary chat_id for an agent (for resolving CLI-submitted tasks)."""
         self._agent_chat_ids[agent_name] = chat_id
+
+    def _effective_timeout(self) -> float | None:
+        """The deadline handed to the CLI for a task.
+
+        With no configured ceiling this is the stall window: the controller
+        pushes the deadline out again whenever the worker produces output, so
+        it only bites once the worker has gone quiet. A task that runs all
+        night is not an error; one silent for half an hour probably is.
+        """
+        if self._config.timeout_seconds is not None:
+            return self._config.timeout_seconds
+        return self._config.stall_seconds
+
+    def _make_stall_controller(self) -> TimeoutController | None:
+        """A deadline that renews itself for as long as the worker is working."""
+        window = self._effective_timeout()
+        if window is None:
+            return None
+        return TimeoutController(
+            TCConfig(
+                timeout_seconds=window,
+                warning_intervals=[],
+                extend_on_activity=True,
+                activity_extension=window,
+                # 0 = unlimited: duration is not the failure being guarded here.
+                max_extensions=0,
+            )
+        )
+
+    async def announce_interrupted(self) -> None:
+        """Tell each topic which of its tasks a restart caught mid-flight.
+
+        Announced, never resumed. The registry cannot tell a worker that
+        finished its side effects from one that had not started them, so the
+        choice belongs to the person who knows what the task was doing.
+        """
+        for task_id in self._registry.take_interrupted_by_restart():
+            entry = self._registry.get(task_id)
+            if entry is None:
+                continue
+            handler = self._result_handlers.get(entry.parent_agent)
+            if handler is None:
+                logger.warning("No handler to announce interrupted task %s", task_id)
+                continue
+            await handler(
+                TaskResult(
+                    task_id=entry.task_id,
+                    chat_id=entry.chat_id,
+                    parent_agent=entry.parent_agent,
+                    name=entry.name,
+                    prompt_preview=entry.prompt_preview,
+                    result_text="",
+                    status="interrupted",
+                    elapsed_seconds=0.0,
+                    provider=entry.provider,
+                    model=entry.model,
+                    error=entry.error,
+                    # Routes the notice back to the topic that started it,
+                    # rather than the group's General thread.
+                    thread_id=entry.thread_id,
+                )
+            )
+            logger.info("Announced interrupted task %s", task_id)
 
     def _check_enabled(self) -> None:
         if not self._config.enabled:
@@ -480,7 +545,8 @@ class TaskHub:
             chat_id=entry.chat_id,
             topic_id=entry.thread_id,
             process_label=f"task:{entry.task_id}",
-            timeout_seconds=self._config.timeout_seconds,
+            timeout_seconds=self._effective_timeout(),
+            timeout_controller=self._make_stall_controller(),
             resume_session=resume_session,
         )
 
@@ -667,7 +733,7 @@ _CANCEL_RETURNCODES = frozenset({143, 137, -15, -9})
 
 
 def _classify_task_response(
-    response: object, timeout: float, has_pending_question: bool
+    response: object, timeout: float | None, has_pending_question: bool
 ) -> tuple[str, str]:
     """Map a CLIResponse to (status, error_message) for the task registry.
 
@@ -675,7 +741,8 @@ def _classify_task_response(
     subprocess — surface as ``cancelled``, not ``failed``.
     """
     if getattr(response, "timed_out", False):
-        return "failed", f"Timeout after {timeout:.0f}s"
+        limit = f"{timeout:.0f}s" if timeout else "the configured limit"
+        return "failed", f"Timeout after {limit}"
     if getattr(response, "is_error", False):
         if getattr(response, "returncode", None) in _CANCEL_RETURNCODES:
             return "cancelled", ""

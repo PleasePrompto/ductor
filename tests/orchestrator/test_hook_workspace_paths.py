@@ -17,8 +17,6 @@ import re
 import pytest
 
 from ductor_bot.orchestrator.hooks import (
-    DELEGATION_BRIEF,
-    DELEGATION_REMINDER,
     MAINMEMORY_REMINDER,
     HookContext,
     MessageHookRegistry,
@@ -29,7 +27,7 @@ WORKSPACE = "/home/ductor/.ductor/workspace"
 #: Directories that exist in the shared workspace and nowhere else.
 _WORKSPACE_DIRS = ("tools/", "memory_system/", "user_tools/", "cron_tasks/")
 
-ALL_HOOKS = [MAINMEMORY_REMINDER, DELEGATION_BRIEF, DELEGATION_REMINDER]
+ALL_HOOKS = [MAINMEMORY_REMINDER]
 
 
 def _ctx(*, new_session: bool = True, messages: int = 0) -> HookContext:
@@ -68,16 +66,6 @@ def test_no_hook_names_a_workspace_path_relatively(hook) -> None:
     )
 
 
-def test_placeholders_are_substituted_when_applied() -> None:
-    registry = MessageHookRegistry()
-    registry.register(DELEGATION_BRIEF)
-
-    prompt = registry.apply("do the thing", _ctx())
-
-    assert "{workspace}" not in prompt, "an unsubstituted placeholder reaches the agent as text"
-    assert f"{WORKSPACE}/tools/task_tools/create_task.py" in prompt
-
-
 def test_applied_text_has_no_relative_workspace_paths() -> None:
     """The end-to-end property: what the agent actually receives."""
     registry = MessageHookRegistry()
@@ -110,11 +98,3 @@ def test_hook_text_survives_braces() -> None:
     assert f"{WORKSPACE}/tools/" in prompt
 
 
-def test_workspace_defaults_to_empty_without_breaking() -> None:
-    """A context built without a workspace must not crash the prompt path."""
-    ctx = HookContext(
-        chat_id=-100, message_count=0, is_new_session=True, provider="claude", model="sonnet"
-    )
-    registry = MessageHookRegistry()
-    registry.register(DELEGATION_BRIEF)
-    assert "{workspace}" not in registry.apply("x", ctx)

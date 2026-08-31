@@ -61,8 +61,6 @@ from ductor_bot.orchestrator.flows import (
     normal_streaming,
 )
 from ductor_bot.orchestrator.hooks import (
-    DELEGATION_BRIEF,
-    DELEGATION_REMINDER,
     MAINMEMORY_REMINDER,
     MessageHookRegistry,
 )
@@ -162,6 +160,7 @@ class Orchestrator:
                 max_turns=config.max_turns,
                 max_budget_usd=config.max_budget_usd,
                 permission_mode=config.permission_mode,
+                disallowed_tools=tuple(config.disallowed_tools),
                 reasoning_effort=config.reasoning_effort,
                 gemini_api_key=config.gemini_api_key,
                 docker_container=docker_container,
@@ -231,8 +230,6 @@ class Orchestrator:
             )
         self._hook_registry = MessageHookRegistry()
         self._hook_registry.register(MAINMEMORY_REMINDER)
-        self._hook_registry.register(DELEGATION_BRIEF)
-        self._hook_registry.register(DELEGATION_REMINDER)
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
         self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
         self._command_registry = CommandRegistry()
@@ -854,6 +851,7 @@ class Orchestrator:
                     max_turns=config.max_turns,
                     max_budget_usd=config.max_budget_usd,
                     permission_mode=config.permission_mode,
+                disallowed_tools=tuple(config.disallowed_tools),
                     reasoning_effort=config.reasoning_effort,
                     gemini_api_key=config.gemini_api_key,
                     docker_container=self._cli_service._config.docker_container,

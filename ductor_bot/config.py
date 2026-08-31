@@ -233,7 +233,16 @@ class TasksConfig(BaseModel):
 
     enabled: bool = True
     max_parallel: int = 5
-    timeout_seconds: float = 3600.0
+    #: ``None`` means no wall-clock limit, which is the default. The CLI itself
+    #: imposes no time ceiling — only a context window and an optional spend
+    #: cap — so a clock here was ductor's own invention, sized for a chat
+    #: assistant. A task that legitimately runs all night is not an error; a
+    #: task that has produced nothing for twenty minutes probably is, and that
+    #: is what ``stall_seconds`` is for.
+    timeout_seconds: float | None = None
+    #: Kill a task that has produced no output for this long. ``None`` disables
+    #: the check. Silence is a real signal; elapsed time is not.
+    stall_seconds: float | None = 1800.0
     finished_retention_hours: int = 168
     finished_keep_last: int = 100
 
@@ -433,6 +442,11 @@ class AgentConfig(BaseModel):
     max_turns: int | None = None
     max_session_messages: int | None = None
     permission_mode: str = "bypassPermissions"
+    #: Tools withheld from the CLI. The built-in sub-agent tool belongs here:
+    #: it spawns a helper inside the turn's own process, so anything it is
+    #: given dies when that process exits. Background work has to go through
+    #: the task hub, which outlives the turn and reports back to the topic.
+    disallowed_tools: list[str] = Field(default_factory=list)
     cli_timeout: float = 1800.0
     reasoning_effort: str = "medium"
     file_access: str = "all"

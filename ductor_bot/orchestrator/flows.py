@@ -17,7 +17,7 @@ from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import AgentRequest, AgentResponse
 from ductor_bot.config import NULLISH_TEXT_VALUES, resolve_timeout
 from ductor_bot.handoff.paths import handoff_file
-from ductor_bot.handoff.prompts import delta_suffix, injection_block
+from ductor_bot.handoff.prompts import delegation_brief, delta_suffix, injection_block
 from ductor_bot.i18n import t
 from ductor_bot.infra.inflight import InflightTurn
 from ductor_bot.log_context import set_log_context
@@ -160,6 +160,13 @@ async def _prepare_normal(
     orch.handoffs.ensure_exists(key, folder)
     delta = delta_suffix(handoff_file(key, folder, orch.paths))
     append_prompt = f"{append_prompt}\n\n{delta}" if append_prompt else delta
+
+    # Delegation rules ride the system channel on every turn rather than the
+    # user's message every fifteenth one. A suffix on a user message is stored
+    # in the transcript and replayed for the life of the session; the system
+    # prompt is re-sent instead of accumulated, and a stable prefix is cached.
+    brief = delegation_brief(str(orch.paths.workspace))
+    append_prompt = f"{append_prompt}\n\n{brief}"
 
     if is_new or orch.reinject.take(key):
         handoff = orch.handoffs.read(key, folder)

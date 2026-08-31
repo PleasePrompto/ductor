@@ -30,6 +30,7 @@ class TaskRegistry:
         self._path = registry_path
         self._tasks_dir = tasks_dir
         self._entries: dict[str, TaskEntry] = {}
+        self._interrupted_by_restart: list[str] = []
         self._load()
         self._cleanup_orphans()
 
@@ -44,10 +45,25 @@ class TaskRegistry:
                 logger.warning("Skipping corrupt task entry: %s", raw)
                 continue
             if entry.status == "running":
-                entry.status = "failed"
-                entry.error = "Bot restarted while task was running"
-                logger.info("Downgraded stale running task %s to failed", entry.task_id)
+                # Not "failed": a worker that published a page and died before
+                # recording success is indistinguishable here from one that died
+                # before publishing. Re-running the first posts twice. So the
+                # status says exactly what is known — it was interrupted — and a
+                # human decides. Never auto-resume.
+                entry.status = "interrupted"
+                entry.error = "Interrupted by a bot restart; may have partly completed"
+                self._interrupted_by_restart.append(entry.task_id)
+                logger.info("Task %s marked interrupted by restart", entry.task_id)
             self._entries[entry.task_id] = entry
+
+    def take_interrupted_by_restart(self) -> list[str]:
+        """Task ids this process found mid-flight at startup, returned once.
+
+        Returned once so the announcement cannot repeat on every reload and
+        train the user to ignore it.
+        """
+        found, self._interrupted_by_restart = self._interrupted_by_restart, []
+        return found
 
     def cleanup_orphans(self) -> int:
         """Remove orphaned entries and folders so nothing is left dangling.

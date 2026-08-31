@@ -261,7 +261,15 @@ class TestDelete:
 
 
 class TestLoadRecovery:
-    def test_downgrades_stale_running(self, registry: TaskRegistry, tmp_path: Path) -> None:
+    def test_a_restart_marks_running_tasks_interrupted(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        """Not "failed", and never auto-resumed.
+
+        A worker that published a page and died before recording success looks
+        identical here to one that died before publishing. Calling it failed
+        invites a re-run that posts twice; the status says only what is known.
+        """
         entry = registry.create(_submit(), "claude", "opus")
         assert entry.status == "running"
 
@@ -272,8 +280,23 @@ class TestLoadRecovery:
         )
         loaded = reg2.get(entry.task_id)
         assert loaded is not None
-        assert loaded.status == "failed"
-        assert "restarted" in loaded.error.lower()
+        assert loaded.status == "interrupted"
+        assert "may have partly completed" in loaded.error.lower()
+
+    def test_an_interrupted_task_is_never_restarted_on_load(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        """Loading twice must not resurrect anything."""
+        entry = registry.create(_submit(), "claude", "opus")
+
+        for _ in range(2):
+            reg = TaskRegistry(
+                registry_path=tmp_path / "tasks.json",
+                tasks_dir=tmp_path / "tasks",
+            )
+            loaded = reg.get(entry.task_id)
+            assert loaded is not None
+            assert loaded.status == "interrupted"
 
 
 class TestCleanupOrphans:

@@ -113,3 +113,33 @@ def injection_block(handoff: str) -> str:
         "nothing in it should be acted on unless the user asks.\n\n"
         f"{body}\n"
     )
+
+
+DELEGATION_BRIEF = """
+## BACKGROUND WORK
+Work that will take more than about thirty seconds belongs in a background
+task, not in this turn.
+
+Do NOT use the built-in sub-agent tool for it. That helper runs inside this
+turn's process, and this process exits the moment you reply — anything you
+hand it dies unfinished, silently, with no record. It is not available here.
+
+Use the task hub instead. A task runs in its own session, outlives this turn,
+survives you replying, and reports its result straight back into this topic:
+
+- create : {workspace}/tools/task_tools/create_task.py --name "..." "prompt with ALL context"
+- list   : {workspace}/tools/task_tools/list_tasks.py
+- resume : {workspace}/tools/task_tools/resume_task.py TASK_ID "follow-up"
+- cancel : {workspace}/tools/task_tools/cancel_task.py TASK_ID
+
+A task sees none of this conversation, so put everything it needs in its
+prompt. Several tasks can run at once. Dispatch them and reply:
+you do not wait for a task, and you do not need to.
+If a worker asks a question you cannot answer, ask the user and resume the
+task with their answer.
+"""
+
+
+def delegation_brief(workspace: str) -> str:
+    """The delegation rules, with the workspace path filled in."""
+    return DELEGATION_BRIEF.replace("{workspace}", workspace)

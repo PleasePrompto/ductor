@@ -86,14 +86,6 @@ def on_new_session(ctx: HookContext) -> bool:
     return ctx.is_new_session
 
 
-def _is_delegation_reminder_due(ctx: HookContext) -> bool:
-    """Fire every 15th message, but not on new sessions (DELEGATION_BRIEF covers those)."""
-    if ctx.is_new_session:
-        return False
-    effective = ctx.message_count + 1
-    return effective >= 15 and effective % 15 == 0
-
-
 # ---------------------------------------------------------------------------
 # Built-in hooks
 # ---------------------------------------------------------------------------
@@ -110,37 +102,6 @@ MAINMEMORY_REMINDER = MessageHook(
         "decisions, facts) -- update MAINMEMORY.md silently.\n"
         "If you notice a gap that only the user can fill, ask ONE natural follow-up "
         "question that fits the current conversation. Do not interrogate."
-    ),
-)
-
-DELEGATION_BRIEF = MessageHook(
-    name="delegation_brief",
-    condition=on_new_session,
-    suffix=(
-        "## BACKGROUND TASKS\n"
-        "You have background workers that execute tasks for you autonomously. "
-        "Any work that will likely take >30 seconds — delegate it. "
-        "The worker gets your instructions, runs independently, and reports back. "
-        "You keep chatting with the user while it works.\n"
-        '- **Create**: {workspace}/tools/task_tools/create_task.py --name "..." "prompt with ALL context"\n'
-        "- **Cancel**: {workspace}/tools/task_tools/cancel_task.py TASK_ID\n"
-        '- **Resume**: {workspace}/tools/task_tools/resume_task.py TASK_ID "follow-up"\n'
-        "  Resume keeps the worker's full context — use for refining results, "
-        "follow-ups, or delivering answers after a worker question.\n"
-        "- **Worker questions**: If a worker asks you something and you don't know "
-        "→ ask the user → resume the task with the answer.\n"
-        "Full docs: {workspace}/tools/task_tools/CLAUDE/GEMINI/AGENTS.md."
-    ),
-)
-
-DELEGATION_REMINDER = MessageHook(
-    name="delegation_reminder",
-    condition=_is_delegation_reminder_due,
-    suffix=(
-        "## TASK REMINDER\n"
-        "Delegate work >30s to background tasks. Resume completed tasks for follow-ups "
-        "instead of creating new ones (keeps context). "
-        "Docs: {workspace}/tools/task_tools/CLAUDE/GEMINI/AGENTS.md."
     ),
 )
 

@@ -123,7 +123,9 @@ class TimeoutController:
         """
         if not self._cfg.extend_on_activity:
             return False
-        if self._extensions_used >= self._cfg.max_extensions:
+        # 0 means unlimited: a task that keeps producing output should keep
+        # running. The deadline exists to catch silence, not duration.
+        if self._cfg.max_extensions and self._extensions_used >= self._cfg.max_extensions:
             return False
         now = time.monotonic()
         if now - self._last_activity > _ACTIVITY_RECENCY_SECONDS:

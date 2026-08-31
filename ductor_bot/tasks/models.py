@@ -50,7 +50,7 @@ class TaskEntry:
     prompt_preview: str
     provider: str
     model: str
-    status: str  # "running" | "done" | "failed" | "cancelled" | "waiting"
+    status: str  # "running" | "done" | "failed" | "cancelled" | "waiting" | "interrupted"
     session_id: str = ""
     created_at: float = field(default_factory=time.time)
     completed_at: float = 0.0

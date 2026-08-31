@@ -480,6 +480,10 @@ class AgentSupervisor:
 
         logger.debug("Task hub wired for agent '%s'", name)
 
+        # Now that a handler exists, tell the topics which of their tasks a
+        # restart caught mid-flight. Announced only — never resumed.
+        asyncio.create_task(hub.announce_interrupted())  # noqa: RUF006
+
     async def _rebuild_stack(self, name: str, old_stack: AgentStack) -> AgentStack:
         """Rebuild an AgentStack from its config."""
         new_stack = await AgentStack.create(

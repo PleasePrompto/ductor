@@ -108,6 +108,11 @@ class CLIServiceConfig:
     max_turns: int | None
     max_budget_usd: float | None
     permission_mode: str
+    #: Tools withheld from every CLI call. The built-in sub-agent tool
+    #: belongs here: it spawns a helper inside the turn's own process, so
+    #: work handed to it dies when that process exits. Background work goes
+    #: through the task hub, which outlives the turn.
+    disallowed_tools: tuple[str, ...] = ()
     reasoning_effort: str = "medium"
     gemini_api_key: str | None = None
     docker_container: str = ""
@@ -454,6 +459,7 @@ class CLIService:
                 max_turns=self._config.max_turns,
                 max_budget_usd=self._config.max_budget_usd,
                 permission_mode=self._config.permission_mode,
+                disallowed_tools=list(self._config.disallowed_tools),
                 reasoning_effort=effort,
                 gemini_api_key=self._config.gemini_api_key,
                 docker_container=self._config.docker_container,
