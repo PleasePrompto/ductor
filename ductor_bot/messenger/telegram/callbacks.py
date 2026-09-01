@@ -39,8 +39,14 @@ def button_grid_to_markup(grid: ButtonGrid | None) -> InlineKeyboardMarkup | Non
             return InlineKeyboardButton(text=btn.text, copy_text=CopyTextButton(text=btn.copy_text))
         return InlineKeyboardButton(text=btn.text, callback_data=btn.callback_data)
 
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[_to_button(btn) for btn in row] for row in grid.rows]
+    from ductor_bot.messenger.telegram.menu import with_nav
+
+    # Every selector is a screen below the menu, so every one of them gets the
+    # way back and the way out here rather than in each selector.
+    return with_nav(
+        InlineKeyboardMarkup(
+            inline_keyboard=[[_to_button(btn) for btn in row] for row in grid.rows]
+        )
     )
 
 

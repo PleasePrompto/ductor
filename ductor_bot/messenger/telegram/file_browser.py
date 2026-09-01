@@ -72,6 +72,7 @@ from ductor_bot.files.path_tokens import path_for, token_for
 from ductor_bot.files.roots import browsable_roots, contains, label_for
 from ductor_bot.files.uploads import Mode, UploadSession, UploadStore, plan
 from ductor_bot.i18n import t
+from ductor_bot.messenger.telegram.menu import with_nav
 from ductor_bot.text.response_format import SEP, fmt
 
 if TYPE_CHECKING:
@@ -176,6 +177,16 @@ class BrowserAction:
     bind_dir: Path | None = None
 
 
+def _navigable(view: tuple[str, InlineKeyboardMarkup]) -> tuple[str, InlineKeyboardMarkup]:
+    """A browser screen with the menu's way back and way out attached.
+
+    The browser builds screens in a dozen places and hands them out through
+    three; the row is added on the way out so a new screen inherits it.
+    """
+    text, keyboard = view
+    return text, with_nav(keyboard) or keyboard
+
+
 def is_file_browser_callback(data: str) -> bool:
     """Return True if *data* belongs to the file browser."""
     return data.startswith(
@@ -233,8 +244,8 @@ async def file_browser_start(
     if start_dir is not None:
         view = await asyncio.to_thread(_start_view, paths, project_roots, start_dir)
         if view is not None:
-            return view
-    return await asyncio.to_thread(_build_root_view, paths, project_roots)
+            return _navigable(view)
+    return _navigable(await asyncio.to_thread(_build_root_view, paths, project_roots))
 
 
 def _start_view(
@@ -260,7 +271,10 @@ async def handle_file_browser_callback(
     stateful ones: everything else is a pure function of the path in the
     callback.
     """
-    return await asyncio.to_thread(_handle, paths, project_roots, data, session)
+    action = await asyncio.to_thread(_handle, paths, project_roots, data, session)
+    if action.keyboard is None:
+        return action
+    return replace(action, keyboard=with_nav(action.keyboard))
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +407,7 @@ def render_dir_with_notice(
 ) -> tuple[str, InlineKeyboardMarkup]:
     """Public form of the directory view plus a result line."""
     action = _with_notice(paths, project_roots, target, notice)
-    return action.text, action.keyboard or InlineKeyboardMarkup(inline_keyboard=[])
+    return _navigable((action.text, action.keyboard or InlineKeyboardMarkup(inline_keyboard=[])))
 
 
 def _with_notice(

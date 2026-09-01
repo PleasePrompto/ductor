@@ -637,6 +637,7 @@ paste_outside = "⚠️ Cette destination est en dehors des dossiers accessibles
 header = "**Menu**"
 hint = "Choisissez une action, ou ✕ pour fermer."
 btn_close = "✕ Fermer"
+btn_back = "◀︎ Menu"
 panel_ready = "Panneau de menu installé. Touchez la grille à côté du champ de saisie."
 item_files = "📁 Fichiers"
 item_folder = "📌 Dossier"

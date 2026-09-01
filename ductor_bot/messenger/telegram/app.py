@@ -84,6 +84,7 @@ from ductor_bot.messenger.telegram.media import (
 )
 from ductor_bot.messenger.telegram.menu import (
     MENU_ITEMS,
+    MNU_BACK,
     MNU_CLOSE,
     build_menu,
     build_toggle_panel,
@@ -980,6 +981,23 @@ class TelegramBot:
                 parse_mode=ParseMode.HTML,
             )
 
+    async def _edit_to_menu(self, key: SessionKey, message_id: int) -> None:
+        """Turn a submenu back into the menu, in place.
+
+        Editing rather than sending: the screen the user is looking at is the
+        one that should become the menu, and a second menu message left behind
+        is the clutter closing exists to avoid.
+        """
+        text, keyboard = build_menu(self._menu_subtitle(key))
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.edit_message_text(
+                text=markdown_to_telegram_html(text),
+                chat_id=key.chat_id,
+                message_id=message_id,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
+            )
+
     def _menu_subtitle(self, key: SessionKey) -> str:
         """Current bindings, shown in the header instead of hiding buttons."""
         bound = self._orch.bindings.resolve(key.storage_key)
@@ -1002,6 +1020,10 @@ class TelegramBot:
         if data == MNU_CLOSE:
             with contextlib.suppress(TelegramAPIError):
                 await self._bot.delete_message(chat_id=key.chat_id, message_id=message_id)
+            return
+
+        if data == MNU_BACK:
+            await self._edit_to_menu(key, message_id)
             return
 
         index = parse_menu_callback(data)

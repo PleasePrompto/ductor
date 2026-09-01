@@ -37,6 +37,11 @@ MNU_PREFIX = "mnu:"
 #: Closing removes the message rather than editing it: a menu left lying in the
 #: topic is the clutter this is meant to avoid.
 MNU_CLOSE = "mnu:x"
+#: Every screen below the menu carries a way back to it. Back edits the screen
+#: in place rather than sending a new menu: two menus in a topic is the clutter
+#: closing exists to avoid, and the one you tapped from is the one you expect
+#: to return to.
+MNU_BACK = "mnu:b"
 
 _PER_ROW = 2
 
@@ -66,12 +71,42 @@ MENU_ITEMS: tuple[MenuItem, ...] = (
 )
 
 
+def nav_row() -> list[InlineKeyboardButton]:
+    """Back-to-menu and close, the pair every submenu ends with.
+
+    Labelled "Menu" rather than "Back" because the file browser already has a
+    Back of its own that means the parent directory. Two buttons reading Back
+    on one screen, doing different things, is worse than a longer word.
+    """
+    return [
+        InlineKeyboardButton(text=t("menu.btn_back"), callback_data=MNU_BACK),
+        InlineKeyboardButton(text=t("menu.btn_close"), callback_data=MNU_CLOSE),
+    ]
+
+
+def with_nav(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
+    """Append :func:`nav_row` to *markup*, once.
+
+    Screens are built in a dozen places and reach the user through a handful;
+    adding the row here means a new screen gets it without anyone remembering
+    to. Idempotent so a screen that already carries the row — one built from
+    another, or re-rendered — does not grow a second one.
+    """
+    if markup is None:
+        return None
+    rows = list(markup.inline_keyboard)
+    already = any(b.callback_data == MNU_CLOSE for row in rows for b in row)
+    if already:
+        return markup
+    return InlineKeyboardMarkup(inline_keyboard=[*rows, nav_row()])
+
+
 def is_menu_callback(data: str) -> bool:
     return data.startswith(MNU_PREFIX)
 
 
 def parse_callback(data: str) -> int | None:
-    """Extract the item index from ``mnu:<index>``. None for close or junk."""
+    """Extract the item index from ``mnu:<index>``. None for nav or junk."""
     raw = data[len(MNU_PREFIX) :]
     try:
         return int(raw)
