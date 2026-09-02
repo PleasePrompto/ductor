@@ -79,13 +79,6 @@ def every_n_messages(n: int) -> Callable[[HookContext], bool]:
         return effective >= n and effective % n == 0
 
     return _check
-
-
-def on_new_session(ctx: HookContext) -> bool:
-    """Fire only on the very first message of a new session."""
-    return ctx.is_new_session
-
-
 # ---------------------------------------------------------------------------
 # Built-in hooks
 # ---------------------------------------------------------------------------

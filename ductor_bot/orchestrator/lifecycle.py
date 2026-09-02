@@ -104,7 +104,7 @@ async def create_orchestrator(
         on_antigravity_refresh=orch._providers.on_antigravity_models_refresh,
         on_grok_refresh=orch._providers.on_grok_models_refresh,
     )
-    orch._observers.init_task_observers(
+    orch._observers.init_run_observers(
         cron_manager=orch._cron_manager,
         webhook_manager=orch._webhook_manager,
         cli_service=orch._cli_service,

@@ -16,8 +16,6 @@ if TYPE_CHECKING:
 
 _WELCOME_PREFIX = "w:"
 
-_CALLBACK_KEYS = ("w:1", "w:2", "w:3")
-
 
 def _welcome_callbacks() -> dict[str, str]:
     return {

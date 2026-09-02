@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 #: Schedule ids, in the order the picker shows them.
 SCHEDULES = ("hourly", "6h", "daily", "weekly", "off")
-DEFAULT_SCHEDULE = "daily"
 DEFAULT_HOUR = 4
 
 _EVERY_SIX_HOURS = 6

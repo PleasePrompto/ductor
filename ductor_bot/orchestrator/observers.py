@@ -135,7 +135,7 @@ class ObserverManager:
 
     # -- Task observer initialization -----------------------------------------
 
-    def init_task_observers(
+    def init_run_observers(
         self,
         *,
         cron_manager: CronManager,

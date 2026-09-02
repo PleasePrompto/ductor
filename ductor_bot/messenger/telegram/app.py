@@ -186,7 +186,7 @@ def _build_help_text() -> str:
         f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('account')}\n"
         f"{_help_line('persona')}\n{_help_line('folder')}\n{_help_line('consult')}\n"
         f"{_help_line('status')}\n{_help_line('memory')}",
-        f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
+        f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
         f"{_help_line('files')}\n{_help_line('menu')}\n{_help_line('skills')}\n"
@@ -498,7 +498,6 @@ class TelegramBot:
         r.message(Command("new", ignore_case=True))(self._on_new)
         r.message(Command("session", ignore_case=True))(self._on_session)
         r.message(Command("sessions", ignore_case=True))(self._on_sessions)
-        r.message(Command("tasks", ignore_case=True))(self._on_tasks)
         # "showfiles" stays as an unlisted alias: renaming a command people
         # already type should not break their muscle memory.
         r.message(Command("files", "showfiles", ignore_case=True))(self._on_files)
@@ -1193,7 +1192,7 @@ class TelegramBot:
         if direct is not None or self._orchestrator is None:
             return direct or False
 
-        if text_lower.startswith(("/sessions", "/tasks")):
+        if text_lower.startswith("/sessions"):
             await handle_command(self._orchestrator, self._bot, message)
             return True
 
@@ -1420,12 +1419,6 @@ class TelegramBot:
 
     async def _on_sessions(self, message: Message) -> None:
         """Handle /sessions: show session management UI."""
-        if self._config.group_mention_only and not self._is_addressed(message):
-            return
-        await handle_command(self._orch, self._bot, message)
-
-    async def _on_tasks(self, message: Message) -> None:
-        """Handle /tasks: show background task management UI."""
         if self._config.group_mention_only and not self._is_addressed(message):
             return
         await handle_command(self._orch, self._bot, message)

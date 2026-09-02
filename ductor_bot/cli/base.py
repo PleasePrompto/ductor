@@ -194,13 +194,6 @@ def _docker_env_flags(
 #: prefix the CLIs are installed under.
 _RUN_AS_KEEP = ("PATH", "NODE_OPTIONS", "LANG", "LC_ALL")
 
-#: Deliberately NOT carried over. They point into the bot's home, which the
-#: dropped-to account cannot read — passing them would send the CLI looking for
-#: a config directory it has no access to. Left unset, the CLI falls back to
-#: $HOME, which is the account's own.
-_RUN_AS_DROP = ("CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR")
-
-
 def run_as_wrap(cmd: list[str], config: CLIConfig, env: dict[str, str]) -> list[str]:
     """Prefix *cmd* so it runs as ``config.run_as_user``.
 
@@ -213,6 +206,10 @@ def run_as_wrap(cmd: list[str], config: CLIConfig, env: dict[str, str]) -> list[
         return cmd
     home = f"/home/{config.run_as_user}"
     passed = [f"HOME={home}"]
+    # An allowlist, so CLAUDE_CONFIG_DIR and CLAUDE_SECURESTORAGE_CONFIG_DIR are
+    # dropped by omission — deliberately. They point into the bot's home, which
+    # the dropped-to account cannot read; unset, the CLI falls back to $HOME,
+    # which is that account's own.
     passed += [f"{k}={env[k]}" for k in _RUN_AS_KEEP if k in env]
     return ["sudo", "-n", "-u", config.run_as_user, "env", *passed, *cmd]
 
