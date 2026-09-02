@@ -39,6 +39,8 @@ async def route_callback(
 
     Shared prefixes (handled here):
 
+    * ``sk:``  -- skills browser
+    * ``acc:`` -- Claude account selector
     * ``ms:`` -- model selector
     * ``crn:`` -- cron selector
     * ``nsc:`` -- session selector
@@ -54,6 +56,10 @@ async def route_callback(
     Returns a :class:`CallbackResult`.  When ``handled`` is ``False``, the
     transport bot must process the callback itself.
     """
+    from ductor_bot.orchestrator.selectors.account_selector import (
+        handle_account_callback,
+        is_account_selector_callback,
+    )
     from ductor_bot.orchestrator.selectors.cron_selector import (
         handle_cron_callback,
         is_cron_selector_callback,
@@ -66,10 +72,17 @@ async def route_callback(
         handle_session_callback,
         is_session_selector_callback,
     )
-    from ductor_bot.orchestrator.selectors.task_selector import (
-        handle_task_callback,
-        is_task_selector_callback,
+    from ductor_bot.orchestrator.selectors.skills_selector import (
+        handle_skills_callback,
+        is_skills_selector_callback,
     )
+    if is_skills_selector_callback(callback_data):
+        resp = handle_skills_callback(orch, callback_data)
+        return CallbackResult(text=resp.text, buttons=resp.buttons)
+
+    if is_account_selector_callback(callback_data):
+        resp = await handle_account_callback(orch, callback_data)
+        return CallbackResult(text=resp.text, buttons=resp.buttons)
 
     if is_model_selector_callback(callback_data):
         resp = await handle_model_callback(orch, key, callback_data)
@@ -81,13 +94,6 @@ async def route_callback(
 
     if is_session_selector_callback(callback_data):
         resp = await handle_session_callback(orch, key.chat_id, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_task_selector_callback(callback_data):
-        hub = orch.task_hub
-        if hub is None:
-            return CallbackResult(text="Task system not available.", buttons=None)
-        resp = await handle_task_callback(hub, key.chat_id, callback_data)
         return CallbackResult(text=resp.text, buttons=resp.buttons)
 
     # Transport-specific prefixes -- signal the caller to handle them.

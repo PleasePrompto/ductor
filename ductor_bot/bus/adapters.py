@@ -13,17 +13,16 @@ from typing import TYPE_CHECKING
 from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 
 if TYPE_CHECKING:
-    from ductor_bot.background.models import BackgroundResult
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
-    from ductor_bot.tasks.models import TaskResult
+    from ductor_bot.named_runs.models import NamedRunResult
     from ductor_bot.webhook.models import WebhookResult
 
 
 # -- Background tasks ----------------------------------------------------------
 
 
-def from_background_result(result: BackgroundResult) -> Envelope:
-    """Convert a ``BackgroundResult`` (named session or stateless)."""
+def from_background_result(result: NamedRunResult) -> Envelope:
+    """Convert a ``NamedRunResult`` (named session or stateless)."""
     return Envelope(
         origin=Origin.BACKGROUND,
         chat_id=result.chat_id,
@@ -250,89 +249,3 @@ def from_interagent_result(
     )
 
 
-# -- Task results & questions --------------------------------------------------
-
-
-def from_task_result(result: TaskResult) -> Envelope:
-    """Convert a background task result.
-
-    done/failed: acquire lock, inject into parent session.
-    cancelled/timeout: unicast notification only (no injection).
-    """
-    needs_inject = result.status in ("done", "failed")
-    prompt = _build_task_injection_prompt(result) if needs_inject else ""
-    return Envelope(
-        origin=Origin.TASK_RESULT,
-        chat_id=result.chat_id,
-        topic_id=result.thread_id,
-        prompt=prompt,
-        prompt_preview=result.prompt_preview,
-        result_text=result.result_text,
-        status=result.status,
-        is_error=result.status == "failed",
-        delivery=DeliveryMode.UNICAST,
-        lock_mode=LockMode.REQUIRED if needs_inject else LockMode.NONE,
-        needs_injection=needs_inject,
-        elapsed_seconds=result.elapsed_seconds,
-        provider=result.provider,
-        model=result.model,
-        session_id=result.session_id,
-        metadata={
-            "task_id": result.task_id,
-            "name": result.name,
-            "parent_agent": result.parent_agent,
-            "error": result.error,
-            "task_folder": result.task_folder,
-        },
-    )
-
-
-def _build_task_injection_prompt(result: TaskResult) -> str:
-    """Build the prompt injected into the parent agent's session."""
-    task_id = result.task_id
-    if result.status in ("failed", "timeout"):
-        return (
-            f"[BACKGROUND TASK FAILED: task_id='{task_id}' name='{result.name}']\n"
-            f"Error: {result.error}\n"
-            f"Provider: {result.provider}/{result.model} | "
-            f"Duration: {result.elapsed_seconds:.0f}s\n\n"
-            f"Original task: {result.original_prompt}\n\n"
-            f"Inform the user that the background task '{result.name}' failed "
-            f"and suggest next steps."
-        )
-    return (
-        f"[BACKGROUND TASK COMPLETED: task_id='{task_id}' name='{result.name}']\n"
-        f"Provider: {result.provider}/{result.model} | "
-        f"Duration: {result.elapsed_seconds:.0f}s\n\n"
-        f"{result.result_text}\n\n"
-        f"[END TASK RESULT]\n\n"
-        f"Original task: {result.original_prompt}\n\n"
-        f"Review this result critically:\n"
-        f"- Does it fully answer the original task?\n"
-        f"- Is anything missing, incomplete, or unclear?\n"
-        f"- If yes → resume the task with a follow-up "
-        f"(see resume_task.py command above)\n"
-        f"- If the result is complete → summarize findings for the user\n"
-    )
-
-
-def from_task_question(
-    task_id: str,
-    question: str,
-    prompt_preview: str,
-    chat_id: int,
-    *,
-    topic_id: int | None = None,
-) -> Envelope:
-    """Convert a task question (worker asks parent agent)."""
-    return Envelope(
-        origin=Origin.TASK_QUESTION,
-        chat_id=chat_id,
-        topic_id=topic_id,
-        prompt=question,
-        prompt_preview=prompt_preview,
-        delivery=DeliveryMode.UNICAST,
-        lock_mode=LockMode.REQUIRED,
-        needs_injection=True,
-        metadata={"task_id": task_id},
-    )

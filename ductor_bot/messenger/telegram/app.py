@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
+import tempfile
 from collections.abc import Awaitable, Callable
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -14,14 +17,31 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
-from aiogram.types import BotCommand, ChatMemberUpdated, FSInputFile, ReplyParameters
+from aiogram.types import (
+    BotCommand,
+    ChatMemberUpdated,
+    FSInputFile,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyParameters,
+)
 
 from ductor_bot.bus.bus import MessageBus
 from ductor_bot.bus.lock_pool import LockPool
 from ductor_bot.commands import BOT_COMMANDS as _COMMAND_DEFS
 from ductor_bot.commands import MULTIAGENT_SUB_COMMANDS as _MA_SUB_DEFS
+from ductor_bot.commands import PICKER_COMMANDS as _PICKER_DEFS
 from ductor_bot.config import AgentConfig
 from ductor_bot.files.allowed_roots import resolve_allowed_roots
+from ductor_bot.files.archive import (
+    MAX_ENTRIES,
+    MAX_TOTAL_BYTES,
+    extract_archive,
+    inspect_archive,
+)
+from ductor_bot.files.edits import ClipboardStore, EditStore
+from ductor_bot.files.uploads import UploadSession, UploadStore
+from ductor_bot.handoff.readiness import check_readiness
 from ductor_bot.i18n import t
 from ductor_bot.infra.restart import EXIT_RESTART, consume_restart_marker
 from ductor_bot.infra.updater import UpdateObserver
@@ -29,12 +49,16 @@ from ductor_bot.infra.version import VersionInfo, get_current_version
 from ductor_bot.log_context import set_log_context
 from ductor_bot.messenger.notifications import NotificationService
 from ductor_bot.messenger.telegram.callbacks import (
+    button_grid_to_markup,
     edit_selector_response,
     mark_button_choice,
     parse_ns_callback,
 )
 from ductor_bot.messenger.telegram.chat_tracker import ChatRecord, ChatTracker
 from ductor_bot.messenger.telegram.file_browser import (
+    BrowserSession,
+    build_name_confirmation,
+    build_staging_view,
     file_browser_start,
     handle_file_browser_callback,
     is_file_browser_callback,
@@ -46,16 +70,28 @@ from ductor_bot.messenger.telegram.handlers import (
     handle_abort_all,
     handle_command,
     handle_interrupt,
-    handle_new_session,
     prepend_reply_to_media,
     strip_mention,
 )
 from ductor_bot.messenger.telegram.media import (
+    download_media,
     has_media,
     is_command_for_others,
     is_message_addressed,
     resolve_media_text,
     should_drop_in_group,
+)
+from ductor_bot.messenger.telegram.menu import (
+    MENU_ITEMS,
+    MNU_BACK,
+    MNU_CLOSE,
+    build_menu,
+    build_toggle_panel,
+    is_menu_callback,
+    state_subtitle,
+)
+from ductor_bot.messenger.telegram.menu import (
+    parse_callback as parse_menu_callback,
 )
 from ductor_bot.messenger.telegram.message_dispatch import (
     NonStreamingDispatch,
@@ -72,10 +108,12 @@ from ductor_bot.messenger.telegram.sender import SendRichOpts, send_rich
 from ductor_bot.messenger.telegram.sender import (
     send_files_from_text as _send_files_from_text,
 )
+from ductor_bot.messenger.telegram.stop_button import is_stop_callback
 from ductor_bot.messenger.telegram.topic import (
     TopicNameCache,
     get_session_key,
     get_thread_id,
+    is_general_thread,
 )
 from ductor_bot.messenger.telegram.typing import TypingContext as _TypingContext
 from ductor_bot.messenger.telegram.welcome import (
@@ -87,12 +125,11 @@ from ductor_bot.messenger.telegram.welcome import (
 )
 from ductor_bot.multiagent.bus import AsyncInterAgentResult
 from ductor_bot.session.key import SessionKey
-from ductor_bot.tasks.models import TaskResult
 from ductor_bot.text.response_format import SEP, fmt
 from ductor_bot.workspace.paths import DuctorPaths
 
 if TYPE_CHECKING:
-    from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+    from aiogram.types import CallbackQuery, Message
 
     from ductor_bot.orchestrator.core import Orchestrator
 
@@ -105,8 +142,10 @@ _CAPTION_LIMIT = 1024
 TypingContext = _TypingContext
 send_files_from_text = _send_files_from_text
 
+# Built at import as well as in _rebuild_commands(): _sync_commands() may run
+# before a rebuild, and the initial value is what gets published then.
 _BOT_COMMANDS: list[BotCommand] = [
-    BotCommand(command=cmd, description=desc) for cmd, desc in _COMMAND_DEFS
+    BotCommand(command=cmd, description=desc) for cmd, desc in _PICKER_DEFS
 ]
 
 _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}
@@ -115,11 +154,17 @@ _CMD_DESC: dict[str, str] = {**dict(_COMMAND_DEFS), **dict(_MA_SUB_DEFS)}
 def _rebuild_commands() -> None:
     """Rebuild module-level command lists from current translations."""
     global _BOT_COMMANDS  # noqa: PLW0603
-    from ductor_bot.commands import get_bot_commands, get_multiagent_sub_commands
+    from ductor_bot.commands import (
+        get_bot_commands,
+        get_multiagent_sub_commands,
+        get_picker_commands,
+    )
 
     cmd_defs = get_bot_commands()
     ma_defs = get_multiagent_sub_commands()
-    _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in cmd_defs]
+    # The picker is trimmed; _CMD_DESC below stays complete so /help still
+    # documents every command, including the ones the menu covers.
+    _BOT_COMMANDS = [BotCommand(command=cmd, description=desc) for cmd, desc in get_picker_commands()]
     _CMD_DESC.clear()
     _CMD_DESC.update({**dict(cmd_defs), **dict(ma_defs)})
 
@@ -134,13 +179,17 @@ def _build_help_text() -> str:
     return fmt(
         t("help.header"),
         SEP,
-        f"{t('help.cat_daily')}\n{_help_line('new')}\n{_help_line('reset')}\n{_help_line('stop')}\n"
+        f"{t('help.cat_daily')}\n{_help_line('clear')}\n{_help_line('compact')}\n"
+        f"{_help_line('handoff')}\n{_help_line('stop')}\n"
         f"{_help_line('interrupt')}\n{_help_line('stop_all')}\n"
-        f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('status')}\n{_help_line('memory')}",
-        f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('tasks')}\n{_help_line('cron')}",
+        f"{_help_line('model')}\n{_help_line('effort')}\n{_help_line('account')}\n"
+        f"{_help_line('persona')}\n{_help_line('folder')}\n{_help_line('consult')}\n"
+        f"{_help_line('status')}\n{_help_line('memory')}",
+        f"{t('help.cat_automation')}\n{_help_line('session')}\n{_help_line('cron')}",
         f"{t('help.cat_multiagent')}\n{_help_line('agent_commands')}",
         f"{t('help.cat_browse')}\n{_help_line('where')}\n{_help_line('leave')}\n"
-        f"{_help_line('showfiles')}\n{_help_line('info')}\n{_help_line('help')}",
+        f"{_help_line('files')}\n{_help_line('menu')}\n{_help_line('skills')}\n"
+        f"{_help_line('info')}\n{_help_line('help')}",
         f"{t('help.cat_maintenance')}\n{_help_line('diagnose')}\n{_help_line('upgrade')}\n{_help_line('restart')}",
         SEP,
         t("help.footer"),
@@ -154,6 +203,27 @@ async def _cancel_task(task: asyncio.Task[None] | None) -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
+
+
+def _rendered_dir(paths, project_roots, target: Path, notice: str):  # noqa: ANN001, ANN202
+    """Directory view plus a result line, for editing a message in place."""
+    from ductor_bot.messenger.telegram.file_browser import render_dir_with_notice
+
+    return render_dir_with_notice(paths, project_roots, target, notice)
+
+
+def _place(src: Path, dest: Path) -> None:
+    """Move *src* to *dest*, creating the parent. Blocking; call in a thread."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dest))
+
+
+def _short_path(target: Path, home: Path) -> str:
+    """A path the user can place at a glance, without the absolute prefix."""
+    try:
+        return str(target.relative_to(home))
+    except ValueError:
+        return str(target)
 
 class TelegramNotificationService:
     """NotificationService implementation for Telegram."""
@@ -174,6 +244,28 @@ class TelegramNotificationService:
                 # not found") must not abort the notification fan-out — or, at
                 # startup, the whole boot.
                 logger.warning("Notification to user %d failed, skipping", uid)
+
+
+#: Callback data for the readiness gate's Retry button. Short on purpose:
+#: Telegram caps callback data at 64 bytes.
+HANDOFF_RETRY = "hor"
+
+#: Commands that consolidate the handoff first, which is a full model turn.
+#: Without an acknowledgement the screen does not change and the button gets
+#: pressed repeatedly, queueing several of them.
+_SLOW_COMMANDS = {
+    "/compact": "handoff.compacting",
+    "/clear": "handoff.clearing",
+}
+
+
+def _retry_keyboard() -> InlineKeyboardMarkup:
+    """A single Retry button for the readiness gate."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=t("handoff.btn_retry"), callback_data=HANDOFF_RETRY)]
+        ]
+    )
 
 
 class TelegramBot:
@@ -219,6 +311,9 @@ class TelegramBot:
         self._chat_tracker: ChatTracker | None = None  # set in _on_startup
         self._topic_names = TopicNameCache()
         self._lock_pool = lock_pool or LockPool()
+        self._upload_store: UploadStore | None = None
+        self._edit_store = EditStore()
+        self._clipboard = ClipboardStore()
         self._bus = bus or MessageBus(lock_pool=self._lock_pool)
 
         from ductor_bot.messenger.telegram.transport import TelegramTransport
@@ -399,13 +494,28 @@ class TelegramBot:
         r.message(Command("stop_all", ignore_case=True))(self._on_stop_all)
         r.message(Command("stop", ignore_case=True))(self._on_stop)
         r.message(Command("restart", ignore_case=True))(self._on_restart)
-        r.message(Command("new", ignore_case=True))(self._on_new)
         r.message(Command("session", ignore_case=True))(self._on_session)
-        r.message(Command("sessions", ignore_case=True))(self._on_sessions)
-        r.message(Command("tasks", ignore_case=True))(self._on_tasks)
-        r.message(Command("showfiles", ignore_case=True))(self._on_showfiles)
+        r.message(Command("named", ignore_case=True))(self._on_named)
+        # "showfiles" stays as an unlisted alias: renaming a command people
+        # already type should not break their muscle memory.
+        r.message(Command("files", "showfiles", ignore_case=True))(self._on_files)
+        r.message(Command("menu", ignore_case=True))(self._on_menu)
         r.message(Command("agent_commands", ignore_case=True))(self._on_agent_commands)
-        base_cmds = ["status", "memory", "model", "effort", "cron", "diagnose", "upgrade", "reset"]
+        base_cmds = [
+            "status",
+            "memory",
+            "model",
+            "effort",
+            "account",
+            "persona",
+            "folder",
+            "consult",
+            "skills",
+            "cron",
+            "diagnose",
+            "upgrade",
+            "reset",
+        ]
         if self._agent_name == "main":
             base_cmds += ["agents", "agent_start", "agent_stop", "agent_restart"]
         for cmd in base_cmds:
@@ -672,7 +782,11 @@ class TelegramBot:
         thread_id = get_thread_id(message)
         user_name = message.from_user.first_name if message.from_user else ""
 
-        auth_results = await asyncio.to_thread(check_all_auth)
+        from ductor_bot.cli.claude_accounts import active_claude_account_dir
+
+        auth_results = await asyncio.to_thread(
+            check_all_auth, active_claude_account_dir(self._config)
+        )
         text = build_welcome_text(user_name, auth_results, self._config)
         keyboard = build_welcome_keyboard()
 
@@ -827,19 +941,188 @@ class TelegramBot:
             ),
         )
 
-    async def _on_showfiles(self, message: Message) -> None:
-        """Handle /showfiles: interactive file browser for ~/.ductor."""
-        text, keyboard = await file_browser_start(self._orch.paths)
+    async def _on_menu(self, message: Message) -> None:
+        """Handle /menu: open the inline menu, and install the toggle panel.
+
+        The command message is deleted straight away. It is the only text this
+        feature ever sends, and leaving a "/menu" in the topic every time the
+        toggle is tapped is the clutter the inline menu exists to avoid.
+        """
+        chat_id = message.chat.id
+        thread_id = get_thread_id(message)
+
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.delete_message(chat_id=chat_id, message_id=message.message_id)
+
+        # Sent with the panel attached so the toggle exists from now on; after
+        # this the button sends /menu and the user never types it again.
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                chat_id,
+                markdown_to_telegram_html(t("menu.panel_ready")),
+                reply_markup=build_toggle_panel(),
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
+
+        await self._send_menu(get_session_key(message), thread_id)
+
+    async def _send_menu(self, key: SessionKey, thread_id: int | None) -> None:
+        text, keyboard = build_menu(self._menu_subtitle(key))
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                key.chat_id,
+                markdown_to_telegram_html(text),
+                reply_markup=keyboard,
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
+
+    async def _edit_to_menu(self, key: SessionKey, message_id: int) -> None:
+        """Turn a submenu back into the menu, in place.
+
+        Editing rather than sending: the screen the user is looking at is the
+        one that should become the menu, and a second menu message left behind
+        is the clutter closing exists to avoid.
+        """
+        text, keyboard = build_menu(self._menu_subtitle(key))
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.edit_message_text(
+                text=markdown_to_telegram_html(text),
+                chat_id=key.chat_id,
+                message_id=message_id,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
+            )
+
+    def _menu_subtitle(self, key: SessionKey) -> str:
+        """Current bindings, shown in the header instead of hiding buttons."""
+        bound = self._orch.bindings.resolve(key.storage_key)
+        folder = bound.name if bound else ""
+        persona = self._orch.personas.get(key.storage_key) or ""
+        model = ""
+        with contextlib.suppress(AttributeError, KeyError, TypeError):
+            model = self._orch.resolve_session_directive(key).model or ""
+        return state_subtitle(folder, persona, model)
+
+    async def _handle_menu_callback(
+        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
+        """Run the command a menu button stands for.
+
+        Routed through the orchestrator's own registry rather than
+        re-implemented, so a menu item behaves exactly as typing the command
+        does and cannot drift from it.
+        """
+        if data == MNU_CLOSE:
+            with contextlib.suppress(TelegramAPIError):
+                await self._bot.delete_message(chat_id=key.chat_id, message_id=message_id)
+            return
+
+        if data == MNU_BACK:
+            await self._edit_to_menu(key, message_id)
+            return
+
+        index = parse_menu_callback(data)
+        if index is None or not 0 <= index < len(MENU_ITEMS):
+            return
+        command = MENU_ITEMS[index].command
+
+        # Some menu entries are transport screens rather than orchestrator
+        # commands. Sending those through handle_message routes them to the
+        # agent, which answers "that is not available in this environment" —
+        # a menu button producing a chat reply, with nothing to show it failed.
+        transport = self._transport_menu_actions()
+        if command in transport:
+            await transport[command](key, thread_id)
+            return
+
+        # Commands that run a model turn before answering leave the user
+        # staring at an unchanged screen for a minute, so they press the button
+        # again — and again. Say something first.
+        if command in _SLOW_COMMANDS:
+            with contextlib.suppress(TelegramAPIError):
+                await self._bot.send_message(
+                    key.chat_id,
+                    markdown_to_telegram_html(t(_SLOW_COMMANDS[command])),
+                    message_thread_id=thread_id,
+                    parse_mode=ParseMode.HTML,
+                )
+
+        # handle_message routes a leading slash through the same registry the
+        # typed command uses, so a menu item cannot drift from its command.
+        result = await self._orch.handle_message(key, command)
+        if result is None or not result.text:
+            return
         await send_rich(
             self._bot,
-            message.chat.id,
-            text,
+            key.chat_id,
+            result.text,
             SendRichOpts(
-                reply_to_message_id=message.message_id,
-                reply_markup=keyboard,
-                thread_id=get_thread_id(message),
+                reply_markup=button_grid_to_markup(result.buttons) if result.buttons else None,
+                thread_id=thread_id,
             ),
         )
+
+    def _transport_menu_actions(self):  # noqa: ANN202
+        """Menu entries handled here rather than by the orchestrator registry."""
+        return {
+            "/files": self._send_files_view,
+            "/help": self._send_help_view,
+        }
+
+    async def _send_help_view(self, key: SessionKey, thread_id: int | None) -> None:
+        await send_rich(
+            self._bot,
+            key.chat_id,
+            _build_help_text(),
+            SendRichOpts(thread_id=thread_id),
+        )
+
+    def _is_consult(self, key: SessionKey) -> bool:
+        """True in the Consult topic this bot created for *key*'s chat."""
+        if key.topic_id is None or not self._config.managed_topics:
+            return False
+        from ductor_bot.messenger.telegram.managed_topics import CONSULT, ManagedTopicStore
+
+        store = ManagedTopicStore(self._orch.paths.managed_topics_path)
+        return store.get(key.chat_id, CONSULT).topic_id == key.topic_id
+
+    def _roots_for(self, key: SessionKey) -> dict[str, str]:
+        """The directories this conversation may see.
+
+        Everywhere else this is the configured catalogue. In Consult it is that
+        topic's own directory and nothing else — the file manager is our code,
+        so unlike the instruction in its CLAUDE.md this is actually enforced.
+        """
+        if self._is_consult(key):
+            from ductor_bot.messenger.telegram.file_browser import RESTRICTED
+
+            return {
+                "Consult": str(self._orch.paths.consult_dir),
+                # Without this the browser adds ~/.ductor, which contains
+                # Consult — and the nested-root rule would keep the ancestor,
+                # exposing everything the narrowing was for.
+                RESTRICTED: "1",
+            }
+        return dict(self._config.project_roots)
+
+    async def _send_files_view(self, key: SessionKey, thread_id: int | None) -> None:
+        text, keyboard = await file_browser_start(
+            self._orch.paths,
+            self._roots_for(key),
+            self._orch.bindings.resolve(key.storage_key),
+        )
+        await send_rich(
+            self._bot,
+            key.chat_id,
+            text,
+            SendRichOpts(reply_markup=keyboard, thread_id=thread_id),
+        )
+
+    async def _on_files(self, message: Message) -> None:
+        """Handle /files: browse, transfer and manage files."""
+        await self._send_files_view(get_session_key(message), get_thread_id(message))
 
     # -- Interrupt, abort, commands, sessions ----------------------------------
 
@@ -881,8 +1164,11 @@ class TelegramBot:
         if text_lower.startswith("/leave"):
             await self._handle_leave(chat_id, message)
             return True
-        if text_lower.startswith("/showfiles") and self._orchestrator is not None:
-            await self._on_showfiles(message)
+        if text_lower.startswith(("/files", "/showfiles")) and self._orchestrator is not None:
+            await self._on_files(message)
+            return True
+        if text_lower.startswith("/menu"):
+            await self._on_menu(message)
             return True
         return None
 
@@ -904,7 +1190,7 @@ class TelegramBot:
         if direct is not None or self._orchestrator is None:
             return direct or False
 
-        if text_lower.startswith(("/sessions", "/tasks")):
+        if text_lower.startswith("/named"):
             await handle_command(self._orchestrator, self._bot, message)
             return True
 
@@ -946,13 +1232,6 @@ class TelegramBot:
         if self._config.group_mention_only and not self._is_addressed(message):
             return
         await handle_command(self._orch, self._bot, message)
-
-    async def _on_new(self, message: Message) -> None:
-        if self._is_for_others(message):
-            return
-        if self._config.group_mention_only and not self._is_addressed(message):
-            return
-        await handle_new_session(self._orch, self._bot, message, topic_names=self._topic_names)
 
     async def _on_forum_topic_created(self, message: Message) -> None:
         """Cache the name when a forum topic is created."""
@@ -1129,14 +1408,8 @@ class TelegramBot:
                 SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
             )
 
-    async def _on_sessions(self, message: Message) -> None:
-        """Handle /sessions: show session management UI."""
-        if self._config.group_mention_only and not self._is_addressed(message):
-            return
-        await handle_command(self._orch, self._bot, message)
-
-    async def _on_tasks(self, message: Message) -> None:
-        """Handle /tasks: show background task management UI."""
+    async def _on_named(self, message: Message) -> None:
+        """Handle /named: show named-session management UI."""
         if self._config.group_mention_only and not self._is_addressed(message):
             return
         await handle_command(self._orch, self._bot, message)
@@ -1183,6 +1456,7 @@ class TelegramBot:
 
         chat_id = msg.chat.id
         key = get_session_key(msg)
+        self._protect_general(msg, key)
         thread_id = get_thread_id(msg)
         set_log_context(operation="cb", chat_id=chat_id)
         logger.info("Callback data=%s", data[:40])
@@ -1207,11 +1481,51 @@ class TelegramBot:
             else:
                 await self._handle_non_streaming(msg, key, data, thread_id=thread_id)
 
-    async def _route_special_callback(
+    async def _route_special_callback(  # noqa: PLR0911
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> bool:
         """Handle known callback namespaces. Returns True when handled."""
         if await self._route_prefix_callback(key, message_id, data, thread_id=thread_id):
+            return True
+
+        from ductor_bot.orchestrator.selectors.consult_selector import (
+            is_consult_selector_callback,
+        )
+
+        if is_consult_selector_callback(data):
+            await self._handle_consult_selector(key, message_id, data)
+            return True
+
+        from ductor_bot.orchestrator.selectors.folder_selector import (
+            is_folder_selector_callback,
+        )
+
+        if is_folder_selector_callback(data):
+            await self._handle_folder_selector(key, message_id, data, thread_id=thread_id)
+            return True
+
+        from ductor_bot.orchestrator.selectors.persona_selector import (
+            is_persona_selector_callback,
+        )
+
+        if is_persona_selector_callback(data):
+            await self._handle_persona_selector(key, message_id, data, thread_id=thread_id)
+            return True
+
+        from ductor_bot.orchestrator.selectors.skills_selector import (
+            is_skills_selector_callback,
+        )
+
+        if is_skills_selector_callback(data):
+            await self._handle_skills_selector(key, message_id, data)
+            return True
+
+        from ductor_bot.orchestrator.selectors.account_selector import (
+            is_account_selector_callback,
+        )
+
+        if is_account_selector_callback(data):
+            await self._handle_account_selector(key, message_id, data)
             return True
 
         from ductor_bot.orchestrator.selectors.model_selector import is_model_selector_callback
@@ -1232,28 +1546,40 @@ class TelegramBot:
 
         return False
 
-    async def _route_prefix_callback(
+    async def _route_prefix_callback(  # noqa: PLR0911
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> bool:
         """Handle prefix-based callback namespaces. Returns True when handled."""
+        from ductor_bot.messenger.telegram.file_browser import SF_EDIT_APPLY_PREFIX
+
         chat_id = key.chat_id
+        if is_menu_callback(data):
+            await self._handle_menu_callback(key, message_id, data, thread_id=thread_id)
+            return True
+
+        if data == SF_EDIT_APPLY_PREFIX:
+            await self._apply_pending_edit(key, message_id)
+            return True
+        if is_stop_callback(data):
+            await self._handle_stop(key, message_id, thread_id=thread_id)
+            return True
+
         if data.startswith(MQ_PREFIX):
-            await self._handle_queue_cancel(chat_id, data)
+            await self._handle_queue_cancel(chat_id, data, thread_id=thread_id)
             return True
 
         if data.startswith("upg:"):
             await self._handle_upgrade_callback(chat_id, message_id, data, thread_id=thread_id)
             return True
 
+        if data == HANDOFF_RETRY:
+            await self._handle_handoff_retry(key, message_id)
+            return True
+
         from ductor_bot.orchestrator.selectors.session_selector import is_session_selector_callback
-        from ductor_bot.orchestrator.selectors.task_selector import is_task_selector_callback
 
         if is_session_selector_callback(data):
             await self._handle_session_selector(chat_id, message_id, data)
-            return True
-
-        if is_task_selector_callback(data):
-            await self._handle_task_selector(chat_id, message_id, data)
             return True
 
         if data.startswith("ns:"):
@@ -1270,6 +1596,21 @@ class TelegramBot:
             resp = await handle_model_callback(self._orch, key, data)
         await edit_selector_response(self._bot, key.chat_id, message_id, resp)
 
+    async def _handle_skills_selector(self, key: SessionKey, message_id: int, data: str) -> None:
+        """Handle the skills browser by editing the message in-place."""
+        from ductor_bot.orchestrator.selectors.skills_selector import handle_skills_callback
+
+        resp = handle_skills_callback(self._orch, data)
+        await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+
+    async def _handle_account_selector(self, key: SessionKey, message_id: int, data: str) -> None:
+        """Handle the Claude account selector by editing the message in-place."""
+        from ductor_bot.orchestrator.selectors.account_selector import handle_account_callback
+
+        async with self._sequential.get_lock(key.lock_key):
+            resp = await handle_account_callback(self._orch, data)
+        await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+
     async def _handle_cron_selector(self, chat_id: int, message_id: int, data: str) -> None:
         """Handle cron selector wizard by editing the message in-place."""
         from ductor_bot.orchestrator.selectors.cron_selector import handle_cron_callback
@@ -1284,16 +1625,6 @@ class TelegramBot:
 
         async with self._sequential.get_lock(chat_id):
             resp = await handle_session_callback(self._orch, chat_id, data)
-        await edit_selector_response(self._bot, chat_id, message_id, resp)
-
-    async def _handle_task_selector(self, chat_id: int, message_id: int, data: str) -> None:
-        """Handle task selector wizard by editing the message in-place."""
-        from ductor_bot.orchestrator.selectors.task_selector import handle_task_callback
-
-        hub = self._orch.task_hub
-        if hub is None:
-            return
-        resp = await handle_task_callback(hub, chat_id, data)
         await edit_selector_response(self._bot, chat_id, message_id, resp)
 
     async def _handle_ns_callback(
@@ -1326,31 +1657,105 @@ class TelegramBot:
                     ),
                 )
 
+    async def _send_browser_file(
+        self, chat_id: int, path: Path, *, thread_id: int | None = None
+    ) -> None:
+        """Send a file the user tapped in the browser."""
+        from aiogram.types import FSInputFile
+
+        try:
+            await self._bot.send_document(
+                chat_id=chat_id,
+                document=FSInputFile(path),
+                message_thread_id=thread_id,
+            )
+        except TelegramAPIError:
+            logger.exception("Failed to send browsed file %s", path)
+            await self._bot.send_message(
+                chat_id, t("file_browser.send_failed", name=path.name), message_thread_id=thread_id
+            )
+
+    async def _send_browser_zip(
+        self, chat_id: int, directory: Path, *, thread_id: int | None = None
+    ) -> None:
+        """Zip a directory and send it, or explain why it cannot be sent."""
+        import shutil
+        from functools import partial
+
+        from aiogram.types import FSInputFile
+
+        from ductor_bot.messenger.telegram.file_browser import build_zip
+
+        archive, error_key = await asyncio.to_thread(build_zip, directory)
+        if archive is None:
+            await self._bot.send_message(chat_id, t(error_key), message_thread_id=thread_id)
+            return
+        try:
+            await self._bot.send_document(
+                chat_id=chat_id,
+                document=FSInputFile(archive),
+                message_thread_id=thread_id,
+            )
+        except TelegramAPIError:
+            logger.exception("Failed to send archive of %s", directory)
+            await self._bot.send_message(
+                chat_id,
+                t("file_browser.send_failed", name=archive.name),
+                message_thread_id=thread_id,
+            )
+        finally:
+            await asyncio.to_thread(partial(shutil.rmtree, archive.parent, ignore_errors=True))
+
     async def _handle_file_browser(
         self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
     ) -> None:
         """Handle file browser navigation or file request."""
         chat_id = key.chat_id
-        text, keyboard, prompt = await handle_file_browser_callback(self._orch.paths, data)
+        action = await handle_file_browser_callback(
+            self._orch.paths,
+            self._roots_for(key),
+            data,
+            session=BrowserSession(
+                uploads=self._uploads,
+                key=key.storage_key,
+                current_binding=self._orch.bindings.get(key.storage_key) or None,
+                edits=self._edit_store,
+                clipboard=self._clipboard,
+            ),
+        )
 
-        if prompt:
-            # File request: remove the keyboard and send prompt to orchestrator
-            with contextlib.suppress(TelegramBadRequest):
-                await self._bot.edit_message_reply_markup(
-                    chat_id=chat_id, message_id=message_id, reply_markup=None
-                )
-            async with self._sequential.get_lock(key.lock_key):
-                if self._config.streaming.enabled:
-                    fake_msg = await self._bot.send_message(
-                        chat_id,
-                        prompt,
-                        parse_mode=None,
-                        message_thread_id=thread_id,
-                    )
-                    await self._handle_streaming(fake_msg, key, prompt, thread_id=thread_id)
-                else:
-                    await self._handle_non_streaming(None, key, prompt, thread_id=thread_id)
+        if action.bind_dir is not None and not self._orch.bindings.set(
+            key.storage_key, str(action.bind_dir)
+        ):
+            await self._bot.send_message(
+                chat_id,
+                markdown_to_telegram_html(t("folder.general_locked")),
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
             return
+
+        if action.edit_message:
+            edit = self._edit_store.get(key.storage_key)
+            if edit is not None:
+                edit.message_id = message_id
+
+        if action.upload_message:
+            # Staged files are reported by editing this message, so the upload
+            # has to know which one it owns.
+            session = self._uploads.get(key.storage_key)
+            if session is not None:
+                session.message_id = message_id
+
+        if action.send_path is not None:
+            await self._send_browser_file(chat_id, action.send_path, thread_id=thread_id)
+            return
+
+        if action.zip_dir is not None:
+            await self._send_browser_zip(chat_id, action.zip_dir, thread_id=thread_id)
+            return
+
+        text, keyboard = action.text, action.keyboard
 
         # Directory navigation: edit message in-place
         with contextlib.suppress(TelegramBadRequest):
@@ -1362,13 +1767,39 @@ class TelegramBot:
                 parse_mode=ParseMode.HTML,
             )
 
-    async def _handle_queue_cancel(self, chat_id: int, data: str) -> None:
+    async def _handle_stop(
+        self, key: SessionKey, message_id: int, *, thread_id: int | None = None
+    ) -> None:
+        """Ctrl+C for this topic: interrupt its run, leave every other alone.
+
+        The CLI records the interruption itself and the session stays
+        resumable, so anything queued behind this turn simply runs next —
+        which is what Ctrl+C does in a terminal.
+        """
+        stopped = self._orch.interrupt(key.chat_id, key.topic_id)
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.edit_message_reply_markup(
+                chat_id=key.chat_id, message_id=message_id, reply_markup=None
+            )
+        if not stopped:
+            return
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                key.chat_id,
+                markdown_to_telegram_html(t("turn.stopped")),
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
+
+    async def _handle_queue_cancel(
+        self, chat_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
         """Handle a ``mq:<entry_id>`` callback to cancel a queued message."""
         try:
             entry_id = int(data[len(MQ_PREFIX) :])
         except (ValueError, IndexError):
             return
-        await self._sequential.cancel_entry(chat_id, entry_id)
+        await self._sequential.cancel_entry((chat_id, thread_id), entry_id)
 
     async def _mark_button_choice(self, chat_id: int, msg: Message, label: str) -> None:
         """Edit the bot message to append ``[USER ANSWER] label`` and remove the keyboard."""
@@ -1382,8 +1813,30 @@ class TelegramBot:
             return
 
         key = get_session_key(message)
+        self._protect_general(message, key)
         thread_id = get_thread_id(message)
         logger.debug("Message text=%s", text[:80])
+
+        # A pending rename or new folder is waiting for its name. Consume the
+        # message rather than sending it to the agent, which would otherwise
+        # act on "docs" as though it were an instruction.
+        if await self._collect_edit_name(message, key):
+            return
+
+        # Folder first, then persona: one decides where the work happens, the
+        # other how. Each holds the message rather than discarding it, so
+        # answering does not cost the user their prompt.
+        if await self._ask_folder_if_needed(key, text, thread_id=thread_id):
+            return
+
+        # Before the persona gate and before any token is spent: a workspace
+        # that cannot hold a protected handoff should stop the turn, not divert
+        # the file somewhere nobody is looking.
+        if await self._block_if_not_ready(key, thread_id=thread_id):
+            return
+
+        if await self._ask_persona_if_needed(key, text, thread_id=thread_id):
+            return
 
         # #63: status_reaction (stage-based) wins over seen_reaction (one-shot).
         # Both enabled would fight over the same Telegram emoji slot.
@@ -1394,6 +1847,490 @@ class TelegramBot:
             await self._handle_streaming(message, key, text, thread_id=thread_id)
         else:
             await self._handle_non_streaming(message, key, text, thread_id=thread_id)
+
+    async def _handle_consult_selector(self, key: SessionKey, message_id: int, data: str) -> None:
+        """Record a new wipe schedule and refresh the notice that states it."""
+        from ductor_bot.config import update_config_file_async
+        from ductor_bot.orchestrator.selectors.consult_selector import (
+            consult_selector,
+            parse_callback,
+            resolve_choice,
+        )
+
+        index = parse_callback(data)
+        chosen = resolve_choice(index) if index is not None else None
+        if chosen is None:
+            await edit_selector_response(
+                self._bot, key.chat_id, message_id, consult_selector(self._orch)
+            )
+            return
+
+        self._config.consult_wipe = chosen
+        await update_config_file_async(self._orch.paths.config_path, consult_wipe=chosen)
+        # The pinned notice names the schedule, so it is now out of date. It is
+        # rewritten here rather than at the next restart: the sentence people
+        # rely on must not describe the old plan.
+        await self._refresh_managed_notices()
+        await edit_selector_response(
+            self._bot, key.chat_id, message_id, consult_selector(self._orch)
+        )
+
+    async def _refresh_managed_notices(self) -> None:
+        """Re-run the bootstrap so pinned notices match the current config."""
+        if not self._config.managed_topics:
+            return
+        from ductor_bot.messenger.telegram.managed_topics import (
+            ManagedTopicStore,
+            ensure_managed_topics,
+        )
+
+        paths = self._orch.paths
+        store = ManagedTopicStore(paths.managed_topics_path)
+        schedule = (self._config.consult_wipe, self._config.consult_wipe_hour)
+        for chat_id in self._config.allowed_group_ids:
+            await ensure_managed_topics(
+                self._bot, chat_id, store, paths.consult_dir, schedule
+            )
+
+    def _protect_general(self, message: Message, key: SessionKey) -> None:
+        """Mark a forum's General thread as unbindable, before anything reads it.
+
+        Called at both front doors — messages and callbacks — because every path
+        that could bind a folder is reached by an update from the same chat, so
+        marking here is enough for the store to refuse all of them.
+        """
+        if is_general_thread(message):
+            self._orch.bindings.protect(key.storage_key)
+
+    async def _ask_folder_if_needed(
+        self, key: SessionKey, text: str, *, thread_id: int | None = None
+    ) -> bool:
+        """Ask which folder this conversation works in, before any work happens.
+
+        Returns True when the message was held and the question asked, in which
+        case the caller must not process it yet.
+
+        Nothing is inferred. A folder is never guessed from a topic's name — the
+        mechanism that did guess failed silently after every restart, which is
+        how a file ended up in a directory nobody was told about.
+        """
+        from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
+
+        if self._orch.bindings.has_choice(key.storage_key):
+            return False
+        # Nothing configured means one possible answer, so there is nothing to
+        # consent to; blocking here would lock out an installation that has
+        # never defined a project.
+        catalogue = self._roots_for(key)
+        if not catalogue:
+            return False
+
+        self._orch.bindings.hold(key.storage_key, text)
+        resp = folder_selector(self._orch, key, asking=True, catalogue=catalogue)
+        await self._bot.send_message(
+            key.chat_id,
+            markdown_to_telegram_html(resp.text),
+            reply_markup=button_grid_to_markup(resp.buttons),
+            message_thread_id=thread_id,
+            parse_mode=ParseMode.HTML,
+        )
+        return True
+
+    async def _handle_folder_selector(
+        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
+        """Record a folder choice and run whatever message was waiting on it."""
+        from ductor_bot.orchestrator.selectors.folder_selector import (
+            folder_selector,
+            parse_callback,
+            resolve_choice,
+        )
+
+        # A panel posted before this conversation was recognised as General is
+        # still on screen and still pressable, so the refusal lives here too and
+        # not only where the buttons are offered.
+        if self._orch.bindings.is_protected(key.storage_key):
+            with contextlib.suppress(TelegramBadRequest):
+                await self._bot.edit_message_text(
+                    chat_id=key.chat_id,
+                    message_id=message_id,
+                    text=markdown_to_telegram_html(t("folder.general_locked")),
+                    parse_mode=ParseMode.HTML,
+                )
+            return
+
+        catalogue = self._roots_for(key)
+        index = parse_callback(data)
+        chosen = resolve_choice(catalogue, index) if index is not None else None
+        if chosen is None:
+            resp = folder_selector(self._orch, key, catalogue=catalogue)
+            await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+            return
+
+        self._orch.bindings.set(key.storage_key, chosen)
+        label = chosen or t("folder.shared_label")
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                chat_id=key.chat_id,
+                message_id=message_id,
+                text=markdown_to_telegram_html(t("folder.selected", dir=label)),
+                parse_mode=ParseMode.HTML,
+            )
+
+        held = self._orch.bindings.take(key.storage_key)
+        if not held:
+            return
+
+        # The folder was only the first gate. Hand the held message back to the
+        # persona gate rather than running it: skipping straight to execution
+        # here would let a conversation start with no persona chosen.
+        if await self._ask_persona_if_needed(key, held, thread_id=thread_id):
+            return
+
+        async with self._sequential.get_lock(key.lock_key):
+            if self._config.streaming.enabled:
+                sent = await self._bot.send_message(
+                    key.chat_id, held, parse_mode=None, message_thread_id=thread_id
+                )
+                await self._handle_streaming(sent, key, held, thread_id=thread_id)
+            else:
+                await self._handle_non_streaming(None, key, held, thread_id=thread_id)
+
+    async def _block_if_not_ready(
+        self, key: SessionKey, *, thread_id: int | None = None
+    ) -> bool:
+        """Stop the turn when a protected handoff cannot be written here.
+
+        Returns True when the message was refused, in which case the caller must
+        not process it. Nothing is held: a queued message replayed later, after
+        the user has fixed something and moved on, is its own surprise.
+        """
+        folder = self._orch.bindings.resolve(key.storage_key)
+        result = check_readiness(folder, self._orch.paths)
+        if result.ok:
+            return False
+
+        logger.warning("Handoff not ready: %s (%s)", result.key, result.detail)
+        await self._bot.send_message(
+            key.chat_id,
+            markdown_to_telegram_html(t(result.key, detail=result.detail)),
+            reply_markup=_retry_keyboard(),
+            message_thread_id=thread_id,
+            parse_mode=ParseMode.HTML,
+        )
+        return True
+
+    async def _handle_handoff_retry(self, key: SessionKey, message_id: int) -> None:
+        """Re-run the readiness check and say what it found now."""
+        folder = self._orch.bindings.resolve(key.storage_key)
+        result = check_readiness(folder, self._orch.paths)
+        text = (
+            t("handoff.ready_now")
+            if result.ok
+            else t(result.key, detail=result.detail)
+        )
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                chat_id=key.chat_id,
+                message_id=message_id,
+                text=markdown_to_telegram_html(text),
+                parse_mode=ParseMode.HTML,
+                reply_markup=None if result.ok else _retry_keyboard(),
+            )
+
+    async def _ask_persona_if_needed(
+        self, key: SessionKey, text: str, *, thread_id: int | None = None
+    ) -> bool:
+        """Ask which persona should govern a new conversation.
+
+        Returns True when the message was held and the question asked, in which
+        case the caller must not process it yet.
+        """
+        from ductor_bot.orchestrator.selectors.persona_selector import persona_selector
+
+        if not self._config.persona_prompt:
+            return False
+        # Having answered is the only thing that stops the question. Gating on
+        # "no active session" as well left every conversation that predates the
+        # feature unable to ever be asked, and /new already clears the choice.
+        if self._orch.personas.has_choice(key.storage_key):
+            return False
+
+        self._orch.personas.hold(key.storage_key, text)
+        resp = persona_selector(self._orch, key, asking=True)
+        await self._bot.send_message(
+            key.chat_id,
+            markdown_to_telegram_html(resp.text),
+            reply_markup=button_grid_to_markup(resp.buttons),
+            message_thread_id=thread_id,
+            parse_mode=ParseMode.HTML,
+        )
+        return True
+
+    async def _handle_persona_selector(
+        self, key: SessionKey, message_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
+        """Apply a persona choice and run whatever message was waiting on it."""
+        from ductor_bot.orchestrator.selectors.persona_selector import (
+            parse_callback,
+            persona_selector,
+            resolve_choice,
+        )
+
+        index = parse_callback(data)
+        chosen = resolve_choice(index) if index is not None else None
+        if chosen is None:
+            resp = persona_selector(self._orch, key)
+            await edit_selector_response(self._bot, key.chat_id, message_id, resp)
+            return
+
+        self._orch.personas.set(key.storage_key, chosen)
+        label = chosen or t("persona.default_label")
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                chat_id=key.chat_id,
+                message_id=message_id,
+                text=markdown_to_telegram_html(t("persona.selected", persona=label)),
+                parse_mode=ParseMode.HTML,
+            )
+
+        held = self._orch.personas.take(key.storage_key)
+        if not held:
+            return
+        async with self._sequential.get_lock(key.lock_key):
+            if self._config.streaming.enabled:
+                sent = await self._bot.send_message(
+                    key.chat_id, held, parse_mode=None, message_thread_id=thread_id
+                )
+                await self._handle_streaming(sent, key, held, thread_id=thread_id)
+            else:
+                await self._handle_non_streaming(None, key, held, thread_id=thread_id)
+    async def _apply_pending_edit(self, key: SessionKey, message_id: int) -> bool:
+        """Carry out a confirmed rename or folder creation. True when handled."""
+        from ductor_bot.files.edits import apply_newdir, apply_rename, validate_name
+
+        edit = self._edit_store.get(key.storage_key)
+        if edit is None or not edit.name or validate_name(edit.name):
+            return False
+
+        name = edit.name.strip()
+        target = edit.target
+        parent = target.parent if edit.kind == "rename" else target
+        try:
+            if edit.kind == "rename":
+                apply_rename(target, name)
+                notice = t("edits.renamed", old=target.name, new=name)
+            else:
+                apply_newdir(target, name)
+                notice = t("edits.created", name=name)
+        except FileExistsError:
+            notice = t("edits.exists", name=name)
+        except OSError:
+            logger.exception("Edit failed for %s", target)
+            notice = t("edits.failed", name=name)
+        finally:
+            self._edit_store.end(key.storage_key)
+
+        text, keyboard = await asyncio.to_thread(
+            _rendered_dir, self._orch.paths, self._config.project_roots, parent, notice
+        )
+        with contextlib.suppress(TelegramBadRequest):
+            await self._bot.edit_message_text(
+                text=markdown_to_telegram_html(text),
+                chat_id=key.chat_id,
+                message_id=message_id,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
+            )
+        return True
+
+    async def _collect_edit_name(self, message: Message, key: SessionKey) -> bool:
+        """Take a typed name into the pending edit and show it back for approval.
+
+        Returns True when the message was consumed. Nothing is written here —
+        the user still has to confirm, which is what proves the bot read the
+        name they meant.
+        """
+        edit = self._edit_store.get(key.storage_key)
+        if edit is None or not message.text:
+            return False
+
+        edit.name = message.text.strip()
+
+        # The name was an answer to a question, not a message in the
+        # conversation. Leaving it below the menu makes the exchange read
+        # backwards — the menu updates above while the input sits at the
+        # bottom — and it leaves folder names in the topic afterwards.
+        # Best effort: deletion needs can_delete_messages, which is a group
+        # setting the bot does not control.
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.delete_message(
+                chat_id=message.chat.id, message_id=message.message_id
+            )
+
+        text, keyboard = await asyncio.to_thread(
+            build_name_confirmation,
+            self._orch.paths,
+            self._config.project_roots,
+            edit,
+            edit.name,
+        )
+        html = markdown_to_telegram_html(text)
+        thread_id = get_thread_id(message)
+        if edit.message_id is not None:
+            try:
+                await self._bot.edit_message_text(
+                    text=html,
+                    chat_id=message.chat.id,
+                    message_id=edit.message_id,
+                    reply_markup=keyboard,
+                    parse_mode=ParseMode.HTML,
+                )
+            except TelegramBadRequest:
+                edit.message_id = None
+        if edit.message_id is None:
+            with contextlib.suppress(TelegramAPIError):
+                sent = await self._bot.send_message(
+                    message.chat.id,
+                    html,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id,
+                    parse_mode=ParseMode.HTML,
+                )
+                edit.message_id = sent.message_id
+        return True
+
+    async def _report_landing(self, message: Message, dest: Path) -> None:
+        """Say where an attachment was saved.
+
+        Without this the file simply vanishes from the user's point of view:
+        the agent is told the path, the person who sent it never is.
+        """
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                message.chat.id,
+                markdown_to_telegram_html(
+                    t("upload.landed", dir=_short_path(dest, self._orch.paths.ductor_home))
+                ),
+                message_thread_id=get_thread_id(message),
+                parse_mode=ParseMode.HTML,
+            )
+
+    async def _stage_upload(self, message: Message, key: SessionKey) -> None:
+        """Take an attachment into the open upload for *key* and re-render it."""
+        session = self._uploads.get(key.storage_key)
+        if session is None:
+            return
+        session.errors.clear()
+
+        if session.mode == "folder":
+            await self._stage_archive(message, session)
+        else:
+            received = await self._receive_into(message, session.staging)
+            if received is None:
+                session.errors.append(t("upload.download_failed"))
+
+        await self._refresh_staging(message, key, session)
+
+    async def _stage_archive(self, message: Message, session: UploadSession) -> None:
+        """Unpack one archive into staging, refusing a second while one waits."""
+        if session.archive is not None:
+            session.errors.append(t("upload.zip_busy", name=session.archive))
+            return
+
+        scratch = Path(tempfile.mkdtemp(prefix="ductor_zip_in_"))
+        try:
+            received = await self._receive_into(message, scratch)
+            if received is None:
+                session.errors.append(t("upload.download_failed"))
+                return
+            if received.suffix.lower() != ".zip":
+                session.errors.append(t("upload.expect_zip", name=received.name))
+                return
+
+            entries, error_key = await asyncio.to_thread(inspect_archive, received)
+            if entries is None:
+                session.errors.append(t(error_key, count=MAX_ENTRIES, mb=MAX_TOTAL_BYTES // 1048576))
+                return
+
+            await asyncio.to_thread(extract_archive, received, session.staging)
+            session.archive = received.name
+        except (OSError, ValueError):
+            logger.exception("Failed to stage archive for %s", session.dest)
+            session.errors.append(t("upload.download_failed"))
+        finally:
+            await asyncio.to_thread(partial(shutil.rmtree, scratch, ignore_errors=True))
+
+    async def _receive_into(self, message: Message, target: Path) -> Path | None:
+        """Download the attachment and place it flat in *target*.
+
+        ``download_media`` files things under a dated subdirectory, which is
+        right for the shared media folder and wrong for a staging area whose
+        listing is shown to the user.
+        """
+        scratch = Path(tempfile.mkdtemp(prefix="ductor_recv_"))
+        try:
+            info = await download_media(self._bot, message, scratch)
+            if info is None:
+                return None
+            out = target / info.file_name
+            await asyncio.to_thread(_place, info.path, out)
+        except (TelegramAPIError, OSError):
+            logger.exception("Failed to receive attachment into %s", target)
+            return None
+        else:
+            return out
+        finally:
+            await asyncio.to_thread(partial(shutil.rmtree, scratch, ignore_errors=True))
+
+    async def _refresh_staging(
+        self, message: Message, key: SessionKey, session: UploadSession
+    ) -> None:
+        """Update the one message that reports what is staged."""
+        text, keyboard = await asyncio.to_thread(
+            build_staging_view, self._orch.paths, self._config.project_roots, session
+        )
+        html = markdown_to_telegram_html(text)
+        thread_id = get_thread_id(message)
+
+        if session.message_id is not None:
+            try:
+                await self._bot.edit_message_text(
+                    text=html,
+                    chat_id=message.chat.id,
+                    message_id=session.message_id,
+                    reply_markup=keyboard,
+                    parse_mode=ParseMode.HTML,
+                )
+            except TelegramBadRequest:
+                # Editing fails if the text is unchanged or the message is gone;
+                # a fresh one keeps the upload usable either way.
+                session.message_id = None
+            except TelegramAPIError:
+                logger.exception("Failed to update staging message")
+                return
+
+        if session.message_id is None:
+            with contextlib.suppress(TelegramAPIError):
+                sent = await self._bot.send_message(
+                    message.chat.id,
+                    html,
+                    reply_markup=keyboard,
+                    message_thread_id=thread_id,
+                    parse_mode=ParseMode.HTML,
+                )
+                session.message_id = sent.message_id
+
+    @property
+    def _uploads(self) -> UploadStore:
+        """Staging registry, built on first use.
+
+        The orchestrator — and therefore the paths — is not attached until
+        startup, so this cannot be constructed in ``__init__``.
+        """
+        if self._upload_store is None:
+            self._upload_store = UploadStore(self._orch.paths.uploads_staging_dir)
+        return self._upload_store
 
     async def _set_seen_reaction(self, message: Message) -> None:
         """Set a seen reaction on the user message. Graceful degradation on failure."""
@@ -1420,11 +2357,23 @@ class TelegramBot:
 
         if has_media(message):
             paths = self._orch.paths
-            media_prompt = await resolve_media_text(
-                self._bot, message, paths.telegram_files_dir, paths.workspace
-            )
+            key = get_session_key(message)
+
+            # An open upload claims the attachment: it goes to staging and is
+            # reported back, and the agent is not involved until the user has
+            # confirmed where the file belongs.
+            if self._uploads.get(key.storage_key) is not None:
+                await self._stage_upload(message, key)
+                return None
+
+            # Land the upload in the topic's project directory when one is
+            # configured, so "send a file to this topic" puts it where the agent
+            # is working instead of a shared media folder it then has to copy from.
+            dest = self._orch.resolve_topic_media_dir(message) or paths.telegram_files_dir
+            media_prompt = await resolve_media_text(self._bot, message, dest, paths.workspace)
             if media_prompt is None:
                 return None
+            await self._report_landing(message, dest)
             return prepend_reply_to_media(message, media_prompt)
         if not message.text:
             return None
@@ -1523,40 +2472,6 @@ class TelegramBot:
                 injection_prompt=injection_prompt,
                 transport="tg",
             )
-        )
-
-    async def on_task_result(self, result: TaskResult) -> None:
-        """Handle background task result via the message bus."""
-        from ductor_bot.bus.adapters import from_task_result
-
-        chat_id = result.chat_id
-        if not chat_id:
-            chat_id = self._config.allowed_user_ids[0] if self._config.allowed_user_ids else 0
-        if not chat_id:
-            logger.warning("No chat_id for task result delivery (task=%s)", result.task_id)
-            return
-        set_log_context(operation="task", chat_id=chat_id)
-        await self._bus.submit(from_task_result(result))
-
-    async def on_task_question(
-        self,
-        task_id: str,
-        question: str,
-        prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
-    ) -> None:
-        """Deliver a background task question via the message bus."""
-        from ductor_bot.bus.adapters import from_task_question
-
-        if not chat_id:
-            chat_id = self._config.allowed_user_ids[0] if self._config.allowed_user_ids else 0
-        if not chat_id:
-            logger.warning("No chat_id for task question delivery (task=%s)", task_id)
-            return
-        set_log_context(operation="task", chat_id=chat_id)
-        await self._bus.submit(
-            from_task_question(task_id, question, prompt_preview, chat_id, topic_id=thread_id)
         )
 
     async def _handle_webhook_wake(self, chat_id: int, prompt: str) -> str | None:

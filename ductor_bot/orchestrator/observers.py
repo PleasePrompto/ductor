@@ -13,7 +13,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from ductor_bot.background import BackgroundObserver, BackgroundResult
+from ductor_bot.named_runs import NamedRunObserver, NamedRunResult
 
 if TYPE_CHECKING:
     from ductor_bot.bus.bus import MessageBus
@@ -55,7 +55,7 @@ class ObserverManager:
 
         self.cron: CronObserver | None = None
         self.webhook: WebhookObserver | None = None
-        self.background: BackgroundObserver | None = None
+        self.background: NamedRunObserver | None = None
         self.codex_cache: CodexModelCache | None = None
         self.codex_cache_obs: CodexCacheObserver | None = None
         self.gemini_cache_obs: GeminiCacheObserver | None = None
@@ -135,7 +135,7 @@ class ObserverManager:
 
     # -- Task observer initialization -----------------------------------------
 
-    def init_task_observers(
+    def init_run_observers(
         self,
         *,
         cron_manager: CronManager,
@@ -146,7 +146,7 @@ class ObserverManager:
         """Create Background, Cron, and Webhook observers (after caches are ready)."""
         config, paths = self._config, self._paths
         self.codex_cache = codex_cache
-        self.background = BackgroundObserver(
+        self.background = NamedRunObserver(
             paths,
             timeout_seconds=config.timeouts.background,
             cli_service=cli_service,
@@ -276,7 +276,7 @@ class ObserverManager:
 
         if self.background:
 
-            async def _on_bg(result: BackgroundResult) -> None:
+            async def _on_bg(result: NamedRunResult) -> None:
                 await bus.submit(from_background_result(result))
 
             self.background.set_result_handler(_on_bg)

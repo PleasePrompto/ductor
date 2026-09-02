@@ -168,24 +168,6 @@ class TestHandleCommand:
         orchestrator.handle_message.assert_called_once()
 
 
-class TestHandleNewSession:
-    """Test /new handler logic."""
-
-    async def test_new_resets_session(self) -> None:
-        from ductor_bot.messenger.telegram.handlers import handle_new_session
-
-        orchestrator = MagicMock()
-        orchestrator.reset_active_provider_session = AsyncMock(return_value="claude")
-        bot = MagicMock()
-        bot.send_message = AsyncMock()
-
-        msg = _make_message(chat_id=1, text="/new")
-        await handle_new_session(orchestrator, bot, msg)
-        from ductor_bot.session.key import SessionKey
-
-        orchestrator.reset_active_provider_session.assert_called_once_with(SessionKey(chat_id=1))
-
-
 class TestStripMention:
     """Test @mention removal."""
 
@@ -345,19 +327,6 @@ class TestForumTopicPropagation:
         await handle_command(orchestrator, bot, msg)
         opts = mock_send.call_args[0][3]
         assert opts.thread_id == 77
-
-    @patch("ductor_bot.messenger.telegram.handlers.send_rich", new_callable=AsyncMock)
-    async def test_handle_new_session_passes_thread_id(self, mock_send: AsyncMock) -> None:
-        from ductor_bot.messenger.telegram.handlers import handle_new_session
-
-        orchestrator = MagicMock()
-        orchestrator.reset_active_provider_session = AsyncMock(return_value="claude")
-        bot = MagicMock()
-        msg = _make_message(text="/new", topic_thread_id=55)
-
-        await handle_new_session(orchestrator, bot, msg)
-        opts = mock_send.call_args[0][3]
-        assert opts.thread_id == 55
 
     @patch("ductor_bot.messenger.telegram.handlers.send_rich", new_callable=AsyncMock)
     async def test_handle_abort_none_thread_id_for_normal_msg(self, mock_send: AsyncMock) -> None:

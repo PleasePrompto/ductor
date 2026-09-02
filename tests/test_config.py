@@ -12,7 +12,6 @@ from ductor_bot.config import (
     DockerConfig,
     MemoryCompactionConfig,
     MemoryFlushConfig,
-    MemoryReflectionConfig,
     ModelRegistry,
     StreamingConfig,
     deep_merge_config,
@@ -241,18 +240,6 @@ def test_transports_default_is_telegram() -> None:
 # -- Memory* config bounds (MED #4) --
 
 
-def test_memory_reflection_rejects_zero_every_n_messages() -> None:
-    """``every_n_messages=0`` would trigger ZeroDivisionError in hooks.py modulo check."""
-    with pytest.raises(ValidationError, match="every_n_messages"):
-        MemoryReflectionConfig(every_n_messages=0)
-
-
-def test_memory_reflection_rejects_negative_every_n_messages() -> None:
-    """Negative cadence is nonsense."""
-    with pytest.raises(ValidationError, match="every_n_messages"):
-        MemoryReflectionConfig(every_n_messages=-5)
-
-
 def test_memory_flush_rejects_negative_dedup_seconds() -> None:
     """``dedup_seconds`` accepts 0 (no window) but rejects negative values."""
     with pytest.raises(ValidationError, match="dedup_seconds"):
@@ -314,3 +301,31 @@ def test_update_config_file_does_not_log_values(
 
     assert "SUPERSECRET-TOKEN" not in caplog.text
     assert "api" in caplog.text
+
+
+# -- Claude accounts -----------------------------------------------------------
+
+
+def test_claude_account_defaults_to_empty() -> None:
+    config = AgentConfig(telegram_token="t")
+    assert config.claude_accounts == {}
+    assert config.claude_account == ""
+
+
+def test_claude_account_kept_when_configured() -> None:
+    config = AgentConfig(
+        telegram_token="t",
+        claude_accounts={"work": "~/.claude-work"},
+        claude_account="work",
+    )
+    assert config.claude_account == "work"
+
+
+def test_unknown_claude_account_is_cleared() -> None:
+    """An unknown name must not silently fall back to the default store."""
+    config = AgentConfig(
+        telegram_token="t",
+        claude_accounts={"work": "~/.claude-work"},
+        claude_account="ghost",
+    )
+    assert config.claude_account == ""

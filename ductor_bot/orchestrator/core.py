@@ -6,12 +6,10 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ductor_bot.background import (
-    BackgroundSubmit,
-    BackgroundTask,
-)
+from ductor_bot.cli.claude_accounts import resolve_account_dir
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
@@ -26,19 +24,29 @@ from ductor_bot.errors import (
     WebhookError,
     WorkspaceError,
 )
+from ductor_bot.handoff.reinject import ReinjectFlags
+from ductor_bot.handoff.store import HandoffStore
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
+from ductor_bot.named_runs import (
+    NamedRunSubmit,
+)
 from ductor_bot.orchestrator.commands import (
+    cmd_account,
+    cmd_clear,
+    cmd_compact,
+    cmd_consult,
     cmd_cron,
     cmd_diagnose,
     cmd_effort,
+    cmd_folder,
+    cmd_handoff,
     cmd_memory,
     cmd_model,
-    cmd_reset,
-    cmd_reset_current,
+    cmd_persona,
     cmd_sessions,
+    cmd_skills,
     cmd_status,
-    cmd_tasks,
     cmd_upgrade,
 )
 from ductor_bot.orchestrator.directives import parse_directives
@@ -51,32 +59,29 @@ from ductor_bot.orchestrator.flows import (
     normal_streaming,
 )
 from ductor_bot.orchestrator.hooks import (
-    DELEGATION_BRIEF,
-    DELEGATION_REMINDER,
     MAINMEMORY_REMINDER,
     MessageHookRegistry,
-    build_memory_reflection_hook,
 )
 from ductor_bot.orchestrator.memory_flush import MemoryFlusher
 from ductor_bot.orchestrator.observers import ObserverManager
 from ductor_bot.orchestrator.providers import ProviderManager
 from ductor_bot.orchestrator.registry import CommandRegistry, OrchestratorResult
+from ductor_bot.personas.store import PersonaStore
 from ductor_bot.security import detect_suspicious_patterns
 from ductor_bot.session import SessionKey, SessionManager
 from ductor_bot.session.manager import SessionData
 from ductor_bot.session.named import NamedSessionRegistry
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.workspace.paths import DuctorPaths
-from ductor_bot.workspace.project_roots import resolve_project_root
+from ductor_bot.workspace.topic_bindings import BindingStore
 
 if TYPE_CHECKING:
-    from ductor_bot.background import BackgroundObserver
     from ductor_bot.bus.bus import MessageBus
     from ductor_bot.bus.lock_pool import LockPool
     from ductor_bot.config import ModelRegistry
     from ductor_bot.multiagent.supervisor import AgentSupervisor
+    from ductor_bot.named_runs import NamedRunObserver
     from ductor_bot.session.named import NamedSession
-    from ductor_bot.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
 
@@ -152,9 +157,14 @@ class Orchestrator:
                 max_turns=config.max_turns,
                 max_budget_usd=config.max_budget_usd,
                 permission_mode=config.permission_mode,
+                disallowed_tools=tuple(config.disallowed_tools),
                 reasoning_effort=config.reasoning_effort,
                 gemini_api_key=config.gemini_api_key,
                 docker_container=docker_container,
+                claude_account_dir=resolve_account_dir(
+                    config.claude_accounts, config.claude_account
+                )
+                or "",
                 claude_cli_parameters=tuple(config.cli_parameters.claude),
                 codex_cli_parameters=tuple(config.cli_parameters.codex),
                 gemini_cli_parameters=tuple(config.cli_parameters.gemini),
@@ -169,7 +179,12 @@ class Orchestrator:
             available_providers=frozenset(),
             process_registry=self._process_registry,
         )
+        self._personas = PersonaStore(paths.ductor_home / "personas.json")
+        self._bindings = BindingStore(paths.ductor_home / "topic_bindings.json")
+        self._handoffs = HandoffStore(paths)
+        self._reinject = ReinjectFlags()
         self._cli_service.set_working_dir_resolver(self._resolve_request_working_dir)
+        self._cli_service.set_persona_resolver(self._resolve_request_persona)
         self._cron_manager = CronManager(jobs_path=paths.cron_jobs_path)
         self._webhook_manager = WebhookManager(hooks_path=paths.webhooks_path)
         self._observers = ObserverManager(config, paths)
@@ -205,42 +220,85 @@ class Orchestrator:
             if config.memory_flush.enabled
             else None
         )
+        if self._memory_flusher is not None:
+            self._memory_flusher.set_reinject(self._reinject)
+            self._memory_flusher.set_folder_resolver(
+                lambda key: self._bindings.resolve(key.storage_key)
+            )
         self._hook_registry = MessageHookRegistry()
         self._hook_registry.register(MAINMEMORY_REMINDER)
-        self._hook_registry.register(DELEGATION_BRIEF)
-        self._hook_registry.register(DELEGATION_REMINDER)
-        if config.memory_reflection.enabled:
-            self._hook_registry.register(build_memory_reflection_hook(config.memory_reflection))
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
-        self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
         self._command_registry = CommandRegistry()
         self._register_commands()
 
     def _resolve_request_working_dir(self, request: AgentRequest) -> str | None:
-        """Map a CLI request to a per-topic project root, if configured.
+        """The folder this conversation was bound to, if any.
 
         Returns ``None`` (keep the default workspace) for named sessions —
-        their resume consistency depends on a stable working dir — and when
-        no ``project_roots`` entry matches the request's topic.
+        their resume consistency depends on a stable working dir — and whenever
+        the conversation has no binding, which includes an explicit choice of
+        the shared workspace. Nothing is inferred: an unbound conversation is
+        stopped by the transport's gate before it ever reaches here.
         """
         if request.process_label.startswith("ns:"):
             return None  # named sessions stay in workspace (resume consistency)
-        return resolve_project_root(
-            self._config.project_roots,
-            chat_id=request.chat_id,
-            topic_id=request.topic_id,
-            topic_name=self._sessions.resolve_topic_name(request.chat_id, request.topic_id),
-        )
+        key = SessionKey.for_transport(request.transport, request.chat_id, request.topic_id)
+        bound = self._bindings.resolve(key.storage_key)
+        return str(bound) if bound is not None else None
+
+    def resolve_topic_media_dir(self, message: object) -> Path | None:
+        """Where an upload from *message* should be stored.
+
+        Returns the topic's configured project root, or ``None`` to fall back to
+        the shared media directory. Uploads previously always went to the shared
+        folder, so a file sent to a project topic landed away from the work and
+        had to be copied by hand.
+        """
+        chat = getattr(message, "chat", None)
+        chat_id = getattr(chat, "id", None)
+        if chat_id is None:
+            return None
+        topic_id = getattr(message, "message_thread_id", None)
+        if topic_id is None:
+            return None
+
+        key = SessionKey.for_transport("tg", chat_id, topic_id)
+        return self._bindings.resolve(key.storage_key)
+
+    def _resolve_request_persona(self, request: AgentRequest) -> str:
+        """The persona chosen for this conversation, or "" for none.
+
+        Never inferred: an unanswered conversation returns "" and the transport
+        is responsible for asking rather than picking something plausible.
+        """
+        key = SessionKey.for_transport(request.transport, request.chat_id, request.topic_id)
+        return self._personas.get(key.storage_key) or ""
+
+    @property
+    def personas(self) -> PersonaStore:
+        """Per-conversation persona choices."""
+        return self._personas
+
+    @property
+    def bindings(self) -> BindingStore:
+        """Per-conversation folder bindings."""
+        return self._bindings
+
+    @property
+    def handoffs(self) -> HandoffStore:
+        """Per-conversation handoff files."""
+        return self._handoffs
+
+    @property
+    def reinject(self) -> ReinjectFlags:
+        """Conversations owed a handoff re-injection after a compaction."""
+        return self._reinject
 
     @property
     def paths(self) -> DuctorPaths:
         """Public access to resolved workspace paths."""
         return self._paths
 
-    @property
-    def task_hub(self) -> TaskHub | None:
-        """Public access to the task hub (None when tasks are disabled)."""
-        return self._task_hub
 
     @property
     def config(self) -> AgentConfig:
@@ -273,7 +331,7 @@ class Orchestrator:
         return self._process_registry
 
     @property
-    def bg_observer(self) -> BackgroundObserver | None:
+    def bg_observer(self) -> NamedRunObserver | None:
         """Public access to the background observer."""
         return self._observers.background
 
@@ -285,11 +343,6 @@ class Orchestrator:
     @supervisor.setter
     def supervisor(self, value: AgentSupervisor | None) -> None:
         self._supervisor = value
-
-    def set_task_hub(self, hub: TaskHub) -> None:
-        """Inject the task hub (called by supervisor or startup wiring)."""
-        self._task_hub = hub
-        hub.start_maintenance()
 
     @classmethod
     async def create(
@@ -439,21 +492,27 @@ class Orchestrator:
 
     def _register_commands(self) -> None:
         reg = self._command_registry
-        reg.register_async("/new", cmd_reset)
-        reg.register_async("/reset", cmd_reset_current)
-        reg.register_async("/reset ", cmd_reset_current)
+        reg.register_async("/clear", cmd_clear)
+        reg.register_async("/compact", cmd_compact)
+        reg.register_async("/handoff", cmd_handoff)
         # /stop is handled entirely by the Middleware abort path (before the lock)
         # and never reaches the orchestrator command registry.
         reg.register_async("/status", cmd_status)
         reg.register_async("/model", cmd_model)
         reg.register_async("/model ", cmd_model)
         reg.register_async("/effort", cmd_effort)
+        reg.register_async("/skills", cmd_skills)
+        reg.register_async("/skills ", cmd_skills)
+        reg.register_async("/account", cmd_account)
+        reg.register_async("/account ", cmd_account)
         reg.register_async("/memory", cmd_memory)
+        reg.register_async("/persona", cmd_persona)
+        reg.register_async("/folder", cmd_folder)
+        reg.register_async("/consult", cmd_consult)
         reg.register_async("/cron", cmd_cron)
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
-        reg.register_async("/sessions", cmd_sessions)
-        reg.register_async("/tasks", cmd_tasks)
+        reg.register_async("/named", cmd_sessions)
 
     def register_multiagent_commands(self) -> None:
         """Register /agents, /agent_start, /agent_stop, /agent_restart commands.
@@ -531,14 +590,14 @@ class Orchestrator:
         self._named_sessions.end_all(chat_id)
         return killed
 
-    def interrupt(self, chat_id: int) -> int:
+    def interrupt(self, chat_id: int, topic_id: int | None = None) -> int:
         """Send SIGINT to active CLI processes for *chat_id*.
 
         Unlike :meth:`abort` this does not kill or unregister the processes.
         It sends a soft interrupt so the CLI can cancel the current tool
         execution (equivalent to pressing ESC in the terminal).
         """
-        return self._process_registry.interrupt_all(chat_id)
+        return self._process_registry.interrupt_all(chat_id, topic_id)
 
     async def abort_all(self) -> int:
         """Kill all active CLI processes across all chats on this agent."""
@@ -618,7 +677,7 @@ class Orchestrator:
             key=SessionKey.for_transport(request.transport, chat_id, request.thread_id),
         )
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
-        sub = BackgroundSubmit(
+        sub = NamedRunSubmit(
             chat_id=chat_id,
             prompt=prompt,
             message_id=request.message_id,
@@ -677,7 +736,7 @@ class Orchestrator:
             and _validate_reasoning_effort(self, ns.model, followup_effort) is not None
         ):
             followup_effort = "medium"
-        sub = BackgroundSubmit(
+        sub = NamedRunSubmit(
             chat_id=chat_id,
             prompt=prompt,
             message_id=message_id,
@@ -725,12 +784,6 @@ class Orchestrator:
         all_sessions = await self._sessions.list_active_for_chat(chat_id)
         return [s for s in all_sessions if s.topic_id is not None]
 
-    def active_background_tasks(self, chat_id: int | None = None) -> list[BackgroundTask]:
-        """Return active background tasks, optionally filtered by chat_id."""
-        if self._observers.background is None:
-            return []
-        return self._observers.background.active_tasks(chat_id)
-
     def is_chat_busy(self, chat_id: int, topic_id: int | None = None) -> bool:
         """Check if a chat has active CLI processes."""
         if self._process_registry.has_active(chat_id, topic_id):
@@ -766,6 +819,8 @@ class Orchestrator:
                 "permission_mode",
                 "reasoning_effort",
                 "cli_parameters",
+                "claude_accounts",
+                "claude_account",
             )
         ):
             self._cli_service.update_config(
@@ -776,13 +831,25 @@ class Orchestrator:
                     max_turns=config.max_turns,
                     max_budget_usd=config.max_budget_usd,
                     permission_mode=config.permission_mode,
+                disallowed_tools=tuple(config.disallowed_tools),
                     reasoning_effort=config.reasoning_effort,
                     gemini_api_key=config.gemini_api_key,
                     docker_container=self._cli_service._config.docker_container,
+                    claude_account_dir=resolve_account_dir(
+                        config.claude_accounts, config.claude_account
+                    )
+                    or "",
                     claude_cli_parameters=tuple(config.cli_parameters.claude),
                     codex_cli_parameters=tuple(config.cli_parameters.codex),
                     gemini_cli_parameters=tuple(config.cli_parameters.gemini),
                     antigravity_cli_parameters=tuple(config.cli_parameters.antigravity),
+                    # grok_cli_parameters, agent_name and interagent_port were
+                    # omitted here while being set at construction, so any hot
+                    # reload silently cleared the Grok flags and demoted a
+                    # sub-agent to "main" on the default inter-agent port.
+                    grok_cli_parameters=tuple(config.cli_parameters.grok),
+                    agent_name=self._cli_service._config.agent_name,
+                    interagent_port=self._cli_service._config.interagent_port,
                     transcribe_command=config.transcription.audio_command,
                     video_transcribe_command=config.transcription.video_command,
                 )

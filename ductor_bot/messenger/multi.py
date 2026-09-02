@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from ductor_bot.messenger.protocol import BotProtocol
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.orchestrator.core import Orchestrator
-    from ductor_bot.tasks.models import TaskResult
     from ductor_bot.workspace.paths import DuctorPaths
 
 logger = logging.getLogger(__name__)
@@ -99,21 +98,6 @@ class MultiBotAdapter:
     async def on_async_interagent_result(self, result: AsyncInterAgentResult) -> None:
         for bot in self._all:
             await bot.on_async_interagent_result(result)
-
-    async def on_task_result(self, result: TaskResult) -> None:
-        for bot in self._all:
-            await bot.on_task_result(result)
-
-    async def on_task_question(
-        self,
-        task_id: str,
-        question: str,
-        prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
-    ) -> None:
-        for bot in self._all:
-            await bot.on_task_question(task_id, question, prompt_preview, chat_id, thread_id)
 
     def file_roots(self, paths: DuctorPaths) -> list[Path] | None:
         return self._primary.file_roots(paths)

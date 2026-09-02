@@ -264,7 +264,7 @@ class TestCommandRouting:
 
 
 class TestNewSessionFlow:
-    async def test_new_command_resets_session(
+    async def test_clear_command_resets_session(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
     ) -> None:
         orch, _mock_execute = orch_with_mock_cli
@@ -275,9 +275,9 @@ class TestNewSessionFlow:
         assert session_before is not None
         assert session_before.session_id == "sess-abc-123"
 
-        result = await orch.handle_message(KEY, "/new")
+        result = await orch.handle_message(KEY, "/clear")
 
-        assert "Session Reset" in result.text
+        assert "Cleared" in result.text
 
         session_after = await orch._sessions.get_active(KEY)
         assert session_after is not None
@@ -289,7 +289,7 @@ class TestNewSessionFlow:
     ) -> None:
         orch, mock_execute = orch_with_mock_cli
 
-        await orch.handle_message(KEY, "/new")
+        await orch.handle_message(KEY, "/clear")
 
         mock_execute.reset_mock()
         mock_execute.return_value = _make_agent_response(result="Fresh start!")
@@ -604,7 +604,9 @@ class TestFullRoundTrip:
         await orch.handle_message(KEY, "First message")
 
         request = mock_execute.call_args[0][0]
-        assert request.append_system_prompt == memory_text
+        # The delta shares this channel now, so mainmemory is one part of it.
+        assert memory_text in request.append_system_prompt
+        assert "HANDOFF LOG" in request.append_system_prompt
 
     async def test_resumed_session_skips_mainmemory_injection(
         self, orch_with_mock_cli: tuple[Orchestrator, AsyncMock]
@@ -621,4 +623,7 @@ class TestFullRoundTrip:
         await orch.handle_message(KEY, "Second")
 
         request = mock_execute.call_args[0][0]
-        assert request.append_system_prompt is None
+        # Always non-empty now: the handoff instruction lives here. The point
+        # of this assertion is that MAINMEMORY is not re-injected.
+        assert "HANDOFF LOG" in (request.append_system_prompt or "")
+        assert "Main Memory" not in (request.append_system_prompt or "")

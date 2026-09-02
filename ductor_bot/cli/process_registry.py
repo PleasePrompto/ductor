@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _SIGTERM_GRACE_SECONDS = 2.0
 _PRESERVED_LABEL_PREFIXES: tuple[str, ...] = ("task:", "task_result:", "ns:")
-# Lifecycle for these subprocesses is owned by /tasks, /sessions, or TaskHub.cancel().
+# Lifecycle for these subprocesses is owned by /sessions and the named-session flow.
 
 
 @dataclass(slots=True)
@@ -40,7 +40,9 @@ class ProcessRegistry:
         self._aborted: set[int] = set()
         self._aborted_topics: set[tuple[int, int | None]] = set()
         self._aborted_labels: set[tuple[int, str]] = set()
-        self._interrupted: set[int] = set()
+        # Keyed by (chat_id, topic_id): one topic is one session, so stopping
+        # Salam-Website must leave a run in EMR alone.
+        self._interrupted: set[tuple[int, int | None]] = set()
         # MED #9: serialize bulk kill operations (kill_for_task / kill_stale /
         # kill_by_label) against each other so a concurrent ``register`` that
         # slips in mid-iteration can't orphan subprocesses past a cancel.
@@ -111,7 +113,7 @@ class ProcessRegistry:
         Used by ``/stop`` so a stop in one topic does not affect another
         topic in the same chat. ``topic_id=None`` matches processes
         registered without a topic (e.g. private chats). Labels owned by
-        /tasks, /sessions, or TaskHub.cancel() are preserved.
+        /sessions and the named-session flow are preserved.
         """
         async with self._kill_lock:
             entries = self._processes.get(chat_id, [])
@@ -156,13 +158,24 @@ class ProcessRegistry:
         """Clear the topic-scoped abort flag (called after handling the abort)."""
         self._aborted_topics.discard((chat_id, topic_id))
 
-    def was_interrupted(self, chat_id: int) -> bool:
-        """Check whether *chat_id* was soft-interrupted since last clear."""
-        return chat_id in self._interrupted
+    def was_interrupted(self, chat_id: int, topic_id: int | None = None) -> bool:
+        """Whether this conversation was soft-interrupted since the last clear.
 
-    def clear_interrupt(self, chat_id: int) -> None:
-        """Clear the interrupt flag for *chat_id*."""
-        self._interrupted.discard(chat_id)
+        Omitting *topic_id* asks about the chat as a whole, which is what the
+        group-wide escape hatch needs; passing one asks about that topic only.
+        """
+        if topic_id is None:
+            return any(chat == chat_id for chat, _topic in self._interrupted)
+        return (chat_id, topic_id) in self._interrupted
+
+    def clear_interrupt(self, chat_id: int, topic_id: int | None = None) -> None:
+        """Clear the interrupt flag. Without *topic_id*, clears the whole chat."""
+        if topic_id is None:
+            self._interrupted = {
+                (chat, topic) for chat, topic in self._interrupted if chat != chat_id
+            }
+            return
+        self._interrupted.discard((chat_id, topic_id))
 
     def has_active(self, chat_id: int, topic_id: int | None = None) -> bool:
         """Return True if *chat_id* has at least one running subprocess.
@@ -194,22 +207,28 @@ class ProcessRegistry:
         """Clear the abort flag for a specific label."""
         self._aborted_labels.discard((chat_id, label))
 
-    def interrupt_all(self, chat_id: int) -> int:
-        """Send SIGINT to every active process for *chat_id*.
+    def interrupt_all(self, chat_id: int, topic_id: int | None = None) -> int:
+        """Send SIGINT to the active processes of a conversation.
 
         Unlike :meth:`kill_all` this does NOT terminate or unregister the
         processes — it sends a soft interrupt so the CLI can cancel the
-        current operation (equivalent to pressing ESC in the terminal).
-        Returns the count of processes signalled.
+        current operation, the way Ctrl+C does in a terminal. The CLI records
+        the interruption itself and the session stays resumable, which is what
+        makes Stop safe to offer.
+
+        With *topic_id* only that topic is signalled; without it, every topic
+        in the chat is. Returns the count of processes signalled.
         """
         entries = self._processes.get(chat_id, [])
+        if topic_id is not None:
+            entries = [e for e in entries if e.topic_id == topic_id]
         if not entries:
             return 0
-        self._interrupted.add(chat_id)
         count = 0
         for tracked in entries:
             if tracked.process.returncode is not None:
                 continue
+            self._interrupted.add((chat_id, tracked.topic_id))
             interrupt_process(tracked.process.pid)
             logger.debug(
                 "SIGINT sent: pid=%s label=%s chat=%d",

@@ -27,9 +27,15 @@ from typing import TYPE_CHECKING
 
 from ductor_bot.cli.types import AgentRequest
 from ductor_bot.errors import CLIError
+from ductor_bot.handoff.paths import handoff_file
+from ductor_bot.handoff.prompts import consolidation_prompt
+from ductor_bot.handoff.reinject import ReinjectFlags
 from ductor_bot.workspace.loader import read_mainmemory
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
     from ductor_bot.bus.lock_pool import LockPool
     from ductor_bot.cli.service import CLIService
     from ductor_bot.config import MemoryCompactionConfig, MemoryFlushConfig
@@ -57,8 +63,23 @@ class MemoryFlusher:
         self._compaction = compaction_config
         self._paths = paths
         self._lock_pool = lock_pool
+        self._reinject: ReinjectFlags | None = None
+        self._folder_resolver: Callable[[SessionKey], Path | None] | None = None
         self._boundary_seen: set[SessionKey] = set()
         self._last_flushed: dict[SessionKey, float] = {}
+
+    def set_folder_resolver(self, resolver: Callable[[SessionKey], Path | None]) -> None:
+        """Attach the binding lookup, so the flush turn can name the handoff."""
+        self._folder_resolver = resolver
+
+    def _consolidation_for(self, key: SessionKey) -> str:
+        """The consolidation instruction, naming this conversation's handoff."""
+        folder = self._folder_resolver(key) if self._folder_resolver else None
+        return consolidation_prompt(handoff_file(key, folder, self._paths))
+
+    def set_reinject(self, reinject: ReinjectFlags) -> None:
+        """Attach the handoff re-injection flags (late wiring, like the lock pool)."""
+        self._reinject = reinject
 
     def set_lock_pool(self, lock_pool: LockPool) -> None:
         """Attach the shared ``LockPool`` after construction (late wiring)."""
@@ -75,8 +96,15 @@ class MemoryFlusher:
         return self._lock_pool.get(key.lock_key)
 
     def mark_boundary(self, key: SessionKey) -> None:
-        """Record that a CompactBoundaryEvent was seen for this session."""
+        """Record that a CompactBoundaryEvent was seen for this session.
+
+        The same boundary owes the conversation a handoff re-injection: the
+        session id does not change across a compaction, so nothing else would
+        notice that the model has just lost its working context.
+        """
         self._boundary_seen.add(key)
+        if self._reinject is not None:
+            self._reinject.mark(key)
         logger.debug("Memory flush: boundary marked chat=%d", key.chat_id)
 
     def should_flush(self, key: SessionKey) -> bool:
@@ -113,7 +141,7 @@ class MemoryFlusher:
             return
 
         request = AgentRequest(
-            prompt=self._config.flush_prompt,
+            prompt=f"{self._config.flush_prompt}\n{self._consolidation_for(key)}",
             chat_id=key.chat_id,
             topic_id=key.topic_id,
             transport=key.transport,

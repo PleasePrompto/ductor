@@ -8,7 +8,7 @@ import pytest
 
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_discovery import CodexModelInfo
-from ductor_bot.cli.param_resolver import TaskOverrides
+from ductor_bot.cli.param_resolver import RunOverrides
 from ductor_bot.config import AgentConfig
 from ductor_bot.webhook.models import WebhookEntry
 
@@ -56,7 +56,7 @@ def test_resolve_execution_config_no_overrides(
     )
 
     # Webhook with no overrides
-    overrides = TaskOverrides()
+    overrides = RunOverrides()
 
     exec_config = observer.resolve_execution_config(overrides)
 
@@ -80,7 +80,7 @@ def test_resolve_execution_config_with_overrides(
     )
 
     # Webhook with overrides
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider="codex",
         model="gpt-4o",
         reasoning_effort="high",
@@ -122,8 +122,8 @@ def test_dispatch_with_cli_parameters(
         task_folder="test-folder",
     )
 
-    # Create TaskOverrides from hook
-    overrides = TaskOverrides(
+    # Create RunOverrides from hook
+    overrides = RunOverrides(
         provider=hook.provider,
         model=hook.model,
         reasoning_effort=hook.reasoning_effort,

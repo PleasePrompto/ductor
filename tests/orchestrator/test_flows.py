@@ -84,7 +84,10 @@ async def test_normal_resume_session_no_append(orch: Orchestrator) -> None:
 
     second_call = mock_execute.call_args_list[1]
     request = second_call[0][0]
-    assert request.append_system_prompt is None
+    # Always non-empty now: the handoff instruction lives here. The point
+    # of this assertion is that MAINMEMORY is not re-injected.
+    assert "HANDOFF LOG" in (request.append_system_prompt or "")
+    assert "Main Memory" not in (request.append_system_prompt or "")
     assert request.resume_session is not None
 
 
@@ -925,7 +928,10 @@ async def test_normal_no_files_configured_leaves_resume_append_none(orch: Orches
     await normal(orch, SessionKey(chat_id=1), "Hello")
     await normal(orch, SessionKey(chat_id=1), "Again")
     request = mock_execute.call_args[0][0]
-    assert request.append_system_prompt is None
+    # Always non-empty now: the handoff instruction lives here. The point
+    # of this assertion is that MAINMEMORY is not re-injected.
+    assert "HANDOFF LOG" in (request.append_system_prompt or "")
+    assert "Main Memory" not in (request.append_system_prompt or "")
 
 
 async def test_heartbeat_excludes_appended_files(orch: Orchestrator) -> None:
@@ -941,6 +947,8 @@ async def test_heartbeat_excludes_appended_files(orch: Orchestrator) -> None:
 
     assert mock_execute.await_count == 1
     request = mock_execute.await_args[0][0]
+    # A heartbeat is a background check, not a conversation: there is no
+    # handoff to maintain, so nothing is appended at all.
     assert request.append_system_prompt is None
 
 

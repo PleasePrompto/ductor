@@ -65,23 +65,28 @@ _DEFAULT_HEARTBEAT_PROMPT = (
 
 _DEFAULT_HEARTBEAT_ACK = "HEARTBEAT_OK"
 
+# Facts are routed by scope, never dumped in one place. Without the routing
+# question this prompt sent everything to the global file, which is how a
+# WordPress post id ended up being injected into every unrelated conversation.
 _DEFAULT_FLUSH_PROMPT = (
     "## PRE-COMPACTION MEMORY FLUSH\n"
-    "The conversation context is about to be compacted. Before that happens: "
-    "review the recent conversation and APPEND any durable facts, decisions, "
-    "preferences, or learnings to memory_system/MAINMEMORY.md that are not "
-    "already captured there. Do NOT overwrite existing entries. If there is "
-    "nothing new worth saving, reply exactly: FLUSH_NOOP"
+    "The conversation context is about to be compacted. Before that happens, "
+    "review the recent conversation and record anything durable. For each fact, "
+    "ask FIRST which scope it belongs to:\n"
+    "- true only of the task in hand -> it belongs in this conversation's "
+    "handoff, not here;\n"
+    "- true of this project, beyond the current task (a quirk of the codebase, "
+    "an id, a workaround) -> APPEND it to handoffs/knowledge.md in the working "
+    "directory;\n"
+    "- true of the user or of how they want to be worked with, or something "
+    "they asked to be remembered -> APPEND it to memory_system/MAINMEMORY.md.\n"
+    "Do NOT overwrite existing entries anywhere. Project detail must not reach "
+    "MAINMEMORY.md: that file is read at the start of every conversation in "
+    "every topic, so anything project-specific there is a cost paid forever by "
+    "work it has nothing to do with. If there is nothing new worth saving, "
+    "reply exactly: FLUSH_NOOP"
 )
 
-_DEFAULT_MEMORY_REFLECTION_PROMPT = (
-    "## MEMORY REFLECTION\n"
-    "Review the last several messages in this conversation.\n"
-    "Check: were there any new decisions, corrections, error solutions, user "
-    "preferences, or important facts that you did NOT yet write to memory?\n"
-    "If yes -- update memory_system/MAINMEMORY.md silently.\n"
-    "If everything is already recorded -- do nothing."
-)
 
 _DEFAULT_COMPACT_PROMPT = (
     "## MEMORY COMPACTION\n"
@@ -162,15 +167,6 @@ class MemoryFlushConfig(BaseModel):
     dedup_seconds: int = Field(default=300, ge=0)
 
 
-class MemoryReflectionConfig(BaseModel):
-    """Settings for the periodic memory reflection hook (#65)."""
-
-    enabled: bool = False
-    # Must be >= 1 to avoid ``ZeroDivisionError`` in modulo check (hooks.py).
-    every_n_messages: int = Field(default=10, ge=1)
-    prompt: str = _DEFAULT_MEMORY_REFLECTION_PROMPT
-
-
 class MemoryCompactionConfig(BaseModel):
     """Settings for LLM-driven memory compaction (#80)."""
 
@@ -232,16 +228,6 @@ class SlackConfig(BaseModel):
     allowed_users: list[str] = Field(default_factory=list)
 
 
-class TasksConfig(BaseModel):
-    """Settings for background task delegation."""
-
-    enabled: bool = True
-    max_parallel: int = 5
-    timeout_seconds: float = 3600.0
-    finished_retention_hours: int = 168
-    finished_keep_last: int = 100
-
-
 class CronDeliveryRetryConfig(BaseModel):
     """Retry delivery of preserved cron results without rerunning the agent."""
 
@@ -261,7 +247,11 @@ class CronPreflightConfig(BaseModel):
 class TimeoutConfig(BaseModel):
     """Per-execution-path timeout settings."""
 
-    normal: float = 600.0
+    # Three hours of complete silence. Not a duration cap: work runs in the
+    # conversation's own turn now, and a turn may legitimately last all night.
+    # This is the idle timer that frees a topic when the CLI has wedged, and
+    # nothing else — a working agent renews it with every line it prints.
+    normal: float = 10800.0
     background: float = 1800.0
     subagent: float = 3600.0
     warning_intervals: list[float] = Field(default_factory=lambda: [60.0, 10.0])
@@ -437,26 +427,51 @@ class AgentConfig(BaseModel):
     max_turns: int | None = None
     max_session_messages: int | None = None
     permission_mode: str = "bypassPermissions"
+    #: Tools withheld from the CLI. The built-in sub-agent tool belongs here:
+    #: it spawns a helper inside the turn's own process, so anything it is
+    #: given dies when that process exits. Background work has to go through
+    #: the task hub, which outlives the turn and reports back to the topic.
+    disallowed_tools: list[str] = Field(default_factory=list)
+    # Bounded one-shot runs: cron jobs, webhook dispatches, injected prompts.
+    # Conversation turns use ``timeouts.normal`` instead, which is an idle
+    # window rather than a duration cap.
     cli_timeout: float = 1800.0
     reasoning_effort: str = "medium"
     file_access: str = "all"
     append_system_prompt_files: list[str] = Field(default_factory=list)
     # Per-topic project roots: topic name | "<topic_id>" | "<chat_id>:<topic_id>" -> path
     project_roots: dict[str, str] = Field(default_factory=dict)
+    #: Create and maintain the Consult topic and the pinned notices in the
+    #: configured groups. Off by default: creating topics and pinning messages
+    #: in someone's group uninvited is not a good default.
+    managed_topics: bool = False
+    #: How often the Consult topic is wiped: hourly, 6h, daily, weekly, off.
+    #: Changed from Telegram with /consult; the pinned notice is regenerated
+    #: from it so it never promises a schedule that is not running.
+    consult_wipe: str = "daily"
+    consult_wipe_hour: int = 4
+    # Ask which persona (Claude Code agent) should govern a new conversation.
+    # Off by default: it adds a prompt before the first reply, which should be
+    # opted into rather than arriving with an update.
+    persona_prompt: bool = False
+    # Claude credential stores: account name -> CLAUDE_SECURESTORAGE_CONFIG_DIR path.
+    # Only the credential store moves; sessions/skills/MCP stay in CLAUDE_CONFIG_DIR,
+    # so /account can switch subscriptions without losing a resumable session.
+    claude_accounts: dict[str, str] = Field(default_factory=dict)
+    # Active entry of claude_accounts; empty string means the default store.
+    claude_account: str = ""
     gemini_api_key: str | None = None
     streaming: StreamingConfig = Field(default_factory=StreamingConfig)
     docker: DockerConfig = Field(default_factory=DockerConfig)
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
     cleanup: CleanupConfig = Field(default_factory=CleanupConfig)
     memory_flush: MemoryFlushConfig = Field(default_factory=MemoryFlushConfig)
-    memory_reflection: MemoryReflectionConfig = Field(default_factory=MemoryReflectionConfig)
     memory_compaction: MemoryCompactionConfig = Field(default_factory=MemoryCompactionConfig)
     webhooks: WebhookConfig = Field(default_factory=WebhookConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     cli_parameters: CLIParametersConfig = Field(default_factory=CLIParametersConfig)
     image: ImageConfig = Field(default_factory=ImageConfig)
     timeouts: TimeoutConfig = Field(default_factory=TimeoutConfig)
-    tasks: TasksConfig = Field(default_factory=TasksConfig)
     cron_delivery_retry: CronDeliveryRetryConfig = Field(default_factory=CronDeliveryRetryConfig)
     cron_preflight: CronPreflightConfig = Field(default_factory=CronPreflightConfig)
     scene: SceneConfig = Field(default_factory=SceneConfig)
@@ -489,14 +504,32 @@ class AgentConfig(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def _sync_cli_timeout_to_timeouts(self) -> AgentConfig:
-        """Sync legacy ``cli_timeout`` to ``timeouts.normal`` for backward compat.
+    def _validate_claude_account(self) -> AgentConfig:
+        """Reset an unknown ``claude_account`` and warn about Docker mode.
 
-        When ``cli_timeout`` differs from the default 600.0 and ``timeouts.normal``
-        is still at its default, propagate ``cli_timeout`` into ``timeouts.normal``.
+        An unknown name would silently fall back to the default credential
+        store, which is the opposite of what someone switching accounts wants
+        to happen — clear it loudly instead.
         """
-        if self.cli_timeout != 600.0 and self.timeouts.normal == 600.0:
-            self.timeouts.normal = self.cli_timeout
+        # An entry mapped to a blank path resolves to the default store, so it
+        # would show as active while other credentials are actually in use.
+        blank = [n for n, path in self.claude_accounts.items() if not path or not path.strip()]
+        for name in blank:
+            logger.warning("claude_accounts[%r] has an empty path; ignoring it", name)
+            del self.claude_accounts[name]
+
+        if self.claude_account and self.claude_account not in self.claude_accounts:
+            logger.warning(
+                "claude_account %r is not in claude_accounts; using the default store",
+                self.claude_account,
+            )
+            self.claude_account = ""
+        if self.claude_account and self.docker.enabled:
+            logger.warning(
+                "claude_account is set but Docker sandbox mode is enabled; the "
+                "credential store is not mapped into the container and the "
+                "default account will be used"
+            )
         return self
 
     @model_validator(mode="after")

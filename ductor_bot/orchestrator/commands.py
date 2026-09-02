@@ -8,19 +8,31 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.auth import check_all_auth
+from ductor_bot.cli.claude_accounts import active_claude_account_dir
+from ductor_bot.cli.types import AgentRequest
+from ductor_bot.errors import CLIError
+from ductor_bot.handoff.paths import handoff_file
+from ductor_bot.handoff.prompts import consolidation_prompt
 from ductor_bot.i18n import t
 from ductor_bot.infra.version import check_pypi, get_current_version
 from ductor_bot.orchestrator.registry import OrchestratorResult
+from ductor_bot.orchestrator.selectors.account_selector import (
+    account_selector_start,
+    switch_account,
+)
+from ductor_bot.orchestrator.selectors.consult_selector import consult_selector
 from ductor_bot.orchestrator.selectors.cron_selector import cron_selector_start
+from ductor_bot.orchestrator.selectors.folder_selector import folder_selector
 from ductor_bot.orchestrator.selectors.model_selector import (
     effort_selector_start,
     model_selector_start,
     switch_model,
 )
 from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
+from ductor_bot.orchestrator.selectors.persona_selector import persona_selector
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
-from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
-from ductor_bot.text.response_format import SEP, fmt, new_session_text
+from ductor_bot.orchestrator.selectors.skills_selector import skill_detail, skills_root
+from ductor_bot.text.response_format import SEP, fmt
 from ductor_bot.workspace.loader import read_mainmemory
 
 if TYPE_CHECKING:
@@ -33,20 +45,91 @@ logger = logging.getLogger(__name__)
 # -- Command wrappers (registered by Orchestrator._register_commands) --
 
 
-async def cmd_reset(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /new: kill processes and reset only active provider session."""
-    logger.info("Reset requested")
-    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
-    provider = await orch.reset_active_provider_session(key)
-    return OrchestratorResult(text=new_session_text(provider))
+async def _consolidate_handoff(orch: Orchestrator, key: SessionKey) -> None:
+    """Run one silent turn asking the model to write the handoff up properly.
+
+    Best effort by design: a consolidation that fails must not block the user
+    from compacting or clearing, and the previous handoff stays on disk either
+    way — the store refuses to replace a good file with an empty one.
+    """
+    session = await orch._sessions.get_active(key)
+    if session is None or not session.session_id:
+        return
+    folder = orch.bindings.resolve(key.storage_key)
+    request = AgentRequest(
+        prompt=consolidation_prompt(handoff_file(key, folder, orch.paths)),
+        chat_id=key.chat_id,
+        topic_id=key.topic_id,
+        transport=key.transport,
+        resume_session=session.session_id,
+        process_label="handoff_consolidation",
+    )
+    try:
+        await orch._cli_service.execute(request)
+    except (CLIError, RuntimeError, OSError) as exc:
+        logger.warning("Handoff consolidation failed chat=%d: %s", key.chat_id, exc)
 
 
-async def cmd_reset_current(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /reset: kill processes and reset the *current* provider session."""
-    logger.info("Reset (current) requested")
+async def cmd_compact(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /compact: same work, empty context window.
+
+    There is no on-demand compaction in print mode, so this reclaims the window
+    the only way available — a new session — and carries the work across in the
+    handoff. The persona and the folder binding stay: nothing about the task
+    has changed, only how much of it the model can see.
+    """
+    logger.info("Compact requested")
+    session = await orch._sessions.get_active(key)
+    if session is None or not session.session_id:
+        # Nothing to carry and nothing to reclaim. Resetting anyway would look
+        # like it worked while quietly doing the opposite of the point.
+        return OrchestratorResult(text=t("handoff.nothing_to_compact"))
+
+    folder = orch.bindings.resolve(key.storage_key)
+    await _consolidate_handoff(orch, key)
+
+    if not orch.handoffs.has_content(key, folder):
+        # Compacting without a handoff is just losing the conversation. Refuse,
+        # and leave the session exactly as it was.
+        logger.warning("Compact aborted chat=%d: consolidation produced no handoff", key.chat_id)
+        return OrchestratorResult(text=t("handoff.compact_no_handoff"))
+
     await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
-    provider = await orch.reset_current_provider_session(key)
-    return OrchestratorResult(text=new_session_text(provider))
+    await orch.reset_active_provider_session(key)
+    orch.reinject.mark(key)
+    return OrchestratorResult(text=t("handoff.compacted"))
+
+
+async def cmd_clear(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /clear: this task is finished, start another in the same topic.
+
+    The handoff is consolidated first and then archived, so it stays available
+    under Archived without being read back automatically. If archiving fails the
+    session is left alone: losing a handoff is worse than not clearing.
+    """
+    logger.info("Clear requested")
+    folder = orch.bindings.resolve(key.storage_key)
+    await _consolidate_handoff(orch, key)
+
+    had_handoff = orch.handoffs.has_content(key, folder)
+    archived = orch.handoffs.archive(key, folder)
+    if had_handoff and archived is None:
+        return OrchestratorResult(text=t("handoff.archive_failed"))
+
+    orch.personas.clear(key.storage_key)
+    await orch._process_registry.kill_by_chat_topic(key.chat_id, key.topic_id)
+    await orch.reset_active_provider_session(key)
+    return OrchestratorResult(text=t("handoff.cleared"))
+
+
+async def cmd_handoff(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /handoff: the current handoff, and this conversation's archives."""
+    logger.info("Handoff requested")
+    folder = orch.bindings.resolve(key.storage_key)
+    if not orch.handoffs.has_content(key, folder):
+        return OrchestratorResult(text=t("handoff.none_yet"))
+    body = orch.handoffs.read(key, folder)
+    return OrchestratorResult(text=f"{body[:3000]}")
 
 
 async def cmd_status(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
@@ -71,6 +154,47 @@ async def cmd_effort(orch: Orchestrator, key: SessionKey, _text: str) -> Orchest
     """Handle /effort: show reasoning-effort buttons for the active provider."""
     logger.info("Effort requested")
     resp = await effort_selector_start(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_account(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /account [name]: show or switch the Claude credential store."""
+    logger.info("Account requested")
+    parts = text.split(None, 1)
+    if len(parts) < 2:
+        resp = account_selector_start(orch)
+        return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+    return OrchestratorResult(text=await switch_account(orch, parts[1].strip()))
+
+
+async def cmd_skills(orch: Orchestrator, _key: SessionKey, text: str) -> OrchestratorResult:
+    """Handle /skills [name]: browse skills by plugin, or show one in full."""
+    logger.info("Skills requested")
+    parts = text.split(None, 1)
+    resp = skill_detail(orch, parts[1]) if len(parts) > 1 else skills_root(orch)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_persona(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /persona: choose which agent governs this conversation."""
+    logger.info("Persona requested")
+    resp = persona_selector(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_folder(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /folder: choose which directory this conversation works in."""
+    logger.info("Folder selection requested")
+    if orch.bindings.is_protected(key.storage_key):
+        return OrchestratorResult(text=t("folder.general_locked"))
+    resp = folder_selector(orch, key)
+    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
+
+
+async def cmd_consult(orch: Orchestrator, _key: SessionKey, _text: str) -> OrchestratorResult:
+    """Handle /consult: how often the Consult topic is wiped."""
+    logger.info("Consult schedule requested")
+    resp = consult_selector(orch)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
@@ -103,18 +227,6 @@ async def cmd_sessions(orch: Orchestrator, key: SessionKey, _text: str) -> Orche
     """Handle /sessions."""
     logger.info("Sessions requested")
     resp = await session_selector_start(orch, key.chat_id)
-    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
-
-
-async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /tasks."""
-    logger.info("Tasks requested")
-    hub = orch.task_hub
-    if hub is None:
-        return OrchestratorResult(
-            text=fmt(t("tasks.header"), SEP, t("tasks.disabled")),
-        )
-    resp = task_selector_start(hub, key.chat_id)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
@@ -345,22 +457,19 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             f"{_model_line(runtime_model)}{_status_effort_suffix(orch, runtime_model, orch._config.reasoning_effort)}"
         )
 
-    bg_tasks = orch.active_background_tasks(key.chat_id)
     bg_block = ""
-    if bg_tasks:
-        import time
 
-        bg_lines = [t("status.bg_header", count=len(bg_tasks))]
-        for bg_t in bg_tasks:
-            age = time.monotonic() - bg_t.submitted_at
-            bg_lines.append(f"  `{bg_t.task_id}` {bg_t.prompt[:40]}... ({age:.0f}s)")
-        bg_block = "\n".join(bg_lines)
-
-    auth = await asyncio.to_thread(check_all_auth)
+    auth = await asyncio.to_thread(check_all_auth, active_claude_account_dir(orch._config))
     auth_lines: list[str] = []
     for provider, result in auth.items():
         age_label = f" ({result.age_human})" if result.age_human else ""
         auth_lines.append(f"  [{provider}] {result.status.value}{age_label}")
+    # Which Claude subscription the next turn will spend. Only shown when more
+    # than one credential store is configured, since otherwise there is nothing
+    # to disambiguate.
+    if orch._config.claude_accounts:
+        active = orch._config.claude_account or t("account.default_label")
+        auth_lines.append(f"  {t('status.account_line', account=active)}")
     auth_block = t("status.auth_header") + "\n" + "\n".join(auth_lines)
 
     streaming_cfg = orch._config.streaming

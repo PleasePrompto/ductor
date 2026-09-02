@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.claude_accounts import resolve_account_dir
 from ductor_bot.errors import DuctorError
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ def _validate_task_provider(provider: str) -> None:
 
 
 @dataclass(frozen=True)
-class TaskOverrides:
+class RunOverrides:
     """Per-task configuration overrides from CronJob or WebhookEntry."""
 
     provider: str | None = None
@@ -62,7 +63,7 @@ class TaskOverrides:
 
 
 @dataclass(frozen=True)
-class TaskExecutionConfig:
+class CLIRunConfig:
     """Resolved configuration for a single CLI execution."""
 
     provider: str
@@ -72,6 +73,8 @@ class TaskExecutionConfig:
     permission_mode: str
     working_dir: str
     file_access: str
+    # Resolved CLAUDE_SECURESTORAGE_CONFIG_DIR; empty means the default store.
+    claude_account_dir: str = ""
 
 
 def _static_effort(
@@ -97,7 +100,7 @@ def _static_effort(
 def _resolve_reasoning_effort(
     provider: str,
     model: str,
-    overrides: TaskOverrides,
+    overrides: RunOverrides,
     base_config: AgentConfig,
     codex_cache: CodexModelCache | None,
 ) -> str:
@@ -142,8 +145,8 @@ def resolve_cli_config(
     base_config: AgentConfig,
     codex_cache: CodexModelCache | None,
     *,
-    task_overrides: TaskOverrides | None = None,
-) -> TaskExecutionConfig:
+    task_overrides: RunOverrides | None = None,
+) -> CLIRunConfig:
     """Merge global config with task overrides, validate, return execution config.
 
     Logic:
@@ -152,7 +155,7 @@ def resolve_cli_config(
     3. Validate model against cache (Claude hardcoded, Codex from cache)
     4. Resolve reasoning effort (Codex only, validate against model's supported efforts)
     5. Merge CLI parameters (global + task-specific)
-    6. Return immutable TaskExecutionConfig
+    6. Return immutable CLIRunConfig
 
     Args:
         base_config: Global agent configuration
@@ -160,12 +163,12 @@ def resolve_cli_config(
         task_overrides: Task-specific overrides (optional)
 
     Returns:
-        TaskExecutionConfig with resolved and validated settings
+        CLIRunConfig with resolved and validated settings
 
     Raises:
         DuctorError: If model validation fails
     """
-    overrides = task_overrides or TaskOverrides()
+    overrides = task_overrides or RunOverrides()
 
     # 1. Resolve provider
     provider = overrides.provider or base_config.provider
@@ -213,7 +216,7 @@ def resolve_cli_config(
     cli_parameters = [*base_params, *overrides.cli_parameters]
 
     # 6. Return immutable config
-    return TaskExecutionConfig(
+    return CLIRunConfig(
         provider=provider,
         model=model,
         reasoning_effort=reasoning_effort,
@@ -221,4 +224,12 @@ def resolve_cli_config(
         permission_mode=base_config.permission_mode,
         working_dir=base_config.ductor_home,
         file_access=base_config.file_access,
+        # Cron, webhook, heartbeat and stateless background runs go through this
+        # path rather than CLIService, and would otherwise ignore /account and
+        # spend whichever subscription the parent process inherited.
+        claude_account_dir=resolve_account_dir(
+            getattr(base_config, "claude_accounts", {}) or {},
+            getattr(base_config, "claude_account", "") or "",
+        )
+        or "",
     )

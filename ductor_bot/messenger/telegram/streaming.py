@@ -145,13 +145,14 @@ class StreamEditor:
                 logger.exception("Failed to send stream chunk even as plain text")
 
 
-def create_stream_editor(
+def create_stream_editor(  # noqa: PLR0913 - keyword-only options
     bot: Bot,
     chat_id: int,
     *,
     reply_to: Message | None = None,
     cfg: StreamingConfig | None = None,
     thread_id: int | None = None,
+    live_markup: object | None = None,
 ) -> StreamEditorProtocol:
     """Create the appropriate stream editor based on config."""
     from ductor_bot.config import StreamingConfig
@@ -167,4 +168,5 @@ def create_stream_editor(
         reply_to=reply_to,
         cfg=c,
         thread_id=thread_id,
+        live_markup=live_markup,  # type: ignore[arg-type]
     )

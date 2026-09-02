@@ -138,38 +138,6 @@ class MatrixTransport:
         if env.result_text:
             await matrix_send_rich(self._bot.client, room_id, env.result_text)
 
-    async def _deliver_task_result(self, env: Envelope) -> None:
-        room_id = self._resolve_room(env)
-        if not room_id:
-            return
-        name = env.metadata.get("name", env.metadata.get("task_id", "?"))
-
-        note = ""
-        if env.status == "done":
-            duration = f"{env.elapsed_seconds:.0f}s"
-            target = f"{env.provider}/{env.model}" if env.provider else ""
-            detail = f"{duration}, {target}" if target else duration
-            note = f"**Task `{name}` completed** ({detail})"
-        elif env.status == "cancelled":
-            note = f"**Task `{name}` cancelled**"
-        elif env.status == "failed":
-            note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
-
-        if note:
-            await matrix_send_rich(self._bot.client, room_id, note)
-        if env.needs_injection and env.result_text:
-            await matrix_send_rich(self._bot.client, room_id, env.result_text)
-
-    async def _deliver_task_question(self, env: Envelope) -> None:
-        room_id = self._resolve_room(env)
-        if not room_id:
-            return
-        task_id = env.metadata.get("task_id", "?")
-        note = f"**Task `{task_id}` has a question:**\n{env.prompt}"
-        await matrix_send_rich(self._bot.client, room_id, note)
-        if env.result_text:
-            await matrix_send_rich(self._bot.client, room_id, env.result_text)
-
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         room_id = self._resolve_room(env)
         if room_id and env.result_text:
@@ -245,8 +213,6 @@ _HANDLERS: dict[Origin, _Handler] = {
     Origin.CRON: MatrixTransport._deliver_cron,
     Origin.HEARTBEAT: MatrixTransport._deliver_heartbeat,
     Origin.INTERAGENT: MatrixTransport._deliver_interagent,
-    Origin.TASK_RESULT: MatrixTransport._deliver_task_result,
-    Origin.TASK_QUESTION: MatrixTransport._deliver_task_question,
     Origin.WEBHOOK_WAKE: MatrixTransport._deliver_webhook_wake,
 }
 

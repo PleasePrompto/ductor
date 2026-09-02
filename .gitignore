@@ -59,3 +59,6 @@ python_best_practice.md
 run.py
 .planning/
 graphify-out/
+
+# graphify build products: a derived map of the repo, rebuilt on demand
+graphify-out/

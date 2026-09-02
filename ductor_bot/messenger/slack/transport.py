@@ -137,37 +137,6 @@ class SlackTransport:
         if env.result_text:
             await slack_send_rich(self._bot.client, channel_id, env.result_text, self._opts(env))
 
-    async def _deliver_task_result(self, env: Envelope) -> None:
-        channel_id, _thread_ts = self._resolve_target(env)
-        if not channel_id:
-            return
-        name = env.metadata.get("name", env.metadata.get("task_id", "?"))
-        note = ""
-        if env.status == "done":
-            duration = f"{env.elapsed_seconds:.0f}s"
-            target = f"{env.provider}/{env.model}" if env.provider else ""
-            detail = f"{duration}, {target}" if target else duration
-            note = f"**Task `{name}` completed** ({detail})"
-        elif env.status == "cancelled":
-            note = f"**Task `{name}` cancelled**"
-        elif env.status == "failed":
-            note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
-
-        if note:
-            await slack_send_rich(self._bot.client, channel_id, note, self._opts(env))
-        if env.needs_injection and env.result_text:
-            await slack_send_rich(self._bot.client, channel_id, env.result_text, self._opts(env))
-
-    async def _deliver_task_question(self, env: Envelope) -> None:
-        channel_id, _thread_ts = self._resolve_target(env)
-        if not channel_id:
-            return
-        task_id = env.metadata.get("task_id", "?")
-        note = f"**Task `{task_id}` has a question:**\n{env.prompt}"
-        await slack_send_rich(self._bot.client, channel_id, note, self._opts(env))
-        if env.result_text:
-            await slack_send_rich(self._bot.client, channel_id, env.result_text, self._opts(env))
-
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         channel_id, _thread_ts = self._resolve_target(env)
         if channel_id and env.result_text:
@@ -222,8 +191,6 @@ _HANDLERS: dict[Origin, _Handler] = {
     Origin.CRON: SlackTransport._deliver_cron,
     Origin.HEARTBEAT: SlackTransport._deliver_heartbeat,
     Origin.INTERAGENT: SlackTransport._deliver_interagent,
-    Origin.TASK_RESULT: SlackTransport._deliver_task_result,
-    Origin.TASK_QUESTION: SlackTransport._deliver_task_question,
     Origin.WEBHOOK_WAKE: SlackTransport._deliver_webhook_wake,
 }
 

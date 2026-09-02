@@ -123,9 +123,30 @@ class TimeoutController:
         """
         if not self._cfg.extend_on_activity:
             return False
+        now = time.monotonic()
+
+        # 0 means unlimited, and there the deadline is a pure idle timer: it
+        # sits one window after the last sign of life, wherever that was. The
+        # bounded rule below asks whether output appeared in the last 30
+        # seconds *at the instant the deadline fires*, which kills an agent
+        # that has been working for hours but happens to be inside a slow tool
+        # call at the wrong second. For a turn that may legitimately run all
+        # night, "N hours of silence" has to mean exactly that.
+        if not self._cfg.max_extensions:
+            idle = now - self._last_activity
+            if idle >= self._cfg.activity_extension:
+                return False
+            self._extensions_used += 1
+            self._deadline = self._last_activity + self._cfg.activity_extension
+            logger.info(
+                "Idle deadline moved: %.0fs since last output, %.0fs remaining",
+                idle,
+                self._deadline - now,
+            )
+            return True
+
         if self._extensions_used >= self._cfg.max_extensions:
             return False
-        now = time.monotonic()
         if now - self._last_activity > _ACTIVITY_RECENCY_SECONDS:
             return False
         self._extensions_used += 1

@@ -14,12 +14,16 @@ DIRECT_COMMANDS: frozenset[str] = frozenset(
         "interrupt",
         "stop_all",
         "restart",
-        "new",
+        "clear",
+        "compact",
+        "handoff",
         "help",
         "start",
         "info",
         "agent_commands",
         "showfiles",
+        "files",
+        "menu",
         "session",
     }
 )
@@ -30,13 +34,17 @@ ORCHESTRATOR_COMMANDS: frozenset[str] = frozenset(
         "status",
         "model",
         "effort",
+        "account",
+        "persona",
+        "folder",
+        "consult",
+        "skills",
         "memory",
         "cron",
         "diagnose",
         "upgrade",
-        "sessions",
+        "named",
         "tasks",
-        "reset",
     }
 )
 

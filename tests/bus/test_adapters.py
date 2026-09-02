@@ -9,8 +9,6 @@ from ductor_bot.bus.adapters import (
     from_cron_result,
     from_heartbeat,
     from_interagent_result,
-    from_task_question,
-    from_task_result,
     from_webhook_cron_result,
     from_webhook_wake,
 )
@@ -59,28 +57,6 @@ class _FakeInterAgentResult:
     original_message: str = "full message"
     chat_id: int = 0
     topic_id: int | None = None
-
-
-@dataclass
-class _FakeTaskResult:
-    task_id: str = "t1"
-    chat_id: int = 100
-    parent_agent: str = "main"
-    name: str = "research"
-    prompt_preview: str = "find info"
-    result_text: str = "found it"
-    status: str = "done"
-    elapsed_seconds: float = 5.0
-    provider: str = "claude"
-    model: str = "sonnet"
-    session_id: str = "tsid1"
-    error: str = ""
-    task_folder: str = "/tmp/tasks/t1"
-    original_prompt: str = "find info about X"
-    thread_id: int | None = None
-
-
-# -- Tests ---------------------------------------------------------------------
 
 
 def test_from_background_result() -> None:
@@ -252,64 +228,3 @@ def test_from_interagent_error_preserves_topic_id() -> None:
     assert env.is_error
 
 
-def test_from_task_result_done() -> None:
-    env = from_task_result(_FakeTaskResult())
-    assert env.origin == Origin.TASK_RESULT
-    assert env.chat_id == 100
-    assert env.topic_id is None
-    assert env.status == "done"
-    assert env.lock_mode == LockMode.REQUIRED
-    assert env.needs_injection
-    assert not env.is_error
-    assert env.metadata["name"] == "research"
-    assert "BACKGROUND TASK COMPLETED" in env.prompt
-    assert "task_id='t1'" in env.prompt
-    assert "found it" in env.prompt
-    assert "Review this result critically" in env.prompt
-
-
-def test_from_task_result_with_topic() -> None:
-    env = from_task_result(_FakeTaskResult(thread_id=42))
-    assert env.chat_id == 100
-    assert env.topic_id == 42
-
-
-def test_from_task_result_failed() -> None:
-    env = from_task_result(_FakeTaskResult(status="failed", error="crash"))
-    assert env.lock_mode == LockMode.REQUIRED
-    assert env.needs_injection
-    assert env.is_error
-    assert env.metadata["error"] == "crash"
-    assert "BACKGROUND TASK FAILED" in env.prompt
-    assert "crash" in env.prompt
-
-
-def test_from_task_result_cancelled() -> None:
-    env = from_task_result(_FakeTaskResult(status="cancelled"))
-    assert env.lock_mode == LockMode.NONE
-    assert not env.needs_injection
-
-
-def test_from_task_result_preserves_parent_agent() -> None:
-    """#73: parent_agent must round-trip through Envelope.metadata so the
-    per-agent transport adapter can route the result back to the originating
-    sub-agent's bot (not the main agent's)."""
-    env = from_task_result(_FakeTaskResult(parent_agent="sonic"))
-    assert env.metadata["parent_agent"] == "sonic"
-
-
-def test_from_task_question() -> None:
-    env = from_task_question("t1", "what color?", "what co...", 100)
-    assert env.origin == Origin.TASK_QUESTION
-    assert env.chat_id == 100
-    assert env.topic_id is None
-    assert env.prompt == "what color?"
-    assert env.lock_mode == LockMode.REQUIRED
-    assert env.needs_injection
-    assert env.metadata["task_id"] == "t1"
-
-
-def test_from_task_question_with_topic() -> None:
-    env = from_task_question("t1", "what color?", "what co...", 100, topic_id=42)
-    assert env.chat_id == 100
-    assert env.topic_id == 42

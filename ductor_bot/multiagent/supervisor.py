@@ -8,7 +8,6 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.config import AgentConfig, update_config_file_async
 from ductor_bot.infra.file_watcher import FileWatcher
 from ductor_bot.infra.restart import EXIT_RESTART
@@ -22,7 +21,6 @@ if TYPE_CHECKING:
     from ductor_bot.multiagent.bus import InterAgentBus
     from ductor_bot.multiagent.internal_api import InternalAgentAPI
     from ductor_bot.multiagent.shared_knowledge import SharedKnowledgeSync
-    from ductor_bot.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +114,6 @@ class AgentSupervisor:
         self._bus: InterAgentBus | None = None
         self._internal_api: InternalAgentAPI | None = None
         self._shared_knowledge: SharedKnowledgeSync | None = None
-        self._task_hub: TaskHub | None = None
 
     @property
     def stacks(self) -> dict[str, AgentStack]:
@@ -150,33 +147,6 @@ class AgentSupervisor:
             msg = "Internal agent API failed to start"
             raise RuntimeError(msg)
         logger.info("InterAgentBus and internal API started")
-
-        # Initialize task hub (background task delegation)
-        if self._main_config.tasks.enabled:
-            from ductor_bot.tasks.hub import TaskHub
-            from ductor_bot.tasks.registry import TaskRegistry
-
-            registry = TaskRegistry(
-                registry_path=self._main_paths.tasks_registry_path,
-                tasks_dir=self._main_paths.tasks_dir,
-            )
-            # #92: shared fallback ProcessRegistry. In practice every agent's
-            # CLIService holds its OWN registry (see ``Orchestrator.__init__``),
-            # so per-agent registries wired in ``_wire_task_hub`` take precedence.
-            # The shared fallback is kept for test setups and single-agent deploys.
-            self._task_process_registry = ProcessRegistry()
-            self._task_hub = TaskHub(
-                registry,
-                self._main_paths,
-                cli_service=None,  # Set per-agent in _post_startup
-                config=self._main_config.tasks,
-                append_system_prompt_files=self._main_config.append_system_prompt_files,
-                process_registry=self._task_process_registry,
-            )
-            self._internal_api.set_task_hub(self._task_hub)
-            logger.info(
-                "TaskHub initialized (max_parallel=%d)", self._main_config.tasks.max_parallel
-            )
 
         # 1. Start main agent
         main_stack = await AgentStack.create(
@@ -436,49 +406,11 @@ class AgentSupervisor:
                 stack.bot.set_abort_all_callback(supervisor.abort_all_agents)
                 supervisor._main_ready.set()
 
-            # Wire task hub: set CLI service and register handlers
-            if supervisor._task_hub is not None:
-                supervisor._wire_task_hub(stack)
-
             logger.debug("Supervisor reference injected into agent '%s'", stack.name)
 
         # Startup handlers run in registration order;
         # TelegramBot registers _on_startup in __init__, so ours runs after.
         stack.bot.register_startup_hook(_post_startup)
-
-    def _wire_task_hub(self, stack: AgentStack) -> None:
-        """Wire task hub handlers for an agent stack.
-
-        Called after the orchestrator is initialized (in _post_startup).
-        Registers the agent's CLI service and per-agent result/question handlers.
-        """
-        hub = self._task_hub
-        if hub is None:
-            return
-
-        orch = stack.bot.orchestrator
-        if orch is None:
-            return
-
-        name = stack.name
-        orch.set_task_hub(hub)
-
-        # Register this agent's CLI service and workspace paths for task execution
-        hub.set_cli_service(name, orch.cli_service)
-        hub.set_agent_paths(name, stack.paths)
-        # #92: register this agent's ProcessRegistry so TaskHub.cancel routes
-        # kill_for_task to the registry where task:<id> subprocesses actually
-        # live (each orchestrator owns its own — see Orchestrator.__init__).
-        hub.set_agent_process_registry(name, orch.process_registry)
-
-        hub.set_result_handler(name, stack.bot.on_task_result)
-        hub.set_question_handler(name, stack.bot.on_task_question)
-
-        # Register agent's primary chat_id for resolving CLI-submitted tasks
-        if stack.config.allowed_user_ids:
-            hub.set_agent_chat_id(name, stack.config.allowed_user_ids[0])
-
-        logger.debug("Task hub wired for agent '%s'", name)
 
     async def _rebuild_stack(self, name: str, old_stack: AgentStack) -> AgentStack:
         """Rebuild an AgentStack from its config."""
@@ -680,22 +612,9 @@ class AgentSupervisor:
             killed += cancelled
 
         # Cancel in-flight background tasks
-        killed += await self._abort_all_tasks()
 
         return killed
 
-    async def _abort_all_tasks(self) -> int:
-        """Cancel all in-flight background tasks across all agents."""
-        if self._task_hub is None:
-            return 0
-        total = 0
-        for stack in list(self._stacks.values()):
-            for cid in stack.config.allowed_user_ids:
-                k = await self._task_hub.cancel_all(cid)
-                if k:
-                    logger.info("Abort-all cancelled %d task(s) for agent '%s'", k, stack.name)
-                total += k
-        return total
 
     # -- Shutdown -----------------------------------------------------------
 
@@ -731,10 +650,6 @@ class AgentSupervisor:
 
         if self._bus:
             self._bus.unregister("main")
-
-        # Stop task hub
-        if self._task_hub:
-            await self._task_hub.shutdown()
 
         # Stop internal API
         if self._internal_api:

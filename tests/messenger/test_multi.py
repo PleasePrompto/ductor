@@ -185,39 +185,6 @@ class TestMultiBotAdapterDelegation:
         fake_tg.on_async_interagent_result.assert_awaited_once_with(result)
         fake_mx.on_async_interagent_result.assert_awaited_once_with(result)
 
-    async def test_on_task_result_fans_out(self) -> None:
-        config = _make_config()
-        fake_tg = _make_bot()
-        fake_mx = _make_bot()
-
-        with patch(
-            "ductor_bot.messenger.registry._create_single_bot",
-            side_effect=[fake_tg, fake_mx],
-        ):
-            adapter = MultiBotAdapter(config)
-
-        result = MagicMock()
-        await adapter.on_task_result(result)
-        fake_tg.on_task_result.assert_awaited_once_with(result)
-        fake_mx.on_task_result.assert_awaited_once_with(result)
-
-    async def test_on_task_question_fans_out(self) -> None:
-        config = _make_config()
-        fake_tg = _make_bot()
-        fake_mx = _make_bot()
-
-        with patch(
-            "ductor_bot.messenger.registry._create_single_bot",
-            side_effect=[fake_tg, fake_mx],
-        ):
-            adapter = MultiBotAdapter(config)
-
-        await adapter.on_task_question("t1", "q?", "preview", 123, 456)
-        fake_tg.on_task_question.assert_awaited_once_with("t1", "q?", "preview", 123, 456)
-        fake_mx.on_task_question.assert_awaited_once_with("t1", "q?", "preview", 123, 456)
-
-
-class TestMultiBotAdapterRun:
     async def test_run_starts_primary_then_secondaries(self) -> None:
         """Primary starts first; secondaries start after orch_ready."""
         config = _make_config()

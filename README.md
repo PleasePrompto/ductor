@@ -23,6 +23,99 @@
 
 ---
 
+## About this fork
+
+This is [ali-rajabpour/ductor](https://github.com/ali-rajabpour/ductor), a fork of
+[PleasePrompto/ductor](https://github.com/PleasePrompto/ductor) that runs a production
+Telegram bot 24/7 against live projects. `main` here carries **twenty feature branches plus
+one fix on top of upstream `main`** — most of them offered back upstream as a pull
+request first. None has been reviewed or merged, so this fork is the version that ships.
+
+Upstream remains the origin of the project and of everything not listed below. Most
+changes are additive, but the fork is **no longer a strict superset**: background task
+delegation was removed outright, along with `/tasks`, the task tools and the memory
+reflection cadence. That removal is the point rather than a side effect — see
+*One topic, one session* below.
+
+### What the fork adds
+
+**One topic, one session.** A topic is a session, named after the topic, in the
+topic's folder — the same way a terminal window is a session. Work stays in it: nothing
+is handed to a detached run that has to be told what it is doing. The previous design
+pushed anything longer than about thirty seconds into a background task with its own
+session, which paid the CLI's ~38K-token startup a second time and then spent its first
+dozen turns rediscovering the project because its brief said it had no prior context.
+Two ordinary messages measured 2.3M token-units, 80% of it outside the chat. A message
+sent while a turn is running is queued behind it, per topic, so a long run in one topic
+never blocks another.
+
+**Stop, which is Ctrl+C.** A running turn carries a `⏹ Stop` button. It sends SIGINT and
+whatever is queued behind the turn starts immediately — the same two behaviours the key
+has in a terminal. Verified against the real binary before it was built: interrupting a
+live tool call leaves no unanswered `tool_use`, the CLI records the interruption itself,
+and `--resume` still works.
+
+**A turn's clock measures silence, not duration.** Work that may legitimately run all
+night cannot be capped by a stopwatch, so the deadline sits three hours after the last
+line of output, wherever that was. A finished step that reports in resets it for the
+next one. It exists only to free a topic whose CLI has wedged.
+
+**Handoffs that survive compaction.** `/compact` and `/clear` lose what you were doing;
+both now write a handoff first. The file lives in the project folder — `handoffs/`,
+excluded through `.git/info/exclude` and verified with `git check-ignore` on every write,
+so a working note can never reach a commit. Its skeleton and its per-turn log are
+written by code rather than asked for: the model was given the path, the sections and an
+explicit instruction, and across three turns wrote nothing. Judgement is spent at
+consolidation, where it is the only thing being asked for.
+
+**Every screen can be left.** Selectors and file-browser views carry a `◀︎ Menu` and a
+`✕ Close` on the way out, attached once at the point screens reach Telegram rather than
+in each builder, so a screen added later inherits them and cannot become the one dead end.
+
+**Working directories, and consent about them.** A conversation is bound to a project
+folder by tapping a button, once, and the binding is a record of consent rather than a
+guess. Folder names are never inferred from topic names — that mechanism failed silently
+after every restart and ran work in the wrong directory with nothing said. Every injected
+prompt path is anchored to the workspace at the CLI choke point, so an instruction to
+write `memory_system/MAINMEMORY.md` cannot land inside a user's git tree. A forum's
+General thread can never hold a binding at all: its messages carry no
+`message_thread_id`, so binding one there let a message typed outside a topic start a
+fresh conversation in another topic's project folder.
+
+**A file browser over the project roots.** Browse bound directories, pull and push, send
+files up and pull them down, and rename, create, delete, move or copy behind an explicit
+Manage gate — all from a phone, as `/files`. Move and copy mark a source, then paste
+into wherever you navigate to; a paste **never overwrites**, and a folder cannot be
+pasted inside its own subtree. Both are refusals rather than confirmations, because a
+replace dialog agreed to with a thumb is how a file disappears without anyone noticing.
+A `📋 Path` button shows any file's or folder's absolute path in a tap-to-copy block,
+so a location can be handed to an agent in a prompt without moving the file anywhere.
+The old "ask the agent about this folder" button is gone: it spent a model turn listing
+a directory already on screen, and it was the only code path that injected a fabricated
+user message into a real session.
+
+**A Consult topic that is genuinely disposable.** Created and pinned by the bot,
+scoped to its own directory, wiped on a schedule, and running as its own unix account so
+the isolation is enforced by the kernel rather than by a sentence in a prompt.
+
+**Phone-shaped UI.** An inline menu behind a single toggle, a `/` picker trimmed to what
+fits on a screen, and button labels that never inline into a sentence.
+
+**Accounts, personas and skills.** `/account` switches the credential store — moving
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` alone, so sessions, skills and MCP stay shared and
+`--resume` continues the same conversation on the other subscription. A persona gate asks
+which agent governs a conversation instead of picking something plausible, and `/skills`
+browses what is installed.
+
+### Running it
+
+Deployment lives outside this repository: the bot runs as an unprivileged user on a
+rootless Docker daemon, with credentials and per-project access managed on the host.
+Nothing here assumes that setup — `pip install ductor` and the upstream quick start below
+still work unchanged.
+
+---
+
 If you want to control Claude Code, Google's Gemini CLI, OpenAI's Codex CLI, Antigravity CLI, or xAI Grok Build via Telegram, Matrix, or Slack, build automations, or manage multiple agents easily — ductor is the right tool for you. The messaging layer is modular: Telegram, Matrix, and Slack ship today, and new transports plug into the same transport-agnostic core.
 
 ductor runs on your machine and sends simple console commands as if you were typing them yourself, so you can use your active subscriptions (Claude Max, Google AI Ultra, etc.) directly. No API proxying, no SDK patching, no spoofed headers. Just the official CLIs, executed as subprocesses, with all state kept in plain JSON and Markdown under `~/.ductor/`.
@@ -99,6 +192,10 @@ All chats share the same `~/.ductor/` workspace — same tools, same memory, sam
 > ductor learns topic names from `forum_topic_created` and `forum_topic_edited`
 > events — pre-existing topics show as "Topic #N" until renamed.
 > This is a Telegram limitation, not a ductor limitation.
+>
+> Folder bindings do not depend on those names: they are keyed by chat and
+> topic id, so a topic ductor cannot name still works, and renaming one never
+> changes where its work happens.
 
 ### 3. Named sessions (extra contexts within any chat)
 
@@ -119,21 +216,24 @@ Bot:   [remembers exactly where you left off]
 
 Sessions work everywhere — in your single chat, in group topics, in sub-agent chats. Think of them as opening a second terminal window next to your current one.
 
-### 4. Background tasks (async delegation)
+### 4. Long work (it stays in the conversation)
 
-Any chat can delegate long-running work to a background task. You keep chatting while the task runs autonomously. When it finishes, the result flows back into your conversation.
+There is no background-task system. Work that takes minutes or hours runs in the topic's
+own session, in front of you, the way it does in a terminal.
 
 ```text
-You:   "Research the top 5 competitors and write a summary"
-Bot:   → delegates to background task, you keep chatting
-Bot:   → task finishes, result appears in your chat
+You:   "Deploy the plugin and verify it live"
+Bot:   [works — tool calls stream as they happen, ⏹ Stop on the message]
 
-You:   "Delegate this: generate reports for all Q4 metrics"
-Bot:   → explicitly delegated, runs in background
-Bot:   → task has a question? It asks the agent → agent asks you → you answer → task continues
+You:   "actually check staging first"        ← arrives mid-run
+Bot:   ⏳ queued — it runs the moment the turn finishes
+
+[⏹ Stop]                                     ← SIGINT; the queued message starts now
 ```
 
-Each task gets its own memory file (`TASKMEMORY.md`) and can be resumed with follow-ups.
+Queueing and stopping are scoped to the topic, so a long run in one topic never blocks
+or stops another. A turn has no duration limit; it ends when the work does, when you
+stop it, or after three hours with no output at all.
 
 ### 5. Sub-agents (fully isolated second agent)
 
@@ -150,7 +250,8 @@ codex-agent chat (Codex):       "Refactor the parser module"
 
 Sub-agents live under `~/.ductor/agents/<name>/` with their own workspace, tools, and memory — fully isolated from the main agent.
 
-You can delegate tasks between agents:
+Agents can talk to each other. This is a message on the inter-agent bus, not a
+background task — the sub-agent answers in its own session and the reply comes back:
 
 ```text
 Main chat:  "Ask codex-agent to write tests for the API"
@@ -161,13 +262,13 @@ Main chat:  "Ask codex-agent to write tests for the API"
 
 ### Comparison
 
-| | Single chat | Group topics | Named sessions | Background tasks | Sub-agents |
-|---|---|---|---|---|---|
-| **What it is** | Your main 1:1 chat | One topic = one chat | Extra context in any chat | "Do this while I keep working" | Separate bot, own everything |
-| **Context** | One per provider | One per topic per provider | Own context per session | Own context, result flows back | Fully isolated |
-| **Workspace** | `~/.ductor/` | Shared with main | Shared with parent chat | Shared with parent agent | Own under `~/.ductor/agents/` |
-| **Config** | Main config | Shared with main | Shared with parent chat | Shared with parent agent | Own config (heartbeat, timeouts, model, ...) |
-| **Setup** | Automatic | Create group + enable topics | `/session <prompt>` | Automatic or "delegate this" | Telegram: `ductor agents add`; Matrix: `agents.json` / tool scripts |
+| | Single chat | Group topics | Named sessions | Sub-agents |
+|---|---|---|---|---|
+| **What it is** | Your main 1:1 chat | One topic = one session | Extra context in any chat | Separate bot, own everything |
+| **Context** | One per provider | One per topic per provider | Own context per session | Fully isolated |
+| **Workspace** | `~/.ductor/` | Shared with main | Shared with parent chat | Own under `~/.ductor/agents/` |
+| **Config** | Main config | Shared with main | Shared with parent chat | Own config (heartbeat, timeouts, model, ...) |
+| **Setup** | Automatic | Create group + enable topics | `/session <prompt>` | Telegram: `ductor agents add`; Matrix: `agents.json` / tool scripts |
 
 ### How it all fits together
 
@@ -180,15 +281,14 @@ Main chat:  "Ask codex-agent to write tests for the API"
   │
   ├── Group: "My Projects"          ← same agent, same workspace
   │     ├── General (own context)
-  │     ├── Topic: Auth (own context, own model)
+  │     ├── Topic: Auth (own session, own model)
   │     ├── Topic: Frontend (own context)
   │     └── each topic can have named sessions too
   │
   └── agents/codex-agent/           ← sub-agent, fully isolated workspace
         ├── own single chat
         ├── own group support
-        ├── own named sessions
-        └── own background tasks
+        └── own named sessions
 ```
 
 ## Features
@@ -199,16 +299,33 @@ Main chat:  "Ask codex-agent to write tests for the API"
 - **Telegram reasoning + tool UX controls** — optional reasoning stream, live tool progress, and separate thinking indicator controls
 - **Quoted-reply context** — replying to a message (Telegram) carries the cited text into the agent prompt, so follow-ups like "expand on this" keep their reference
 - **Five coding agents** — Claude Code, Codex CLI, Gemini CLI (API key / Code Assist license; Google ended free individual-account access on 2026-06-18), Antigravity (`agy`), and Grok Build (`grok`), switchable per chat/topic with `/model` (never blocks, even during active processes)
-- **Per-topic project roots** — map a forum topic to its own working directory (`project_roots`) so the agent runs inside that repo instead of the shared workspace
+- **Per-conversation folders** — `project_roots` lists the directories you are willing to work in; a conversation is *bound* to one of them by tapping `📌 Use this folder` in `/files`, or by answering the picker the first time you use it. Bindings are keyed by session, so renaming a topic cannot break them and a restart cannot forget them. Change one later with `/folder`
+- **The bot's own files stay findable** — when a conversation runs in a project directory, every prompt naming a workspace path (`tools/`, `memory_system/`, `cron_tasks/`, `user_tools/`, …) is rewritten to an absolute path at the point the CLI is invoked. Without it an agent looks for tools that are not under its cwd and concludes it is in the wrong place — and an instruction to update `memory_system/MAINMEMORY.md` resolves *inside your repository*
+- **Managed topics** (`managed_topics`, **off by default**) — when enabled, ductor creates a `Consult` topic in each configured group and keeps a notice in it and in General, verifying both on every start. The General notice is pinned; the Consult one cannot be — `pinChatMessage` takes no `message_thread_id`, so a bot cannot pin inside a forum topic — and is instead the first message of a topic that is recreated on every wipe. Consult gets its own working directory at `~/.ductor/Consult`, carrying a `CLAUDE.md` that tells the agent to stay inside it. That is an instruction the agent follows, **not a sandbox** — the CLI runs as your user and a working directory is not a boundary. Leave this off unless you want a bot that creates topics and pins messages in your group Inside Consult the file manager and the folder picker are narrowed to that topic's own directory — unlike the instruction in its `CLAUDE.md`, that part is enforced, because the browser is ductor's own code With a `consult` unix account present, the CLI for that topic is dropped to it — the project tree is `0750` and the account is not in the bot's group, so it cannot read your repositories whatever the rule persuades it to try. It still shares the credential store, because the CLI has to authenticate: the isolation is from your projects, not from your token or the network
+- **Scheduled Consult wipe** (`/consult`) — the Consult topic is deleted and recreated on a schedule you pick from Telegram: hourly, every 6 hours, daily at a set hour, weekly, or never. Deleting the topic clears its files, its messages *and* its session in one step, since the replacement gets a new topic id. The pinned notice is regenerated from the schedule, so it never promises a wipe that is not running
+- **Rename, new folder and delete** — behind a `🛠 Manage` button, so nothing that changes files sits on the row you tap to browse. Renaming and creating ask for the name as a message and show it back for approval before writing. Deleting takes two confirmations and states what will go — file count and real size, not a rounded one. Two cases are refused outright rather than confirmed: a configured project root, and any directory containing `.git`, whose untracked files exist nowhere else
+- **Multi-account Claude** — map several credential stores in `claude_accounts` and switch with `/account`; sessions and skills stay shared, so a rate-limited conversation continues on the other subscription via `--resume`
+- **Skill browser** — `/skills` groups every loadable skill by plugin and copies `/name ` to your clipboard on tap, which is the only way to reach skills marked `disable-model-invocation`. Discovery follows `enabledPlugins` and the plugin registry, so stale versions and disabled plugins are not listed
+- **File manager over your projects** — `/files` opens in the folder this conversation is bound to, or lists `~/.ductor` alongside every directory in `project_roots` when it is not bound, with tap-to-navigate, breadcrumbs, `Back` to the parent directory and `Home` to the folder this conversation is bound to (the list of roots when it is not bound). Only directories get a button; files are reached through `⬇️ Download`, which offers a single file or the whole folder as a zip, so a folder of any size stays a screen you can aim at. Nested roots collapse into their parent so the picker stays short
+- **Button menu** (`/menu`) — Telegram's toggle beside the input box is bound to reply keyboards and cannot be pointed elsewhere, so the panel holds a single `/menu` button and everything after it is an inline keyboard. Exactly one command is ever sent as text, and it is deleted on arrival; every menu action is a callback, so nothing the menu does reaches the agent and nothing has to be intercepted to keep it out. Items are fixed rather than filtered — a button that appears and disappears reads as a broken screen — and the current folder, persona and model are shown in the header instead The nine commands the menu covers are dropped from Telegram's `/` picker — they still work when typed and are still listed by `/help`, which keeps the picker to the fifteen that are urgent, take arguments, or have no button
+- **Uploads land where the work is** — a file sent to a topic is saved into that topic's `project_roots` directory instead of a shared media folder, and the bot replies with where it put it
+- **Upload into any folder you can browse** — `⬆️ Upload here` opens an upload for the directory you are looking at. Files are staged and listed, overwrites are flagged, and nothing is written until you confirm; `📦 Send a folder (.zip)` unpacks an archive into that listing first. Archives are validated before extraction (no path traversal, no symlink entries, size and entry ceilings), and staging is discarded on cancel and swept daily
+- **Pull and push from the browser** — a directory inside a git repository gains `⤓ Pull` and `⤒ Push`. Push is inert when the branch matches its upstream, and asks for confirmation against the list of commits it would publish. Pull is `--ff-only`, so a divergence is reported rather than merged unnoticed
+- **Personas** — when `persona_prompt` is on, a conversation that has not chosen a persona asks which of your Claude Code agents should handle it, holds your message until you pick, then runs it under `--agent`. Change it any time with `/persona`; `/clear` clears it. Nothing is inferred and there is no default; installations without agents never see the prompt
+- **One session per topic** — a topic is a session, named after the topic, in the topic's folder. Long work runs inside it rather than being handed to a detached run that must be told what it is doing. A message typed during a turn is queued behind it, per topic
+- **`⏹ Stop` on a running turn** — SIGINT, after which the queued message starts immediately. The CLI records the interruption itself, so the session stays resumable
+- **Idle deadline, not a stopwatch** — a turn ends when the work ends, when you stop it, or after three hours with nothing printed at all. Cron, webhook and injected runs keep their own duration cap (`cli_timeout`)
+- **Handoffs** — `/compact` and `/clear` write one first, into the project's `handoffs/`, excluded via `.git/info/exclude` and verified with `git check-ignore` on every write. `/handoff` shows the current one; `/clear` archives it outside the folder rather than deleting it
+- **Memory scoped by reach** — `MAINMEMORY.md` holds only what is true across every project; anything about one codebase lives in that project's own knowledge file, so a topic does not pay for another topic's details on every turn
+- **A way out of every screen** — `◀︎ Menu` and `✕ Close` on selectors and browser views, attached where screens reach Telegram so a new screen inherits them
 - **Persistent memory** — plain Markdown files that survive across sessions
-- **Memory maintenance** — pre-compaction flush, optional reflection cadence, and LLM-driven compaction
+- **Memory maintenance** — pre-compaction flush and LLM-driven compaction. The reflection cadence was removed: it spent a model turn on a schedule rather than on a need
 - **Cron jobs** — in-process scheduler with timezone support, per-job overrides, optional silent-on-success, result routing to originating chat
-- **Webhooks** — `wake` (inject into active chat) and `cron_task` (isolated task run) modes
+- **Webhooks** — `wake` (inject into active chat) and `cron_task` (isolated one-shot run) modes
 - **Heartbeat** — proactive checks with per-target settings, group/topic support, chat validation
 - **Image processing** — auto-resize and WebP conversion for incoming images (configurable)
 - **Media transcription hooks** — configurable external audio/video transcription commands for bundled media tools
 - **Notification routing** — startup/upgrade lifecycle messages can target specific chats/topics
-- **Task priorities** — `interactive`, `background`, and `batch` scheduling modes for background work
 - **Telegram status reactions** — stage-aware emoji tracker on the user message while the agent works
 - **Config hot-reload** — most settings update without restart (including language, scene, image)
 - **Docker sandbox** — optional sidecar container with configurable host mounts
@@ -375,27 +492,41 @@ This is **hot-reloadable** — change the language without restarting the bot.
 |---|---|
 | `/model` | Interactive model/provider selector |
 | `/effort` | Reasoning effort for the current chat/topic (Claude & Codex) |
-| `/new` | Reset the configured default-provider session for this chat/topic |
-| `/reset` | Reset the currently active provider session for this chat/topic |
+| `/account` | Switch the Claude credential store (see `claude_accounts` in docs/config.md) |
+| `/persona` | Choose which Claude Code agent governs this chat/topic |
+| `/skills` | Browse available skills by plugin; tap one to copy its command |
+| `/clear` | Archive the handoff, then start a completely fresh session in this topic |
+| `/compact` | Write a handoff, then compact the session so the thread survives |
+| `/handoff` | Show this conversation's handoff |
+| `/folder` | Choose the project folder this conversation works in |
+| `/consult` | Schedule for the disposable Consult topic |
 | `/stop` | Stop current message and discard queued messages |
 | `/interrupt` | Interrupt current message, queued messages continue |
-| `/stop_all` | Kill everything — all messages, sessions, tasks, all agents |
+| `/stop_all` | Kill everything — all messages, sessions, all agents |
 | `/status` | Session/provider/auth status |
 | `/memory` | Show persistent memory |
-| `/session <prompt>` | Start a named background session |
-| `/sessions` | View/manage active sessions |
-| `/tasks` | View/manage background tasks |
+| `/session <prompt>` | Start a named session |
+| `/named` | View/manage named sessions |
 | `/cron` | Interactive cron management |
-| `/showfiles` | Browse `~/.ductor/` |
+| `/files` | Browse `~/.ductor/` and your configured `project_roots`; download, upload, rename, create, delete, and pull/push git. `/showfiles` still works as an alias |
+| `/menu` | Show or hide a persistent keyboard of the commands used most often |
 | `/diagnose` | Runtime diagnostics |
 | `/upgrade` | Check/apply updates |
 | `/agents` | Multi-agent status |
 | `/agent_commands` | Multi-agent command reference |
+| `/agent_start <name>` | Start a sub-agent |
+| `/agent_stop <name>` | Stop a sub-agent |
+| `/agent_restart <name>` | Restart a sub-agent |
+| `/help` | Command reference, grouped by what it is for |
 | `/where` | Show tracked chats/groups |
 | `/leave <id>` | Manually leave a group |
+| `/restart` | Restart the bot process |
 | `/info` | Version + links |
 
-`/new` is intentionally a factory reset for the current `SessionKey`: it clears the bucket tied to the configured default model/provider for that chat or topic, not whichever provider you last switched to temporarily via `/model`. Use `/reset` when you want to clear the provider bucket that is currently active in that chat or topic.
+`/clear` archives the handoff and starts a genuinely fresh session in the topic you are
+in. There is deliberately no way to reset *another* topic's session: `/new @topicname`
+used to do that, and a command that reaches into a conversation you are not in is the
+isolation this project exists to provide, undone by a convenience.
 
 On Slack, these same commands also work as normal message commands (for example `help`, `status`, or `model`) even though ductor does not register native Slack slash commands.
 
@@ -445,18 +576,16 @@ the bundled agent tool scripts.
 ~/.ductor/
   config/config.json                 # Bot configuration
   sessions.json                      # Chat session state
-  named_sessions.json                # Named background sessions
-  tasks.json                         # Background task registry
-  cron_jobs.json                     # Scheduled tasks
+  named_sessions.json                # Named sessions
+  cron_jobs.json                     # Scheduled jobs
   webhooks.json                      # Webhook definitions
   agents.json                        # Sub-agent registry (optional)
   SHAREDMEMORY.md                    # Shared knowledge across all agents
   CLAUDE.md / AGENTS.md / GEMINI.md  # Rule files
   logs/agent.log
   workspace/
-    memory_system/MAINMEMORY.md      # Persistent memory
+    memory_system/MAINMEMORY.md      # Persistent memory (global facts only)
     cron_tasks/ skills/ tools/       # Scripts and tools
-    tasks/                           # Per-task folders
     telegram_files/ matrix_files/    # Media files (per transport)
     api_files/                       # Uploaded/downloadable API files
     output_to_user/                  # Generated deliverables

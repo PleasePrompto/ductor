@@ -14,10 +14,22 @@ def test_commands_is_list_of_tuples() -> None:
 
 def test_expected_commands_present() -> None:
     names = {cmd for cmd, _ in BOT_COMMANDS}
-    expected = {"new", "stop", "status", "model", "memory", "cron", "restart", "diagnose"}
+    expected = {"clear", "compact", "handoff", "stop", "status", "model", "memory", "cron", "restart", "diagnose"}
     assert expected.issubset(names)
 
 
 def test_no_duplicate_commands() -> None:
     names = [cmd for cmd, _ in BOT_COMMANDS]
     assert len(names) == len(set(names))
+
+
+def test_account_command_registered_for_telegram_menu() -> None:
+    """The /account handler is useless if Telegram never lists it."""
+    names = {cmd for cmd, _ in BOT_COMMANDS}
+    assert "account" in names
+
+
+def test_all_descriptions_fit_mobile_clients() -> None:
+    """Telegram truncates command descriptions past ~22 chars on mobile."""
+    for cmd, desc in BOT_COMMANDS:
+        assert len(desc) <= 30, f"{cmd}: {desc!r} is {len(desc)} chars"

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import time_machine
 
 from ductor_bot.cli.codex_cache import CodexModelCache
-from ductor_bot.cli.param_resolver import TaskOverrides
+from ductor_bot.cli.param_resolver import RunOverrides
 from ductor_bot.config import AgentConfig, HeartbeatConfig, WebhookConfig
 from ductor_bot.webhook.manager import WebhookManager
 from ductor_bot.webhook.models import WebhookEntry
@@ -80,8 +80,8 @@ def _add_hook(mgr: WebhookManager, paths: DuctorPaths, **overrides: Any) -> Webh
     return hook
 
 
-def _default_overrides() -> TaskOverrides:
-    return TaskOverrides(provider=None, model=None, reasoning_effort=None, cli_parameters=[])
+def _default_overrides() -> RunOverrides:
+    return RunOverrides(provider=None, model=None, reasoning_effort=None, cli_parameters=[])
 
 
 # ---------------------------------------------------------------------------

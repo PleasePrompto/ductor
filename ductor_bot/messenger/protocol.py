@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from ductor_bot.messenger.notifications import NotificationService
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
     from ductor_bot.orchestrator.core import Orchestrator
-    from ductor_bot.tasks.models import TaskResult
     from ductor_bot.workspace.paths import DuctorPaths
 
 
@@ -50,21 +49,6 @@ class BotProtocol(Protocol):
 
     async def on_async_interagent_result(self, result: AsyncInterAgentResult) -> None:
         """Handle async inter-agent result delivery."""
-        ...
-
-    async def on_task_result(self, result: TaskResult) -> None:
-        """Handle background task completion."""
-        ...
-
-    async def on_task_question(
-        self,
-        task_id: str,
-        question: str,
-        prompt_preview: str,
-        chat_id: int,
-        thread_id: int | None = None,
-    ) -> None:
-        """Handle background task question delivery."""
         ...
 
     def file_roots(self, paths: DuctorPaths) -> list[Path] | None:

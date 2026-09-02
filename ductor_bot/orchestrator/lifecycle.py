@@ -76,8 +76,9 @@ async def create_orchestrator(
     orch._docker = docker_mgr
 
     from ductor_bot.cli.auth import AuthStatus, check_all_auth
+    from ductor_bot.cli.claude_accounts import active_claude_account_dir
 
-    auth_results = await asyncio.to_thread(check_all_auth)
+    auth_results = await asyncio.to_thread(check_all_auth, active_claude_account_dir(orch._config))
     orch._providers.apply_auth_results(
         auth_results,
         auth_status_enum=AuthStatus,
@@ -103,7 +104,7 @@ async def create_orchestrator(
         on_antigravity_refresh=orch._providers.on_antigravity_models_refresh,
         on_grok_refresh=orch._providers.on_grok_models_refresh,
     )
-    orch._observers.init_task_observers(
+    orch._observers.init_run_observers(
         cron_manager=orch._cron_manager,
         webhook_manager=orch._webhook_manager,
         cli_service=orch._cli_service,

@@ -29,6 +29,26 @@ def get_thread_id(message: Message | None) -> int | None:
     return None
 
 
+def is_general_thread(message: Message | None) -> bool:
+    """True when *message* belongs to the General thread of a forum group.
+
+    General is the one thread in a forum whose messages are not topic messages,
+    so ``get_session_key`` gives it the chat-level key that private chats and
+    ordinary groups also use. Both facts are needed: a private chat is not a
+    forum, and its chat-level key is the only key it has.
+
+    Probed with ``getattr`` rather than attribute access: both fields are
+    optional in the Bot API and absent on anything that is not a real forum
+    message, and a conversation wrongly treated as General would lose the
+    ability to bind a folder at all.
+    """
+    if message is None:
+        return False
+    if not getattr(getattr(message, "chat", None), "is_forum", False):
+        return False
+    return not getattr(message, "is_topic_message", False)
+
+
 def get_session_key(message: Message) -> SessionKey:
     """Build a transport-agnostic ``SessionKey`` from a Telegram message.
 
@@ -79,14 +99,6 @@ class TopicNameCache:
     def resolve(self, chat_id: int, topic_id: int) -> str:
         """Return the cached name or a fallback ``"Topic #N"``."""
         return self._names.get((chat_id, topic_id)) or f"Topic #{topic_id}"
-
-    def find_by_name(self, chat_id: int, name: str) -> int | None:
-        """Reverse lookup: return topic_id for *name* (case-insensitive) or ``None``."""
-        lower = name.lower()
-        for (cid, tid), cached_name in self._names.items():
-            if cid == chat_id and cached_name.lower() == lower:
-                return tid
-        return None
 
     def seed_from_sessions(self, sessions: list[SessionData]) -> int:
         """Populate the cache from persisted sessions that have ``topic_name``.

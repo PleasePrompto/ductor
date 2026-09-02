@@ -13,6 +13,7 @@ from ductor_bot.messenger.telegram.sender import (
     send_files_from_text,
     send_rich,
 )
+from ductor_bot.messenger.telegram.stop_button import stop_markup
 from ductor_bot.messenger.telegram.streaming import StreamEditor, create_stream_editor
 from ductor_bot.messenger.telegram.typing import TypingContext
 from ductor_bot.orchestrator.registry import OrchestratorResult
@@ -246,6 +247,7 @@ async def run_streaming_message(  # noqa: C901, PLR0915
         reply_to=dispatch.message,
         cfg=dispatch.streaming_cfg,
         thread_id=dispatch.thread_id,
+        live_markup=stop_markup(),
     )
     streamed_text_sent = False
 

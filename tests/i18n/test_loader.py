@@ -139,14 +139,12 @@ def test_t_cmd_returns_string() -> None:
 
 def test_t_plural_one() -> None:
     init("en")
-    result = t_plural("tasks.cancelled", 1)
-    assert "1 task." in result
+    assert t_plural("model.resume_msg", 1) == "message"
 
 
 def test_t_plural_many() -> None:
     init("en")
-    result = t_plural("tasks.cancelled", 5)
-    assert "5 tasks." in result
+    assert t_plural("model.resume_msg", 5) == "messages"
 
 
 # -- TOML file integrity -------------------------------------------------------

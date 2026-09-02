@@ -80,6 +80,13 @@ def _make_orchestrator(
     paths.ductor_home = Path("/tmp/test-ductor")
     paths.telegram_files_dir = Path("/tmp/test-workspace/telegram_files")
     orch.paths = paths
+
+    # The readiness gate runs before the agent and needs a real answer from
+    # both of these: an unbound conversation (None, like General) writing into
+    # a directory that actually exists. A MagicMock here reads as "some folder
+    # that is not writable" and the gate correctly refuses the turn.
+    orch.bindings.resolve.return_value = None
+    paths.ductor_home.mkdir(parents=True, exist_ok=True)
     return orch
 
 
@@ -1022,19 +1029,6 @@ class TestCommandHandlers:
 
         mock_cmd.assert_called_once_with(orch, tg_bot.bot_instance, msg)
 
-    @patch("ductor_bot.messenger.telegram.app.handle_new_session", new_callable=AsyncMock)
-    async def test_on_new_calls_handle_new_session(self, mock_new: AsyncMock) -> None:
-        tg_bot, _ = _make_tg_bot()
-        orch = _make_orchestrator()
-        tg_bot._orchestrator = orch
-        msg = _make_message()
-
-        await tg_bot._on_new(msg)
-
-        mock_new.assert_called_once_with(
-            orch, tg_bot.bot_instance, msg, topic_names=tg_bot._topic_names
-        )
-
     @patch(
         "ductor_bot.messenger.telegram.app.handle_abort", new_callable=AsyncMock, return_value=True
     )
@@ -1404,3 +1398,57 @@ class TestNotificationService:
             await service.notify_all("hello")
 
         assert sent == [2]
+
+
+class TestPersonaPrompt:
+    """The picker is sent by hand rather than through the usual reply path, so
+    the formatting it relies on has to be asserted here."""
+
+    @pytest.mark.asyncio
+    async def test_prompt_is_sent_as_html_not_raw_markdown(self) -> None:
+        """The bot defaults to HTML, so unconverted markdown renders literally
+        — asterisks and backticks visible in the chat."""
+        from aiogram.enums import ParseMode
+
+        from ductor_bot.personas.store import PersonaStore
+        from ductor_bot.session.key import SessionKey
+
+        cfg = _make_config()
+        cfg.persona_prompt = True
+        tg_bot, bot_instance = _make_tg_bot(cfg)
+
+        orch = MagicMock()
+        orch.personas = PersonaStore(Path("/tmp/does-not-exist/personas.json"))
+        tg_bot._orch_instance = orch
+
+        with (
+            patch.object(type(tg_bot), "_orch", PropertyMock(return_value=orch)),
+            patch(
+                "ductor_bot.orchestrator.selectors.persona_selector.load_personas",
+                return_value=[],
+            ),
+        ):
+            held = await tg_bot._ask_persona_if_needed(SessionKey.telegram(1, 2), "hi")
+
+        assert held is True
+        kwargs = bot_instance.send_message.await_args.kwargs
+        assert kwargs["parse_mode"] == ParseMode.HTML
+        text = (
+            bot_instance.send_message.await_args.args[1]
+            if len(bot_instance.send_message.await_args.args) > 1
+            else kwargs.get("text", "")
+        )
+        assert "**" not in text
+
+    @pytest.mark.asyncio
+    async def test_disabled_prompt_does_not_hold_the_message(self) -> None:
+        from ductor_bot.session.key import SessionKey
+
+        cfg = _make_config()
+        cfg.persona_prompt = False
+        tg_bot, bot_instance = _make_tg_bot(cfg)
+
+        held = await tg_bot._ask_persona_if_needed(SessionKey.telegram(1, 2), "hi")
+
+        assert held is False
+        bot_instance.send_message.assert_not_awaited()

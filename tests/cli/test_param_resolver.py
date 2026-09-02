@@ -9,7 +9,7 @@ import pytest
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_discovery import CodexModelInfo
 from ductor_bot.cli.param_resolver import (
-    TaskOverrides,
+    RunOverrides,
     resolve_cli_config,
 )
 from ductor_bot.config import (
@@ -80,7 +80,7 @@ def test_resolve_with_task_overrides(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     """Should apply task overrides over global config."""
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider="codex",
         model="gpt-4o",
         reasoning_effort="low",
@@ -97,7 +97,7 @@ def test_resolve_with_task_overrides(
 def test_resolve_merge_parameters(base_config: AgentConfig, codex_cache: CodexModelCache) -> None:
     """Should append task-specific CLI parameters after global provider parameters."""
     base_config.cli_parameters = CLIParametersConfig(claude=["--global-param", "global-value"])
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         cli_parameters=["--task-param", "task-value"],
     )
 
@@ -115,7 +115,7 @@ def test_resolve_invalid_claude_model(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     """Should raise error for invalid Claude model."""
-    overrides = TaskOverrides(model="invalid-model")
+    overrides = RunOverrides(model="invalid-model")
 
     with pytest.raises(DuctorError, match="Invalid Claude model"):
         resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
@@ -125,7 +125,7 @@ def test_resolve_invalid_codex_model(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     """Should raise error for invalid Codex model."""
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider="codex",
         model="nonexistent-model",
     )
@@ -138,7 +138,7 @@ def test_resolve_rejects_unsupported_task_provider(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     """Cron/webhook one-shot execution supports only explicit task providers."""
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider="antigravity",
         model="antigravity-default",
     )
@@ -151,7 +151,7 @@ def test_resolve_codex_reasoning_effort(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     """Should validate and apply reasoning effort for Codex models."""
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider="codex",
         model="gpt-4o",
         reasoning_effort="high",
@@ -168,7 +168,7 @@ def test_resolve_codex_effort_fallback(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     """Explicit invalid reasoning override must fail loudly."""
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider="codex",
         model="gpt-4o-mini",
         reasoning_effort="high",  # Attempt to set, but model doesn't support
@@ -182,7 +182,7 @@ def test_resolve_claude_carries_reasoning(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     """Claude carries reasoning_effort (delivered to the CLI via --effort)."""
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         reasoning_effort="high",
     )
 
@@ -199,7 +199,7 @@ def test_resolve_claude_rejects_invalid_reasoning(
     from ductor_bot.errors import DuctorError
 
     ok = resolve_cli_config(
-        base_config, codex_cache, task_overrides=TaskOverrides(reasoning_effort="max")
+        base_config, codex_cache, task_overrides=RunOverrides(reasoning_effort="max")
     )
     assert ok.reasoning_effort == "max"  # claude-specific top level
 
@@ -207,7 +207,7 @@ def test_resolve_claude_rejects_invalid_reasoning(
 
     with pytest.raises(DuctorError):
         resolve_cli_config(
-            base_config, codex_cache, task_overrides=TaskOverrides(reasoning_effort="foo")
+            base_config, codex_cache, task_overrides=RunOverrides(reasoning_effort="foo")
         )
 
 
@@ -215,7 +215,7 @@ def test_resolve_gemini_model_from_discovery(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     set_gemini_models(frozenset({"gemini-2.5-pro"}))
-    overrides = TaskOverrides(provider="gemini", model="gemini-2.5-pro")
+    overrides = RunOverrides(provider="gemini", model="gemini-2.5-pro")
 
     result = resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
 
@@ -227,7 +227,7 @@ def test_resolve_gemini_invalid_against_discovered_models(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
     set_gemini_models(frozenset({"gemini-2.5-pro"}))
-    overrides = TaskOverrides(provider="gemini", model="gemini-3-pro-preview")
+    overrides = RunOverrides(provider="gemini", model="gemini-3-pro-preview")
 
     with pytest.raises(DuctorError, match="Invalid Gemini model"):
         resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
@@ -236,7 +236,7 @@ def test_resolve_gemini_invalid_against_discovered_models(
 def test_resolve_gemini_fallback_prefix_when_no_discovery(
     base_config: AgentConfig, codex_cache: CodexModelCache
 ) -> None:
-    overrides = TaskOverrides(provider="gemini", model="gemini-foo")
+    overrides = RunOverrides(provider="gemini", model="gemini-foo")
 
     result = resolve_cli_config(base_config, codex_cache, task_overrides=overrides)
 
@@ -253,7 +253,7 @@ def test_resolve_merges_base_claude_params(
             "cli_parameters": CLIParametersConfig(claude=["--mcp-config", "brave.json"]),
         }
     )
-    overrides = TaskOverrides(cli_parameters=["--debug"])
+    overrides = RunOverrides(cli_parameters=["--debug"])
 
     result = resolve_cli_config(merged, codex_cache, task_overrides=overrides)
 
@@ -274,7 +274,7 @@ def test_resolve_picks_correct_provider_bucket(
             ),
         }
     )
-    overrides = TaskOverrides(provider="codex", model="gpt-4o")
+    overrides = RunOverrides(provider="codex", model="gpt-4o")
 
     result = resolve_cli_config(merged, codex_cache, task_overrides=overrides)
 
@@ -295,7 +295,7 @@ def test_resolve_gemini_bucket_with_overrides(
             ),
         }
     )
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider="gemini",
         model="gemini-2.5-pro",
         cli_parameters=["--show-thoughts"],

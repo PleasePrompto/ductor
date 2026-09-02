@@ -18,7 +18,7 @@ def task_id_from_label(process_label: str) -> str:
     """Extract the task id from a ``task:<id>`` process label.
 
     Background tasks are the only requests labelled with this prefix
-    (see ``TaskHub._run`` and ``ProcessRegistry.kill_for_task``).
+    (see ``ProcessRegistry.kill_for_task``).
     Returns an empty string for non-task labels.
     """
     if process_label.startswith(_TASK_LABEL_PREFIX):

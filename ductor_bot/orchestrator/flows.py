@@ -16,6 +16,8 @@ from ductor_bot.cli.timeout_controller import TimeoutConfig as TCConfig
 from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import AgentRequest, AgentResponse
 from ductor_bot.config import NULLISH_TEXT_VALUES, resolve_timeout
+from ductor_bot.handoff.paths import handoff_file
+from ductor_bot.handoff.prompts import delta_suffix, injection_block
 from ductor_bot.i18n import t
 from ductor_bot.infra.inflight import InflightTurn
 from ductor_bot.log_context import set_log_context
@@ -29,6 +31,9 @@ if TYPE_CHECKING:
     from ductor_bot.orchestrator.core import Orchestrator
 
 logger = logging.getLogger(__name__)
+
+#: Long enough to identify the request, short enough to stay a log.
+_LOG_LINE_MAX = 160
 
 
 @dataclass(slots=True)
@@ -72,9 +77,25 @@ def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController
     cfg = orch._config.timeouts
     if not cfg.warning_intervals and not cfg.extend_on_activity:
         return None
+    window = resolve_timeout(orch._config, kind)
+    if kind == "normal":
+        # Work that used to be handed to a background task now runs in the
+        # conversation's own turn, so a turn may legitimately last all night.
+        # The window becomes a silence budget rather than a duration cap: it
+        # renews for as long as the agent is producing output, and only bites
+        # once it has gone quiet. Duration is not the failure being guarded.
+        return TimeoutController(
+            TCConfig(
+                timeout_seconds=window,
+                warning_intervals=cfg.warning_intervals,
+                extend_on_activity=True,
+                activity_extension=window,
+                max_extensions=0,  # 0 = unlimited
+            ),
+        )
     return TimeoutController(
         TCConfig(
-            timeout_seconds=resolve_timeout(orch._config, kind),
+            timeout_seconds=window,
             warning_intervals=cfg.warning_intervals,
             extend_on_activity=cfg.extend_on_activity,
             activity_extension=cfg.activity_extension,
@@ -139,12 +160,51 @@ async def _prepare_normal(
     if files_block:
         append_prompt = f"{append_prompt}\n\n{files_block}" if append_prompt else files_block
 
+    # State the persona where a statement of identity belongs. This used to be
+    # prefixed to the user's message, and the model was right to ignore it: an
+    # identity claim arriving as user text is exactly what a model should
+    # distrust, and it said so, citing a system reminder that contradicted it.
+    # The appended system prompt is recomputed every turn, so it cannot go
+    # stale the way a line written into turn one does.
+    # The handoff is what lets a conversation survive a compaction or a fresh
+    # session. It goes into the system prompt for the same reason the persona
+    # line does: a claim arriving as user text is correctly distrusted.
+    folder = orch.bindings.resolve(key.storage_key)
+
+    # The delta belongs in the system channel, not appended to the user's
+    # message. An instruction arriving as user text is discounted — the model
+    # read this one and wrote nothing eleven tool calls in a row — while the
+    # appended system prompt is where the persona line already proved
+    # authoritative.
+    orch.handoffs.ensure_exists(key, folder)
+    _log_turn(orch, key, text)
+    delta = delta_suffix(handoff_file(key, folder, orch.paths))
+    append_prompt = f"{append_prompt}\n\n{delta}" if append_prompt else delta
+
+    if is_new or orch.reinject.take(key):
+        handoff = orch.handoffs.read(key, folder)
+        if orch.handoffs.has_content(key, folder):
+            block = injection_block(handoff)
+            append_prompt = f"{append_prompt}\n\n{block}" if append_prompt else block
+
+    persona = orch._personas.get(key.storage_key) or ""
+    if persona:
+        switch = orch._personas.take_switch(key.storage_key)
+        if switch:
+            was, now = switch
+            logger.info("Persona switch announced: %s -> %s", was, now)
+            line = t("persona.switched_notice", old=was, new=now)
+        else:
+            line = t("persona.active_notice", persona=persona)
+        append_prompt = f"{append_prompt}\n\n{line}" if append_prompt else line
+
     hook_ctx = HookContext(
         chat_id=key.chat_id,
         message_count=session.message_count,
         is_new_session=is_new,
         provider=req_provider,
         model=req_model,
+        workspace=str(orch.paths.workspace),
     )
     prompt = orch._hook_registry.apply(text, hook_ctx)
 
@@ -163,6 +223,24 @@ async def _prepare_normal(
         timeout_controller=_make_timeout_controller(orch, "normal"),
     )
     return request, session
+
+
+def _log_turn(orch: Orchestrator, key: SessionKey, text: str) -> None:
+    """Record what was asked, in the handoff, without asking the model to.
+
+    Only facts code can vouch for: when, and what the user said. Anything
+    requiring judgement is left to the consolidation, which has nothing else
+    competing for its attention.
+    """
+    line = " ".join(text.split())
+    if len(line) > _LOG_LINE_MAX:
+        line = f"{line[:_LOG_LINE_MAX]}..."
+    stamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
+    folder = orch.bindings.resolve(key.storage_key)
+    try:
+        orch.handoffs.append_log(key, folder, f"- {stamp} — asked: {line}")
+    except OSError as exc:  # never cost the user their turn
+        logger.warning("Handoff log append failed: %s", exc)
 
 
 async def _update_session(
@@ -347,7 +425,7 @@ async def _maybe_recover_session(  # noqa: PLR0913
     if (
         _reg.was_aborted(key.chat_id)
         or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg.was_interrupted(key.chat_id)
+        or _reg.was_interrupted(key.chat_id, key.topic_id)
         or not _needs_session_recovery(response)
     ):
         return _RecoveryOutcome(
@@ -497,9 +575,9 @@ async def _finalize_turn(  # noqa: PLR0913
     if (
         _reg.was_aborted(key.chat_id)
         or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg.was_interrupted(key.chat_id)
+        or _reg.was_interrupted(key.chat_id, key.topic_id)
     ):
-        _reg.clear_interrupt(key.chat_id)
+        _reg.clear_interrupt(key.chat_id, key.topic_id)
         await _preserve_session_from_response(orch, session, response, reason="abort")
         logger.info("%s flow aborted/interrupted by user", flow_label)
         return OrchestratorResult(text="")
@@ -778,9 +856,9 @@ async def named_session_flow(
     if (
         _reg.was_aborted(key.chat_id)
         or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg.was_interrupted(key.chat_id)
+        or _reg.was_interrupted(key.chat_id, key.topic_id)
     ):
-        _reg.clear_interrupt(key.chat_id)
+        _reg.clear_interrupt(key.chat_id, key.topic_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
     if response.is_error:
@@ -858,9 +936,9 @@ async def named_session_streaming(
     if (
         _reg2.was_aborted(key.chat_id)
         or _reg2.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg2.was_interrupted(key.chat_id)
+        or _reg2.was_interrupted(key.chat_id, key.topic_id)
     ):
-        _reg2.clear_interrupt(key.chat_id)
+        _reg2.clear_interrupt(key.chat_id, key.topic_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
     if response.is_error:

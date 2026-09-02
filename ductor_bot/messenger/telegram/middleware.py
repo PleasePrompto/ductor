@@ -57,8 +57,9 @@ QUICK_COMMANDS: frozenset[str] = frozenset(
         "/diagnose",
         "/model",
         "/showfiles",
-        "/sessions",
-        "/tasks",
+        "/files",
+        "/menu",
+        "/named",
         "/where",
         "/leave",
     }
@@ -144,14 +145,24 @@ class AuthMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+def _key_for(chat_id: int, event: Message) -> tuple[int, int | None]:
+    """The conversation a message belongs to — the queue's key.
+
+    Stopping in one topic must drain that topic's queue and no other, so the
+    topic travels with the message rather than being inferred from the chat.
+    """
+    return (chat_id, getattr(event, "message_thread_id", None))
+
+
 @dataclass(slots=True)
 class _QueueEntry:
-    """A message waiting behind the per-chat lock."""
+    """A message waiting behind its conversation's lock."""
 
     entry_id: int
     chat_id: int
     message_id: int
     text_preview: str
+    topic_id: int | None = None
     cancelled: bool = False
     indicator_msg_id: int | None = field(default=None, repr=False)
 
@@ -177,7 +188,10 @@ class SequentialMiddleware(BaseMiddleware):
         self._abort_handler: AbortHandler | None = None
         self._abort_all_handler: AbortAllHandler | None = None
         self._quick_command_handler: QuickCommandHandler | None = None
-        self._pending: dict[int, list[_QueueEntry]] = {}
+        # Keyed by (chat_id, topic_id): a queue belongs to one topic, because
+        # one topic is one session. Keying by chat alone made a long run in
+        # one topic queue the messages of every other topic in the group.
+        self._pending: dict[tuple[int, int | None], list[_QueueEntry]] = {}
         self._entry_counter = 0
         self._bot: Bot | None = None
         self._bot_id: int | None = None
@@ -230,44 +244,47 @@ class SequentialMiddleware(BaseMiddleware):
 
     # -- Queue inspection & manipulation ---------------------------------------
 
-    def has_pending(self, chat_id: int) -> bool:
-        """Return True if *chat_id* has messages waiting in the queue."""
-        return bool(self._pending.get(chat_id))
+    def has_pending(self, key: tuple[int, int | None]) -> bool:
+        """Whether this conversation has messages waiting in its queue."""
+        return bool(self._pending.get(key))
 
-    def is_busy(self, chat_id: int) -> bool:
-        """Return True if *chat_id* has any lock held or pending messages.
+    def is_busy(self, key: tuple[int, int | None]) -> bool:
+        """Whether this conversation is running something or has a queue."""
+        return self._lock_pool.get(key).locked() or self.has_pending(key)
 
-        Checks all topic-scoped locks for the given chat.
-        """
-        return self._lock_pool.any_locked_for_chat(chat_id) or self.has_pending(chat_id)
+    def is_chat_busy(self, chat_id: int) -> bool:
+        """Whether any topic in *chat_id* is running or queued."""
+        return self._lock_pool.any_locked_for_chat(chat_id) or any(
+            chat == chat_id for chat, _topic in self._pending
+        )
 
-    async def cancel_entry(self, chat_id: int, entry_id: int) -> bool:
+    async def cancel_entry(self, key: tuple[int, int | None], entry_id: int) -> bool:
         """Cancel a single queued message and edit its indicator.
 
         Returns True if the entry was found and cancelled.
         """
-        entries = self._pending.get(chat_id, [])
+        entries = self._pending.get(key, [])
         for entry in entries:
             if entry.entry_id == entry_id and not entry.cancelled:
                 entry.cancelled = True
-                await self._edit_indicator(chat_id, entry, "<i>[Message cancelled.]</i>")
-                logger.info("Queue entry cancelled chat=%d entry=%d", chat_id, entry_id)
+                await self._edit_indicator(entry.chat_id, entry, "<i>[Message cancelled.]</i>")
+                logger.info("Queue entry cancelled key=%s entry=%d", key, entry_id)
                 return True
         return False
 
-    async def drain_pending(self, chat_id: int) -> int:
+    async def drain_pending(self, key: tuple[int, int | None]) -> int:
         """Cancel ALL pending messages for *chat_id* and edit their indicators.
 
         Returns the number of entries discarded.
         """
-        entries = self._pending.get(chat_id, [])
+        entries = self._pending.get(key, [])
         count = 0
         for entry in entries:
             if not entry.cancelled:
                 entry.cancelled = True
-                await self._edit_indicator(chat_id, entry, "<i>[Message discarded.]</i>")
+                await self._edit_indicator(entry.chat_id, entry, "<i>[Message discarded.]</i>")
                 count += 1
-        logger.info("Queue drained chat=%d discarded=%d", chat_id, count)
+        logger.info("Queue drained key=%s discarded=%d", key, count)
         return count
 
     # -- Middleware entry point ------------------------------------------------
@@ -287,14 +304,14 @@ class SequentialMiddleware(BaseMiddleware):
             logger.debug("Abort-all trigger detected text=%s", text[:40])
             handled = await self._abort_all_handler(chat_id, event)
             if handled:
-                await self.drain_pending(chat_id)
+                await self.drain_pending(_key_for(chat_id, event))
                 return True
 
         if self._abort_handler and is_abort_message(text):
             logger.debug("Abort trigger detected text=%s", text[:40])
             handled = await self._abort_handler(chat_id, event)
             if handled:
-                await self.drain_pending(chat_id)
+                await self.drain_pending(_key_for(chat_id, event))
                 return True
 
         return False
@@ -374,14 +391,15 @@ class SequentialMiddleware(BaseMiddleware):
         lock = self.get_lock(session_key.lock_key)
         entry: _QueueEntry | None = None
 
+        key = session_key.lock_key
         if lock.locked():
             entry = self._create_entry(chat_id, event)
-            self._pending.setdefault(chat_id, []).append(entry)
+            self._pending.setdefault(key, []).append(entry)
             await self._send_indicator(chat_id, entry, event)
 
         async with lock:
             if entry is not None:
-                self._remove_entry(chat_id, entry)
+                self._remove_entry(key, entry)
                 if entry.cancelled:
                     await self._delete_indicator(chat_id, entry)
                     return None
@@ -395,16 +413,17 @@ class SequentialMiddleware(BaseMiddleware):
             chat_id=chat_id,
             message_id=event.message_id,
             text_preview=(event.text or "")[:40],
+            topic_id=getattr(event, "message_thread_id", None),
         )
 
-    def _remove_entry(self, chat_id: int, entry: _QueueEntry) -> None:
-        entries = self._pending.get(chat_id)
+    def _remove_entry(self, key: tuple[int, int | None], entry: _QueueEntry) -> None:
+        entries = self._pending.get(key)
         if entries is None:
             return
         with contextlib.suppress(ValueError):
             entries.remove(entry)
         if not entries:
-            del self._pending[chat_id]
+            del self._pending[key]
 
     async def _send_indicator(self, chat_id: int, entry: _QueueEntry, event: Message) -> None:
         if not self._bot:

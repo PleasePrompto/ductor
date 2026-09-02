@@ -12,11 +12,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import which
 
+from ductor_bot.cli.claude_accounts import ENV_VAR as CLAUDE_ACCOUNT_ENV
 from ductor_bot.cli.codex_events import parse_codex_jsonl
 from ductor_bot.cli.gemini_events import parse_gemini_json
 from ductor_bot.cli.gemini_utils import find_gemini_cli
 from ductor_bot.cli.grok_events import parse_grok_json
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
+from ductor_bot.cli.param_resolver import CLIRunConfig
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from ductor_bot.infra.process_tree import force_kill_process_tree
 
@@ -30,10 +31,14 @@ class OneShotCommand:
     cmd: list[str] = field(default_factory=list)
     stdin_input: bytes | None = None
     env_overrides: dict[str, str] = field(default_factory=dict)
+    #: Variables to remove from the child environment. Overrides alone cannot
+    #: express this, and for CLAUDE_SECURESTORAGE_CONFIG_DIR an empty value is
+    #: not the same as unset — Claude Code reads empty as ``~/.claude``.
+    env_unset: set[str] = field(default_factory=set)
     cleanup_paths: list[Path] = field(default_factory=list)
 
 
-def build_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def build_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a CLI command for one-shot cron execution."""
     builder = _CMD_BUILDERS.get(exec_config.provider, _build_claude_cmd)
     return builder(exec_config, prompt)
@@ -117,7 +122,7 @@ def parse_result(provider: str, stdout: bytes) -> str:
 # -- Private builders --
 
 
-def _build_claude_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_claude_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Claude CLI command for one-shot cron execution."""
     cli = which("claude")
     if not cli:
@@ -139,10 +144,19 @@ def _build_claude_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotC
     # Add extra CLI parameters
     cmd.extend(exec_config.cli_parameters)
     cmd += ["--", prompt]
-    return OneShotCommand(cmd=cmd)
+
+    # Honour the /account selection here too: this path bypasses CLIService, so
+    # without it cron/webhook/background runs would spend whichever subscription
+    # the parent process inherited.
+    one_shot = OneShotCommand(cmd=cmd)
+    if exec_config.claude_account_dir:
+        one_shot.env_overrides[CLAUDE_ACCOUNT_ENV] = exec_config.claude_account_dir
+    else:
+        one_shot.env_unset.add(CLAUDE_ACCOUNT_ENV)
+    return one_shot
 
 
-def _build_gemini_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_gemini_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Gemini CLI command for one-shot cron execution.
 
     Uses hybrid mode: ``-p ""`` forces headless mode (bypassing the TTY check
@@ -163,7 +177,7 @@ def _build_gemini_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotC
     return OneShotCommand(cmd=cmd, stdin_input=prompt.encode())
 
 
-def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_codex_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Codex CLI command for one-shot cron execution."""
     cli = which("codex")
     if not cli:
@@ -193,7 +207,7 @@ def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCo
 _GROK_PROMPT_ARGV_SOFT_LIMIT = 24_000
 
 
-def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_grok_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Grok Build CLI command for one-shot cron execution."""
     cli = which("grok")
     if not cli:
@@ -228,7 +242,7 @@ def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCom
     return OneShotCommand(cmd=cmd, cleanup_paths=cleanup)
 
 
-_CmdBuilder = Callable[[TaskExecutionConfig, str], OneShotCommand | None]
+_CmdBuilder = Callable[[CLIRunConfig, str], OneShotCommand | None]
 _ResultParser = Callable[[bytes], str]
 
 _CMD_BUILDERS: dict[str, _CmdBuilder] = {
@@ -273,7 +287,11 @@ async def execute_one_shot(
 ) -> OneShotExecutionResult:
     """Run one provider CLI command with timeout and normalized status/result."""
     stdin_input = one_shot.stdin_input
-    env = {**os.environ, **one_shot.env_overrides} if one_shot.env_overrides else None
+    env: dict[str, str] | None = None
+    if one_shot.env_overrides or one_shot.env_unset:
+        env = {**os.environ, **one_shot.env_overrides}
+        for key in one_shot.env_unset:
+            env.pop(key, None)
     try:
         proc = await asyncio.create_subprocess_exec(
             *one_shot.cmd,

@@ -6,17 +6,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
+from ductor_bot.cli.param_resolver import CLIRunConfig
 from ductor_bot.cron.execution import OneShotCommand, OneShotExecutionResult
 from ductor_bot.infra.env_secrets import clear_cache
-from ductor_bot.infra.task_runner import TaskRunOptions, run_oneshot_task
+from ductor_bot.infra.oneshot_runner import RunOptions, run_oneshot_task
 
 if TYPE_CHECKING:
     import pytest
 
 
-def _exec_config() -> TaskExecutionConfig:
-    return TaskExecutionConfig(
+def _exec_config() -> CLIRunConfig:
+    return CLIRunConfig(
         provider="claude",
         model="opus",
         reasoning_effort="",
@@ -59,7 +59,7 @@ async def _run_and_capture(
         await run_oneshot_task(
             _exec_config(),
             "hi",
-            TaskRunOptions(
+            RunOptions(
                 cwd=tmp_path,
                 timeout_seconds=60,
                 timeout_label="test",

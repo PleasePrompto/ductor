@@ -26,7 +26,7 @@ from ductor_bot.text.response_format import normalize_tool_name
 
 if TYPE_CHECKING:
     from aiogram import Bot
-    from aiogram.types import Message
+    from aiogram.types import InlineKeyboardMarkup, Message
 
     from ductor_bot.config import StreamingConfig
 
@@ -105,7 +105,7 @@ class EditStreamEditor:
     edit errors the editor degrades to append mode.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - keyword-only options, not positional arity
         self,
         bot: Bot,
         chat_id: int,
@@ -113,10 +113,14 @@ class EditStreamEditor:
         reply_to: Message | None = None,
         cfg: StreamingConfig | None = None,
         thread_id: int | None = None,
+        live_markup: InlineKeyboardMarkup | None = None,
     ) -> None:
         self._bot = bot
         self._chat_id = chat_id
         self._reply_to = reply_to
+        # Shown only while the turn is running; cleared when it finishes, so a
+        # finished message never offers to stop something already over.
+        self._live_markup = live_markup
         self._interval = cfg.edit_interval_seconds if cfg else 2.0
         self._max_failures = cfg.max_edit_failures if cfg else 3
         self._thread_id = thread_id
@@ -174,6 +178,7 @@ class EditStreamEditor:
         self._s.tool_tracker = _ToolTracker()
         self._strip_active_indicators()
         await self._do_edit()
+        await self._clear_live_markup()
         await self._attach_buttons(full_text)
 
     # ------------------------------------------------------------------
@@ -309,13 +314,16 @@ class EditStreamEditor:
             return
         try:
             if self._s.messages_sent == 0 and self._reply_to is not None:
-                msg = await self._reply_to.answer(display, parse_mode=ParseMode.HTML)
+                msg = await self._reply_to.answer(
+                    display, parse_mode=ParseMode.HTML, reply_markup=self._live_markup
+                )
             else:
                 msg = await self._bot.send_message(
                     chat_id=self._chat_id,
                     text=display,
                     parse_mode=ParseMode.HTML,
                     message_thread_id=self._thread_id,
+                    reply_markup=self._live_markup,
                 )
             self._s.active_msg = msg
             self._s.messages_sent += 1
@@ -380,6 +388,19 @@ class EditStreamEditor:
     # ------------------------------------------------------------------
     # Internal: button keyboard attachment
     # ------------------------------------------------------------------
+
+    async def _clear_live_markup(self) -> None:
+        """Drop the Stop button once there is nothing left to stop."""
+        if self._live_markup is None or self._s.active_msg is None:
+            return
+        try:
+            await self._bot.edit_message_reply_markup(
+                chat_id=self._chat_id,
+                message_id=self._s.active_msg.message_id,
+                reply_markup=None,
+            )
+        except (TelegramBadRequest, TelegramRetryAfter):
+            logger.debug("Stop button already gone")
 
     async def _attach_buttons(self, full_text: str) -> None:
         """Parse buttons from *full_text* and attach keyboard to the active message."""

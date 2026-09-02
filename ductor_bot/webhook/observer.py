@@ -8,10 +8,10 @@ import secrets
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from ductor_bot.cli.param_resolver import TaskOverrides
-from ductor_bot.infra.base_task_observer import BaseTaskObserver
+from ductor_bot.cli.param_resolver import RunOverrides
+from ductor_bot.infra.base_oneshot_observer import BaseOneShotObserver
 from ductor_bot.infra.file_watcher import FileWatcher
-from ductor_bot.infra.task_runner import execute_in_task_folder
+from ductor_bot.infra.oneshot_runner import execute_in_task_folder
 from ductor_bot.utils.quiet_hours import check_quiet_hour
 from ductor_bot.webhook.models import WebhookResult, render_template
 from ductor_bot.webhook.server import WebhookServer
@@ -34,7 +34,7 @@ WebhookResultCallback = Callable[[WebhookResult], Awaitable[None]]
 WakeHandler = Callable[[int, str], Awaitable[str | None]]
 
 
-class WebhookObserver(BaseTaskObserver):
+class WebhookObserver(BaseOneShotObserver):
     """Manages webhook server lifecycle and dispatches incoming hooks.
 
     Watches ``webhooks.json`` mtime for changes (like CronObserver).
@@ -156,8 +156,8 @@ class WebhookObserver(BaseTaskObserver):
                     )
                 result = await self._dispatch_wake(hook_id, hook.title, safe_prompt)
             elif hook.mode == "cron_task":
-                # Build TaskOverrides from hook
-                overrides = TaskOverrides(
+                # Build RunOverrides from hook
+                overrides = RunOverrides(
                     provider=hook.provider,
                     model=hook.model,
                     reasoning_effort=hook.reasoning_effort,
@@ -249,7 +249,7 @@ class WebhookObserver(BaseTaskObserver):
         title: str,
         task_folder: str | None,
         prompt: str,
-        overrides: TaskOverrides,
+        overrides: RunOverrides,
     ) -> WebhookResult:
         """Spawn fresh CLI session in cron_tasks/<task_folder>/."""
         if not task_folder:
