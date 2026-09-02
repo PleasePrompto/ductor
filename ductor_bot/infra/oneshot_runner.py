@@ -9,15 +9,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ductor_bot.cli.param_resolver import TaskExecutionConfig, TaskOverrides
+    from ductor_bot.cli.param_resolver import CLIRunConfig, RunOverrides
     from ductor_bot.cron.execution import OneShotExecutionResult
-    from ductor_bot.infra.base_task_observer import BaseTaskObserver
+    from ductor_bot.infra.base_oneshot_observer import BaseOneShotObserver
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class TaskResult:
+class OneShotResult:
     """Normalized outcome of a one-shot task run."""
 
     status: str
@@ -26,7 +26,7 @@ class TaskResult:
 
 
 @dataclass(frozen=True, slots=True)
-class TaskRunOptions:
+class RunOptions:
     """Execution options shared by cron, webhook, and background one-shot runs."""
 
     cwd: Path
@@ -36,10 +36,10 @@ class TaskRunOptions:
 
 
 async def run_oneshot_task(
-    exec_config: TaskExecutionConfig,
+    exec_config: CLIRunConfig,
     prompt: str,
-    options: TaskRunOptions,
-) -> TaskResult:
+    options: RunOptions,
+) -> OneShotResult:
     """Build the CLI command and execute it, returning a normalized result.
 
     Returns a ``cli_not_found`` result instead of raising when the provider
@@ -50,7 +50,7 @@ async def run_oneshot_task(
 
     one_shot = build_cmd(exec_config, prompt)
     if one_shot is None:
-        return TaskResult(
+        return OneShotResult(
             status=f"error:cli_not_found_{exec_config.provider}",
             result_text=f"[{exec_config.provider} CLI not found]",
             execution=None,
@@ -73,7 +73,7 @@ async def run_oneshot_task(
         timeout_label=options.timeout_label,
     )
 
-    return TaskResult(
+    return OneShotResult(
         status=execution.status,
         result_text=execution.result_text,
         execution=execution,
@@ -81,17 +81,17 @@ async def run_oneshot_task(
 
 
 async def execute_in_task_folder(  # noqa: PLR0913
-    observer: BaseTaskObserver,
+    observer: BaseOneShotObserver,
     *,
     cron_tasks_dir: Path,
     task_folder: str,
     instruction: str,
-    overrides: TaskOverrides,
+    overrides: RunOverrides,
     dependency: str | None,
     task_id: str,
     task_label: str,
     timeout_seconds: float,
-) -> TaskResult:
+) -> OneShotResult:
     """Execute a one-shot CLI task inside a ``cron_tasks`` subfolder.
 
     Shared core for :class:`CronObserver` and :class:`WebhookObserver`.
@@ -109,7 +109,7 @@ async def execute_in_task_folder(  # noqa: PLR0913
     async with dep_queue.acquire(task_id, task_label, dependency):
         folder = cron_tasks_dir / task_folder
         if not await asyncio.to_thread(folder.is_dir):
-            return TaskResult(
+            return OneShotResult(
                 status="error:folder_missing",
                 result_text="",
                 execution=None,
@@ -130,7 +130,7 @@ async def execute_in_task_folder(  # noqa: PLR0913
         result = await run_oneshot_task(
             exec_config,
             enriched,
-            TaskRunOptions(
+            RunOptions(
                 cwd=folder,
                 timeout_seconds=timeout_seconds,
                 timeout_label=task_label,

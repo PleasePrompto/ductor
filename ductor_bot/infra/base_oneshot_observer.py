@@ -5,19 +5,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
+from ductor_bot.cli.param_resolver import RunOverrides, resolve_cli_config
 
 if TYPE_CHECKING:
     from ductor_bot.cli.codex_cache import CodexModelCache
-    from ductor_bot.cli.param_resolver import TaskExecutionConfig
+    from ductor_bot.cli.param_resolver import CLIRunConfig
     from ductor_bot.config import AgentConfig
-    from ductor_bot.infra.task_runner import TaskResult
+    from ductor_bot.infra.oneshot_runner import OneShotResult
     from ductor_bot.workspace.paths import DuctorPaths
 
 logger = logging.getLogger(__name__)
 
 
-class BaseTaskObserver:
+class BaseOneShotObserver:
     """Shared base for observers that execute one-shot CLI tasks.
 
     Provides:
@@ -38,8 +38,8 @@ class BaseTaskObserver:
 
     def resolve_execution_config(
         self,
-        task_overrides: TaskOverrides,
-    ) -> TaskExecutionConfig:
+        task_overrides: RunOverrides,
+    ) -> CLIRunConfig:
         """Build a CLI execution config from current settings and overrides."""
         return resolve_cli_config(
             self._config,
@@ -49,7 +49,7 @@ class BaseTaskObserver:
 
     def log_execution_result(
         self,
-        result: TaskResult,
+        result: OneShotResult,
         label: str,
         job_id: str,
     ) -> None:

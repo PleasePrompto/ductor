@@ -129,10 +129,10 @@ def test_service_updates_account_dir_at_runtime() -> None:
 
 def test_oneshot_claude_cmd_sets_account_dir() -> None:
     """These runs bypass CLIService entirely and would otherwise ignore /account."""
-    from ductor_bot.cli.param_resolver import TaskExecutionConfig
+    from ductor_bot.cli.param_resolver import CLIRunConfig
     from ductor_bot.cron.execution import _build_claude_cmd
 
-    cfg = TaskExecutionConfig(
+    cfg = CLIRunConfig(
         provider="claude",
         model="sonnet",
         reasoning_effort="medium",
@@ -152,10 +152,10 @@ def test_oneshot_claude_cmd_sets_account_dir() -> None:
 
 def test_oneshot_claude_cmd_unsets_for_default_account() -> None:
     """Setting the variable to empty would mean ~/.claude, not 'the default'."""
-    from ductor_bot.cli.param_resolver import TaskExecutionConfig
+    from ductor_bot.cli.param_resolver import CLIRunConfig
     from ductor_bot.cron.execution import _build_claude_cmd
 
-    cfg = TaskExecutionConfig(
+    cfg = CLIRunConfig(
         provider="claude",
         model="sonnet",
         reasoning_effort="medium",

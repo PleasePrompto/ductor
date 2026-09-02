@@ -9,7 +9,7 @@ import pytest
 
 from ductor_bot.cli.codex_cache import CodexModelCache
 from ductor_bot.cli.codex_discovery import CodexModelInfo
-from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
+from ductor_bot.cli.param_resolver import RunOverrides, resolve_cli_config
 from ductor_bot.config import AgentConfig
 from ductor_bot.cron.execution import build_cmd
 from ductor_bot.cron.manager import CronJob, CronManager
@@ -86,7 +86,7 @@ async def test_cron_task_model_override(
     task_folder.mkdir()
 
     # Resolve configuration with override
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider=job.provider,
         model=job.model,
         reasoning_effort=job.reasoning_effort,
@@ -134,7 +134,7 @@ async def test_cron_task_cli_parameters(
     task_folder.mkdir()
 
     # Resolve configuration with override
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider=job.provider,
         model=job.model,
         reasoning_effort=job.reasoning_effort,
@@ -180,7 +180,7 @@ async def test_cron_task_reasoning_effort(
     task_folder.mkdir()
 
     # Resolve configuration with override
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider=job.provider,
         model=job.model,
         reasoning_effort=job.reasoning_effort,
@@ -234,7 +234,7 @@ async def test_cron_task_fallback_to_global(
     task_folder.mkdir()
 
     # Resolve configuration with empty overrides
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider=job.provider,
         model=job.model,
         reasoning_effort=job.reasoning_effort,
@@ -288,7 +288,7 @@ async def test_cron_task_provider_switch(
     task_folder.mkdir()
 
     # Resolve configuration with override
-    overrides = TaskOverrides(
+    overrides = RunOverrides(
         provider=job.provider,
         model=job.model,
         reasoning_effort=job.reasoning_effort,

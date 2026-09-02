@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
+from ductor_bot.cli.param_resolver import CLIRunConfig
 from ductor_bot.cron.execution import (
     OneShotCommand,
     build_cmd,
@@ -21,7 +21,7 @@ from ductor_bot.cron.execution import (
 
 class TestBuildCmd:
     def test_claude_provider(self) -> None:
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="",
@@ -41,7 +41,7 @@ class TestBuildCmd:
         assert result.cmd[-2] == "--"
 
     def test_codex_provider(self) -> None:
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="codex",
             model="gpt-4",
             reasoning_effort="medium",
@@ -59,7 +59,7 @@ class TestBuildCmd:
         assert result.stdin_input is None
 
     def test_codex_full_auto(self) -> None:
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="codex",
             model="gpt-4",
             reasoning_effort="medium",
@@ -74,7 +74,7 @@ class TestBuildCmd:
         assert "--full-auto" in result.cmd
 
     def test_returns_none_when_cli_missing(self) -> None:
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="",
@@ -87,7 +87,7 @@ class TestBuildCmd:
             assert build_cmd(exec_config, "hello") is None
 
     def test_gemini_provider(self) -> None:
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="gemini",
             model="gemini-2.5-pro",
             reasoning_effort="",
@@ -112,7 +112,7 @@ class TestBuildCmd:
         assert result.stdin_input == b"hello"
 
     def test_gemini_returns_none_when_cli_missing(self) -> None:
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="gemini",
             model="gemini-2.5-pro",
             reasoning_effort="",
@@ -128,7 +128,7 @@ class TestBuildCmd:
             assert build_cmd(exec_config, "hello") is None
 
     def test_unknown_provider_falls_back_to_claude(self) -> None:
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="unknown",
             model="model",
             reasoning_effort="",

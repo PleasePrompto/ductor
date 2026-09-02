@@ -17,8 +17,6 @@ class Origin(enum.Enum):
     WEBHOOK_CRON = "webhook_cron"
     HEARTBEAT = "heartbeat"
     INTERAGENT = "interagent"
-    TASK_RESULT = "task_result"
-    TASK_QUESTION = "task_question"
     USER = "user"
     API = "api"
 

@@ -12,7 +12,7 @@ from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.factory import create_cli
 from ductor_bot.cli.grok_events import parse_grok_json, parse_grok_stream_line
 from ductor_bot.cli.grok_provider import GrokCLI, _parse_response
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
+from ductor_bot.cli.param_resolver import CLIRunConfig
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
     CompactBoundaryEvent,
@@ -198,7 +198,7 @@ class TestGrokProvider:
         assert resp.total_tokens == 1050  # prefers usage.total_tokens
 
 
-def _grok_task_cfg(**kwargs: Any) -> TaskExecutionConfig:
+def _grok_task_cfg(**kwargs: Any) -> CLIRunConfig:
     base: dict[str, Any] = {
         "provider": "grok",
         "model": "grok-4.5",
@@ -209,7 +209,7 @@ def _grok_task_cfg(**kwargs: Any) -> TaskExecutionConfig:
         "file_access": "all",
     }
     base.update(kwargs)
-    return TaskExecutionConfig(**base)
+    return CLIRunConfig(**base)
 
 
 class TestGrokCronCmd:

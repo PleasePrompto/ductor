@@ -178,43 +178,6 @@ class TelegramTransport:
         if env.result_text:
             await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
 
-    async def _deliver_task_result(self, env: Envelope) -> None:
-        """Deliver task result notification + injected response."""
-        opts = self._opts(env)
-        name = env.metadata.get("name", env.metadata.get("task_id", "?"))
-
-        # 1. Notification (skip "waiting" — question already shown)
-        note = ""
-        if env.status == "done":
-            duration = f"{env.elapsed_seconds:.0f}s"
-            target = f"{env.provider}/{env.model}" if env.provider else ""
-            detail = f"{duration}, {target}" if target else duration
-            note = f"**Task `{name}` completed** ({detail})"
-        elif env.status == "cancelled":
-            note = f"**Task `{name}` cancelled**"
-        elif env.status == "failed":
-            note = f"**Task `{name}` failed**\nReason: {env.metadata.get('error', 'unknown')}"
-
-        if note:
-            await send_rich(self._bot.bot_instance, env.chat_id, note, opts)
-
-        # 2. Injected response (filled by bus injection for done/failed)
-        if env.needs_injection and env.result_text:
-            await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
-
-    async def _deliver_task_question(self, env: Envelope) -> None:
-        """Deliver task question notification + injected agent response."""
-        opts = self._opts(env)
-        task_id = env.metadata.get("task_id", "?")
-
-        # 1. Notification
-        note = f"**Task `{task_id}` has a question:**\n{env.prompt}"
-        await send_rich(self._bot.bot_instance, env.chat_id, note, opts)
-
-        # 2. Agent response (filled by bus injection)
-        if env.result_text:
-            await send_rich(self._bot.bot_instance, env.chat_id, env.result_text, opts)
-
     async def _deliver_webhook_wake(self, env: Envelope) -> None:
         """Deliver webhook wake result."""
         if env.result_text:
@@ -313,8 +276,6 @@ _HANDLERS: dict[Origin, _Handler] = {
     Origin.CRON: TelegramTransport._deliver_cron,
     Origin.HEARTBEAT: TelegramTransport._deliver_heartbeat,
     Origin.INTERAGENT: TelegramTransport._deliver_interagent,
-    Origin.TASK_RESULT: TelegramTransport._deliver_task_result,
-    Origin.TASK_QUESTION: TelegramTransport._deliver_task_question,
     Origin.WEBHOOK_WAKE: TelegramTransport._deliver_webhook_wake,
 }
 

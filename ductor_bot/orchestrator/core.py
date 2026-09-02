@@ -9,10 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ductor_bot.background import (
-    BackgroundSubmit,
-    BackgroundTask,
-)
 from ductor_bot.cli.claude_accounts import resolve_account_dir
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
@@ -32,6 +28,9 @@ from ductor_bot.handoff.reinject import ReinjectFlags
 from ductor_bot.handoff.store import HandoffStore
 from ductor_bot.infra.docker import DockerManager
 from ductor_bot.infra.inflight import InflightTracker
+from ductor_bot.named_runs import (
+    NamedRunSubmit,
+)
 from ductor_bot.orchestrator.commands import (
     cmd_account,
     cmd_clear,
@@ -77,11 +76,11 @@ from ductor_bot.workspace.paths import DuctorPaths
 from ductor_bot.workspace.topic_bindings import BindingStore
 
 if TYPE_CHECKING:
-    from ductor_bot.background import BackgroundObserver
     from ductor_bot.bus.bus import MessageBus
     from ductor_bot.bus.lock_pool import LockPool
     from ductor_bot.config import ModelRegistry
     from ductor_bot.multiagent.supervisor import AgentSupervisor
+    from ductor_bot.named_runs import NamedRunObserver
     from ductor_bot.session.named import NamedSession
 
 logger = logging.getLogger(__name__)
@@ -332,7 +331,7 @@ class Orchestrator:
         return self._process_registry
 
     @property
-    def bg_observer(self) -> BackgroundObserver | None:
+    def bg_observer(self) -> NamedRunObserver | None:
         """Public access to the background observer."""
         return self._observers.background
 
@@ -678,7 +677,7 @@ class Orchestrator:
             key=SessionKey.for_transport(request.transport, chat_id, request.thread_id),
         )
         exec_config = resolve_cli_config(self._config, self._observers.codex_cache)
-        sub = BackgroundSubmit(
+        sub = NamedRunSubmit(
             chat_id=chat_id,
             prompt=prompt,
             message_id=request.message_id,
@@ -737,7 +736,7 @@ class Orchestrator:
             and _validate_reasoning_effort(self, ns.model, followup_effort) is not None
         ):
             followup_effort = "medium"
-        sub = BackgroundSubmit(
+        sub = NamedRunSubmit(
             chat_id=chat_id,
             prompt=prompt,
             message_id=message_id,
@@ -784,12 +783,6 @@ class Orchestrator:
         """Return fresh topic sessions for *chat_id*."""
         all_sessions = await self._sessions.list_active_for_chat(chat_id)
         return [s for s in all_sessions if s.topic_id is not None]
-
-    def active_background_tasks(self, chat_id: int | None = None) -> list[BackgroundTask]:
-        """Return active background tasks, optionally filtered by chat_id."""
-        if self._observers.background is None:
-            return []
-        return self._observers.background.active_tasks(chat_id)
 
     def is_chat_busy(self, chat_id: int, topic_id: int | None = None) -> bool:
         """Check if a chat has active CLI processes."""

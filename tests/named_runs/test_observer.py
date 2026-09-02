@@ -1,4 +1,4 @@
-"""Tests for BackgroundObserver: submit, execute, cancel, deliver."""
+"""Tests for NamedRunObserver: submit, execute, cancel, deliver."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ductor_bot.background.models import BackgroundResult, BackgroundSubmit
-from ductor_bot.background.observer import MAX_TASKS_PER_CHAT, BackgroundObserver
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
+from ductor_bot.cli.param_resolver import CLIRunConfig
 from ductor_bot.cli.types import AgentResponse
 from ductor_bot.config import AgentConfig
 from ductor_bot.cron.execution import OneShotExecutionResult
-from ductor_bot.infra.task_runner import TaskResult
+from ductor_bot.infra.oneshot_runner import OneShotResult
+from ductor_bot.named_runs.models import NamedRunResult, NamedRunSubmit
+from ductor_bot.named_runs.observer import MAX_TASKS_PER_CHAT, NamedRunObserver
 from ductor_bot.workspace.paths import DuctorPaths
 
 
@@ -27,8 +27,8 @@ def _sub(
     *,
     thread_id: int | None = None,
     transport: str = "tg",
-) -> BackgroundSubmit:
-    return BackgroundSubmit(
+) -> NamedRunSubmit:
+    return NamedRunSubmit(
         chat_id=chat_id,
         prompt=prompt,
         message_id=message_id,
@@ -46,7 +46,7 @@ def _make_paths(tmp_path: Path) -> DuctorPaths:
     return paths
 
 
-def _make_exec_config(**overrides: Any) -> TaskExecutionConfig:
+def _make_exec_config(**overrides: Any) -> CLIRunConfig:
     defaults: dict[str, Any] = {
         "provider": "claude",
         "model": "sonnet",
@@ -57,17 +57,17 @@ def _make_exec_config(**overrides: Any) -> TaskExecutionConfig:
         "file_access": "workspace",
     }
     defaults.update(overrides)
-    return TaskExecutionConfig(**defaults)
+    return CLIRunConfig(**defaults)
 
 
 def _make_observer(
     paths: DuctorPaths, timeout: float = 300.0, config: AgentConfig | None = None
-) -> BackgroundObserver:
-    return BackgroundObserver(paths, timeout_seconds=timeout, config=config or AgentConfig())
+) -> NamedRunObserver:
+    return NamedRunObserver(paths, timeout_seconds=timeout, config=config or AgentConfig())
 
 
-def _success_task_result(text: str = "") -> TaskResult:
-    return TaskResult(
+def _success_task_result(text: str = "") -> OneShotResult:
+    return OneShotResult(
         status="success",
         result_text=text,
         execution=OneShotExecutionResult(
@@ -81,8 +81,8 @@ def _success_task_result(text: str = "") -> TaskResult:
     )
 
 
-def _cli_not_found_task_result() -> TaskResult:
-    return TaskResult(
+def _cli_not_found_task_result() -> OneShotResult:
+    return OneShotResult(
         status="error:cli_not_found_claude",
         result_text="[claude CLI not found]",
         execution=None,
@@ -92,7 +92,7 @@ def _cli_not_found_task_result() -> TaskResult:
 def _blocking_run(event: asyncio.Event) -> AsyncMock:
     """Return a mock run_oneshot_task that blocks until *event* is set."""
 
-    async def _slow(*_args: Any, **_kw: Any) -> TaskResult:
+    async def _slow(*_args: Any, **_kw: Any) -> OneShotResult:
         await event.wait()
         return _success_task_result()
 
@@ -105,7 +105,7 @@ def paths(tmp_path: Path) -> DuctorPaths:
 
 
 @pytest.fixture
-async def observer(paths: DuctorPaths) -> AsyncIterator[BackgroundObserver]:
+async def observer(paths: DuctorPaths) -> AsyncIterator[NamedRunObserver]:
     obs = _make_observer(paths)
     yield obs
     await obs.shutdown()
@@ -113,10 +113,10 @@ async def observer(paths: DuctorPaths) -> AsyncIterator[BackgroundObserver]:
 
 
 class TestSubmit:
-    async def test_returns_task_id(self, observer: BackgroundObserver) -> None:
+    async def test_returns_task_id(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         with patch(
-            "ductor_bot.background.observer.run_oneshot_task",
+            "ductor_bot.named_runs.observer.run_oneshot_task",
             return_value=_cli_not_found_task_result(),
         ):
             handler = AsyncMock()
@@ -125,11 +125,11 @@ class TestSubmit:
             assert isinstance(task_id, str)
             assert len(task_id) == 8
 
-    async def test_task_appears_in_active(self, observer: BackgroundObserver) -> None:
+    async def test_task_appears_in_active(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         event = asyncio.Event()
         with patch(
-            "ductor_bot.background.observer.run_oneshot_task",
+            "ductor_bot.named_runs.observer.run_oneshot_task",
             new=_blocking_run(event),
         ):
             observer.set_result_handler(AsyncMock())
@@ -140,11 +140,11 @@ class TestSubmit:
             event.set()
             await asyncio.sleep(0.05)
 
-    async def test_max_tasks_limit(self, observer: BackgroundObserver) -> None:
+    async def test_max_tasks_limit(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         event = asyncio.Event()
         with patch(
-            "ductor_bot.background.observer.run_oneshot_task",
+            "ductor_bot.named_runs.observer.run_oneshot_task",
             new=_blocking_run(event),
         ):
             observer.set_result_handler(AsyncMock())
@@ -159,18 +159,18 @@ class TestSubmit:
 
 
 class TestExecution:
-    async def test_success_delivers_result(self, observer: BackgroundObserver) -> None:
+    async def test_success_delivers_result(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         handler = AsyncMock()
         observer.set_result_handler(handler)
 
         result = _success_task_result("Hello world")
-        with patch("ductor_bot.background.observer.run_oneshot_task", return_value=result):
+        with patch("ductor_bot.named_runs.observer.run_oneshot_task", return_value=result):
             observer.submit(_sub(prompt="say hello", message_id=42), config)
             await asyncio.sleep(0.05)
 
         handler.assert_awaited_once()
-        bg_result: BackgroundResult = handler.call_args[0][0]
+        bg_result: NamedRunResult = handler.call_args[0][0]
         assert bg_result.status == "success"
         assert bg_result.result_text == "Hello world"
         assert bg_result.chat_id == 123
@@ -179,43 +179,43 @@ class TestExecution:
         assert bg_result.transport == "tg"
 
     async def test_preserves_transport_and_thread_target(
-        self, observer: BackgroundObserver
+        self, observer: NamedRunObserver
     ) -> None:
         config = _make_exec_config()
         handler = AsyncMock()
         observer.set_result_handler(handler)
 
         result = _success_task_result("Hello thread")
-        with patch("ductor_bot.background.observer.run_oneshot_task", return_value=result):
+        with patch("ductor_bot.named_runs.observer.run_oneshot_task", return_value=result):
             observer.submit(_sub(prompt="say hello", thread_id=77, transport="sl"), config)
             await asyncio.sleep(0.05)
 
-        bg_result: BackgroundResult = handler.call_args[0][0]
+        bg_result: NamedRunResult = handler.call_args[0][0]
         assert bg_result.thread_id == 77
         assert bg_result.transport == "sl"
 
-    async def test_cli_not_found(self, observer: BackgroundObserver) -> None:
+    async def test_cli_not_found(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         handler = AsyncMock()
         observer.set_result_handler(handler)
 
         with patch(
-            "ductor_bot.background.observer.run_oneshot_task",
+            "ductor_bot.named_runs.observer.run_oneshot_task",
             return_value=_cli_not_found_task_result(),
         ):
             observer.submit(_sub(prompt="test"), config)
             await asyncio.sleep(0.05)
 
         handler.assert_awaited_once()
-        bg_result: BackgroundResult = handler.call_args[0][0]
+        bg_result: NamedRunResult = handler.call_args[0][0]
         assert bg_result.status == "error:cli_not_found"
 
-    async def test_timeout_status(self, observer: BackgroundObserver) -> None:
+    async def test_timeout_status(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         handler = AsyncMock()
         observer.set_result_handler(handler)
 
-        result = TaskResult(
+        result = OneShotResult(
             status="error:timeout",
             result_text="timed out",
             execution=OneShotExecutionResult(
@@ -227,23 +227,23 @@ class TestExecution:
                 timed_out=True,
             ),
         )
-        with patch("ductor_bot.background.observer.run_oneshot_task", return_value=result):
+        with patch("ductor_bot.named_runs.observer.run_oneshot_task", return_value=result):
             observer.submit(_sub(prompt="slow task"), config)
             await asyncio.sleep(0.05)
 
-        bg_result: BackgroundResult = handler.call_args[0][0]
+        bg_result: NamedRunResult = handler.call_args[0][0]
         assert bg_result.status == "error:timeout"
 
 
 class TestCancel:
-    async def test_cancel_all(self, observer: BackgroundObserver) -> None:
+    async def test_cancel_all(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         event = asyncio.Event()
         handler = AsyncMock()
         observer.set_result_handler(handler)
 
         with patch(
-            "ductor_bot.background.observer.run_oneshot_task",
+            "ductor_bot.named_runs.observer.run_oneshot_task",
             new=_blocking_run(event),
         ):
             observer.submit(_sub(prompt="task1"), config)
@@ -254,14 +254,14 @@ class TestCancel:
             assert cancelled == 2
             await asyncio.sleep(0.05)
 
-    async def test_cancel_delivers_aborted(self, observer: BackgroundObserver) -> None:
+    async def test_cancel_delivers_aborted(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         event = asyncio.Event()
         handler = AsyncMock()
         observer.set_result_handler(handler)
 
         with patch(
-            "ductor_bot.background.observer.run_oneshot_task",
+            "ductor_bot.named_runs.observer.run_oneshot_task",
             new=_blocking_run(event),
         ):
             observer.submit(_sub(prompt="cancellable"), config)
@@ -273,12 +273,12 @@ class TestCancel:
         aborted_calls = [c for c in handler.call_args_list if c[0][0].status == "aborted"]
         assert len(aborted_calls) == 1
 
-    async def test_shutdown_cancels_all(self, observer: BackgroundObserver) -> None:
+    async def test_shutdown_cancels_all(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         event = asyncio.Event()
 
         with patch(
-            "ductor_bot.background.observer.run_oneshot_task",
+            "ductor_bot.named_runs.observer.run_oneshot_task",
             new=_blocking_run(event),
         ):
             observer.set_result_handler(AsyncMock())
@@ -291,13 +291,13 @@ class TestCancel:
 
 
 class TestCleanup:
-    async def test_task_removed_after_completion(self, observer: BackgroundObserver) -> None:
+    async def test_task_removed_after_completion(self, observer: NamedRunObserver) -> None:
         config = _make_exec_config()
         handler = AsyncMock()
         observer.set_result_handler(handler)
 
         result = _success_task_result("ok")
-        with patch("ductor_bot.background.observer.run_oneshot_task", return_value=result):
+        with patch("ductor_bot.named_runs.observer.run_oneshot_task", return_value=result):
             observer.submit(_sub(prompt="quick"), config)
             await asyncio.sleep(0.05)
 
@@ -316,7 +316,7 @@ class TestAppendSystemPromptFiles:
         object.__setattr__(obs, "_cli_service", cli)
         obs.set_result_handler(AsyncMock())
 
-        sub = BackgroundSubmit(
+        sub = NamedRunSubmit(
             chat_id=1, prompt="hi", message_id=1, thread_id=None, session_name="work"
         )
         obs.submit(sub, _make_exec_config())
@@ -335,7 +335,7 @@ class TestAppendSystemPromptFiles:
         object.__setattr__(obs, "_cli_service", cli)
         obs.set_result_handler(AsyncMock())
 
-        sub = BackgroundSubmit(
+        sub = NamedRunSubmit(
             chat_id=1, prompt="hi", message_id=1, thread_id=None, session_name="work"
         )
         obs.submit(sub, _make_exec_config())

@@ -17,7 +17,7 @@ from ductor_bot.cli.codex_events import parse_codex_jsonl
 from ductor_bot.cli.gemini_events import parse_gemini_json
 from ductor_bot.cli.gemini_utils import find_gemini_cli
 from ductor_bot.cli.grok_events import parse_grok_json
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
+from ductor_bot.cli.param_resolver import CLIRunConfig
 from ductor_bot.infra.platform import CREATION_FLAGS as _CREATION_FLAGS
 from ductor_bot.infra.process_tree import force_kill_process_tree
 
@@ -38,7 +38,7 @@ class OneShotCommand:
     cleanup_paths: list[Path] = field(default_factory=list)
 
 
-def build_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def build_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a CLI command for one-shot cron execution."""
     builder = _CMD_BUILDERS.get(exec_config.provider, _build_claude_cmd)
     return builder(exec_config, prompt)
@@ -122,7 +122,7 @@ def parse_result(provider: str, stdout: bytes) -> str:
 # -- Private builders --
 
 
-def _build_claude_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_claude_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Claude CLI command for one-shot cron execution."""
     cli = which("claude")
     if not cli:
@@ -156,7 +156,7 @@ def _build_claude_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotC
     return one_shot
 
 
-def _build_gemini_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_gemini_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Gemini CLI command for one-shot cron execution.
 
     Uses hybrid mode: ``-p ""`` forces headless mode (bypassing the TTY check
@@ -177,7 +177,7 @@ def _build_gemini_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotC
     return OneShotCommand(cmd=cmd, stdin_input=prompt.encode())
 
 
-def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_codex_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Codex CLI command for one-shot cron execution."""
     cli = which("codex")
     if not cli:
@@ -207,7 +207,7 @@ def _build_codex_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCo
 _GROK_PROMPT_ARGV_SOFT_LIMIT = 24_000
 
 
-def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCommand | None:
+def _build_grok_cmd(exec_config: CLIRunConfig, prompt: str) -> OneShotCommand | None:
     """Build a Grok Build CLI command for one-shot cron execution."""
     cli = which("grok")
     if not cli:
@@ -242,7 +242,7 @@ def _build_grok_cmd(exec_config: TaskExecutionConfig, prompt: str) -> OneShotCom
     return OneShotCommand(cmd=cmd, cleanup_paths=cleanup)
 
 
-_CmdBuilder = Callable[[TaskExecutionConfig, str], OneShotCommand | None]
+_CmdBuilder = Callable[[CLIRunConfig, str], OneShotCommand | None]
 _ResultParser = Callable[[bytes], str]
 
 _CMD_BUILDERS: dict[str, _CmdBuilder] = {

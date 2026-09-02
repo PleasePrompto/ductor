@@ -1,19 +1,19 @@
-"""Tests for cron execution with TaskExecutionConfig parameter resolver integration."""
+"""Tests for cron execution with CLIRunConfig parameter resolver integration."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from ductor_bot.cli.param_resolver import TaskExecutionConfig
+from ductor_bot.cli.param_resolver import CLIRunConfig
 from ductor_bot.cron.execution import build_cmd
 
 
 class TestBuildCmdWithTaskExecutionConfig:
-    """Test build_cmd() with new TaskExecutionConfig signature."""
+    """Test build_cmd() with new CLIRunConfig signature."""
 
     def test_build_cmd_claude_basic(self) -> None:
-        """Claude command builds correctly with TaskExecutionConfig."""
-        exec_config = TaskExecutionConfig(
+        """Claude command builds correctly with CLIRunConfig."""
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="",
@@ -39,7 +39,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_claude_with_parameters(self) -> None:
         """Claude command includes extra CLI parameters."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="sonnet",
             reasoning_effort="",
@@ -62,8 +62,8 @@ class TestBuildCmdWithTaskExecutionConfig:
         assert result.cmd.index("--verbose") < separator_idx
 
     def test_build_cmd_codex_basic(self) -> None:
-        """Codex command builds correctly with TaskExecutionConfig."""
-        exec_config = TaskExecutionConfig(
+        """Codex command builds correctly with CLIRunConfig."""
+        exec_config = CLIRunConfig(
             provider="codex",
             model="gpt-5.2-codex",
             reasoning_effort="medium",
@@ -88,7 +88,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_codex_with_parameters(self) -> None:
         """Codex command includes extra CLI parameters."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="codex",
             model="gpt-5.1-codex-mini",
             reasoning_effort="medium",
@@ -114,7 +114,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_codex_reasoning_effort_high(self) -> None:
         """Codex command includes reasoning effort flag when non-default."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="codex",
             model="gpt-5.2-codex",
             reasoning_effort="high",
@@ -135,7 +135,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_claude_reasoning_effort(self) -> None:
         """Claude command emits --effort (not the codex -c flag)."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="max",
@@ -153,7 +153,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_claude_skips_effort_on_default(self) -> None:
         """Claude command omits --effort for the "default" sentinel (CLI default)."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="default",
@@ -169,7 +169,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_claude_emits_explicit_medium(self) -> None:
         """An explicitly configured medium effort is passed through, not dropped."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="medium",
@@ -185,7 +185,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_gemini_emits_no_effort(self) -> None:
         """Gemini command emits neither --effort nor the codex -c flag."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="gemini",
             model="gemini-2.5-pro",
             reasoning_effort="high",
@@ -203,7 +203,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_codex_reasoning_effort_low(self) -> None:
         """Codex command includes reasoning effort flag for low effort."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="codex",
             model="gpt-5.1-codex-mini",
             reasoning_effort="low",
@@ -223,7 +223,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_parameter_order(self) -> None:
         """CLI parameters should appear before -- separator."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="",
@@ -250,7 +250,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_empty_parameters(self) -> None:
         """Empty parameter list should work correctly."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="haiku",
             reasoning_effort="",
@@ -271,7 +271,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_cli_not_found(self) -> None:
         """Returns None when CLI binary not found."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="claude",
             model="opus",
             reasoning_effort="",
@@ -288,7 +288,7 @@ class TestBuildCmdWithTaskExecutionConfig:
 
     def test_build_cmd_codex_with_reasoning_and_parameters(self) -> None:
         """Codex command with both reasoning effort and CLI parameters."""
-        exec_config = TaskExecutionConfig(
+        exec_config = CLIRunConfig(
             provider="codex",
             model="gpt-5.2-codex",
             reasoning_effort="high",
@@ -357,12 +357,12 @@ class TestResolveToBuildEffortFlow:
         assert "model_reasoning_effort" not in " ".join(result.cmd)
 
     def test_codex_effort_reaches_cli(self) -> None:
-        from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
+        from ductor_bot.cli.param_resolver import RunOverrides, resolve_cli_config
 
         cfg = resolve_cli_config(
             self._base(),
             self._codex_cache(),
-            task_overrides=TaskOverrides(
+            task_overrides=RunOverrides(
                 provider="codex", model="gpt-5.2-codex", reasoning_effort="high"
             ),
         )
@@ -375,13 +375,13 @@ class TestResolveToBuildEffortFlow:
         assert "--effort" not in result.cmd
 
     def test_gemini_drops_effort(self) -> None:
-        from ductor_bot.cli.param_resolver import TaskOverrides, resolve_cli_config
+        from ductor_bot.cli.param_resolver import RunOverrides, resolve_cli_config
         from ductor_bot.config import set_gemini_models
 
         set_gemini_models(frozenset({"gemini-2.5-pro"}))
         cfg = resolve_cli_config(
             self._base(),
             self._codex_cache(),
-            task_overrides=TaskOverrides(provider="gemini", model="gemini-2.5-pro"),
+            task_overrides=RunOverrides(provider="gemini", model="gemini-2.5-pro"),
         )
         assert cfg.reasoning_effort == ""

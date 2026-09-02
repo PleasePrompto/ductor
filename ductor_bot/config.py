@@ -247,7 +247,11 @@ class CronPreflightConfig(BaseModel):
 class TimeoutConfig(BaseModel):
     """Per-execution-path timeout settings."""
 
-    normal: float = 600.0
+    # Three hours of complete silence. Not a duration cap: work runs in the
+    # conversation's own turn now, and a turn may legitimately last all night.
+    # This is the idle timer that frees a topic when the CLI has wedged, and
+    # nothing else — a working agent renews it with every line it prints.
+    normal: float = 10800.0
     background: float = 1800.0
     subagent: float = 3600.0
     warning_intervals: list[float] = Field(default_factory=lambda: [60.0, 10.0])
@@ -428,6 +432,9 @@ class AgentConfig(BaseModel):
     #: given dies when that process exits. Background work has to go through
     #: the task hub, which outlives the turn and reports back to the topic.
     disallowed_tools: list[str] = Field(default_factory=list)
+    # Bounded one-shot runs: cron jobs, webhook dispatches, injected prompts.
+    # Conversation turns use ``timeouts.normal`` instead, which is an idle
+    # window rather than a duration cap.
     cli_timeout: float = 1800.0
     reasoning_effort: str = "medium"
     file_access: str = "all"
@@ -495,17 +502,6 @@ class AgentConfig(BaseModel):
         if not normalized or normalized.lower() in NULLISH_TEXT_VALUES:
             return None
         return normalized
-
-    @model_validator(mode="after")
-    def _sync_cli_timeout_to_timeouts(self) -> AgentConfig:
-        """Sync legacy ``cli_timeout`` to ``timeouts.normal`` for backward compat.
-
-        When ``cli_timeout`` differs from the default 600.0 and ``timeouts.normal``
-        is still at its default, propagate ``cli_timeout`` into ``timeouts.normal``.
-        """
-        if self.cli_timeout != 600.0 and self.timeouts.normal == 600.0:
-            self.timeouts.normal = self.cli_timeout
-        return self
 
     @model_validator(mode="after")
     def _validate_claude_account(self) -> AgentConfig:

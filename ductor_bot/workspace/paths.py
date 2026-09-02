@@ -130,16 +130,6 @@ class DuctorPaths:
         return self.home_defaults / "workspace" / "skills"
 
     @property
-    def tasks_dir(self) -> Path:
-        """Per-task metadata folders (TASKMEMORY.md etc.)."""
-        return self.workspace / "tasks"
-
-    @property
-    def tasks_registry_path(self) -> Path:
-        """Task registry persistence."""
-        return self.ductor_home / "tasks.json"
-
-    @property
     def chat_activity_path(self) -> Path:
         return self.ductor_home / "chat_activity.json"
 

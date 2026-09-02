@@ -52,26 +52,6 @@ class TestCronBroadcast:
         assert "All good" in text
 
 
-class TestTaskQuestionDelivery:
-    async def test_delivers_task_question_into_thread(self) -> None:
-        transport, _bot = _make_transport()
-        env = _env(
-            origin=Origin.TASK_QUESTION,
-            prompt="Need approval",
-            metadata={"task_id": "t1"},
-            topic_id=9,
-        )
-
-        with patch(
-            "ductor_bot.messenger.slack.transport.slack_send_rich", new_callable=AsyncMock
-        ) as mock_send:
-            await transport.deliver(env)
-
-        mock_send.assert_awaited_once()
-        assert mock_send.call_args.args[1] == "C123"
-        assert "Task `t1` has a question" in mock_send.call_args.args[2]
-
-
 class TestBackgroundDelivery:
     async def test_delivers_background_result_into_thread(self) -> None:
         transport, _bot = _make_transport()

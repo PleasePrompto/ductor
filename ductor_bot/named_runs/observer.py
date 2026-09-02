@@ -10,35 +10,35 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from ductor_bot.background.models import BackgroundResult, BackgroundSubmit, BackgroundTask
 from ductor_bot.i18n import t
-from ductor_bot.infra.task_runner import TaskRunOptions, run_oneshot_task
+from ductor_bot.infra.oneshot_runner import RunOptions, run_oneshot_task
+from ductor_bot.named_runs.models import NamedRun, NamedRunResult, NamedRunSubmit
 from ductor_bot.workspace.loader import build_appended_files_block
 
 if TYPE_CHECKING:
-    from ductor_bot.cli.param_resolver import TaskExecutionConfig
+    from ductor_bot.cli.param_resolver import CLIRunConfig
     from ductor_bot.cli.service import CLIService
     from ductor_bot.config import AgentConfig
     from ductor_bot.workspace.paths import DuctorPaths
 
 logger = logging.getLogger(__name__)
 
-BgResultCallback = Callable[[BackgroundResult], Awaitable[None]]
+BgResultCallback = Callable[[NamedRunResult], Awaitable[None]]
 
 MAX_TASKS_PER_CHAT = 5
 
 
 def _make_result(  # noqa: PLR0913  -- result fields have natural multi-arity
-    bg_task: BackgroundTask,
+    bg_task: NamedRun,
     t0: float,
     *,
     result_text: str,
     status: str,
     session_name: str = "",
     session_id: str = "",
-) -> BackgroundResult:
-    """Build a :class:`BackgroundResult` carrying the task's routing fields."""
-    return BackgroundResult(
+) -> NamedRunResult:
+    """Build a :class:`NamedRunResult` carrying the task's routing fields."""
+    return NamedRunResult(
         task_id=bg_task.task_id,
         chat_id=bg_task.chat_id,
         message_id=bg_task.message_id,
@@ -55,8 +55,14 @@ def _make_result(  # noqa: PLR0913  -- result fields have natural multi-arity
     )
 
 
-class BackgroundObserver:
-    """Manages fire-and-forget background CLI tasks."""
+class NamedRunObserver:
+    """Runs a named session's turn away from any topic.
+
+    A named session is not a conversation: it has no topic to hold, so its
+    turn runs detached and reports back when it finishes. Named "background"
+    once, which invited confusion with the deleted task hub — this is the
+    only remaining thing that runs a CLI outside a topic's own session.
+    """
 
     def __init__(
         self,
@@ -71,15 +77,15 @@ class BackgroundObserver:
         self._cli_service = cli_service
         self._config = config
         self._on_result: BgResultCallback | None = None
-        self._tasks: dict[str, BackgroundTask] = {}
+        self._tasks: dict[str, NamedRun] = {}
 
     def set_result_handler(self, handler: BgResultCallback) -> None:
         self._on_result = handler
 
     def submit(
         self,
-        sub: BackgroundSubmit,
-        exec_config: TaskExecutionConfig,
+        sub: NamedRunSubmit,
+        exec_config: CLIRunConfig,
     ) -> str:
         """Submit a background task. Returns task_id."""
         active = sum(
@@ -93,7 +99,7 @@ class BackgroundObserver:
 
         task_id = secrets.token_hex(4)
         has_session_override = bool(sub.provider_override)
-        bg_task = BackgroundTask(
+        bg_task = NamedRun(
             task_id=task_id,
             chat_id=sub.chat_id,
             prompt=sub.prompt,
@@ -124,7 +130,7 @@ class BackgroundObserver:
         )
         return task_id
 
-    def active_tasks(self, chat_id: int | None = None) -> list[BackgroundTask]:
+    def active_tasks(self, chat_id: int | None = None) -> list[NamedRun]:
         tasks = [t for t in self._tasks.values() if t.asyncio_task and not t.asyncio_task.done()]
         if chat_id is not None:
             tasks = [t for t in tasks if t.chat_id == chat_id]
@@ -152,20 +158,20 @@ class BackgroundObserver:
             await asyncio.gather(*cancelled, return_exceptions=True)
         self._tasks.clear()
 
-    async def _run(self, bg_task: BackgroundTask, exec_config: TaskExecutionConfig) -> None:
+    async def _run(self, bg_task: NamedRun, exec_config: CLIRunConfig) -> None:
         if bg_task.session_name and self._cli_service:
             await self._run_with_session(bg_task)
         else:
             await self._run_oneshot(bg_task, exec_config)
 
-    async def _run_oneshot(self, bg_task: BackgroundTask, exec_config: TaskExecutionConfig) -> None:
+    async def _run_oneshot(self, bg_task: NamedRun, exec_config: CLIRunConfig) -> None:
         """Legacy stateless execution via run_oneshot_task."""
         t0 = time.monotonic()
         try:
             result = await run_oneshot_task(
                 exec_config,
                 bg_task.prompt,
-                TaskRunOptions(
+                RunOptions(
                     cwd=self._paths.workspace,
                     timeout_seconds=self._timeout_seconds,
                     timeout_label="Background task",
@@ -197,7 +203,7 @@ class BackgroundObserver:
                     )
                 )
 
-    async def _run_with_session(self, bg_task: BackgroundTask) -> None:
+    async def _run_with_session(self, bg_task: NamedRun) -> None:
         """Named session execution via CLIService with resume support."""
         from ductor_bot.cli.types import AgentRequest
 
@@ -265,7 +271,7 @@ class BackgroundObserver:
                     )
                 )
 
-    async def _deliver(self, result: BackgroundResult) -> None:
+    async def _deliver(self, result: NamedRunResult) -> None:
         if self._on_result is None:
             logger.warning("No result handler set for background task %s", result.task_id)
             return

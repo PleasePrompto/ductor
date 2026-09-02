@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
-class BackgroundSubmit:
+class NamedRunSubmit:
     """Input for submitting a background task."""
 
     chat_id: int
@@ -23,7 +23,7 @@ class BackgroundSubmit:
 
 
 @dataclass(slots=True)
-class BackgroundTask:
+class NamedRun:
     """In-flight background task metadata."""
 
     task_id: str
@@ -42,7 +42,7 @@ class BackgroundTask:
 
 
 @dataclass(slots=True)
-class BackgroundResult:
+class NamedRunResult:
     """Outcome delivered after a background task completes."""
 
     task_id: str

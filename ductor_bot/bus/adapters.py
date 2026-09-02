@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING
 from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 
 if TYPE_CHECKING:
-    from ductor_bot.background.models import BackgroundResult
     from ductor_bot.multiagent.bus import AsyncInterAgentResult
+    from ductor_bot.named_runs.models import NamedRunResult
     from ductor_bot.webhook.models import WebhookResult
 
 
 # -- Background tasks ----------------------------------------------------------
 
 
-def from_background_result(result: BackgroundResult) -> Envelope:
-    """Convert a ``BackgroundResult`` (named session or stateless)."""
+def from_background_result(result: NamedRunResult) -> Envelope:
+    """Convert a ``NamedRunResult`` (named session or stateless)."""
     return Envelope(
         origin=Origin.BACKGROUND,
         chat_id=result.chat_id,

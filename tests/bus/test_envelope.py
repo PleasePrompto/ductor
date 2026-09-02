@@ -12,8 +12,6 @@ def test_origin_values() -> None:
     assert Origin.WEBHOOK_CRON.value == "webhook_cron"
     assert Origin.HEARTBEAT.value == "heartbeat"
     assert Origin.INTERAGENT.value == "interagent"
-    assert Origin.TASK_RESULT.value == "task_result"
-    assert Origin.TASK_QUESTION.value == "task_question"
     assert Origin.USER.value == "user"
     assert Origin.API.value == "api"
 

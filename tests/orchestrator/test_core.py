@@ -667,7 +667,7 @@ def test_paths_property(
 
 
 async def test_submit_named_session_passes_effort(orch: Orchestrator) -> None:
-    """A new named session captures the global default effort into create + BackgroundSubmit."""
+    """A new named session captures the global default effort into create + NamedRunSubmit."""
     from ductor_bot.orchestrator.core import NamedSessionRequest
     from ductor_bot.session.named import NamedSession
 
@@ -695,7 +695,7 @@ async def test_submit_named_session_passes_effort(orch: Orchestrator) -> None:
 
     # create() received the effort
     assert create_mock.call_args.kwargs.get("reasoning_effort") == "high"
-    # BackgroundSubmit carried the effort override
+    # NamedRunSubmit carried the effort override
     sub = bg.submit.call_args[0][0]
     assert sub.reasoning_effort_override == "high"
 

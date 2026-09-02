@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING
 
 from cronsim import CronSim, CronSimError
 
-from ductor_bot.cli.param_resolver import TaskOverrides
+from ductor_bot.cli.param_resolver import RunOverrides
 from ductor_bot.config import resolve_user_timezone
 from ductor_bot.cron.manager import CronManager
-from ductor_bot.infra.base_task_observer import BaseTaskObserver
+from ductor_bot.infra.base_oneshot_observer import BaseOneShotObserver
 from ductor_bot.infra.file_watcher import FileWatcher
-from ductor_bot.infra.task_runner import execute_in_task_folder
+from ductor_bot.infra.oneshot_runner import execute_in_task_folder
 from ductor_bot.log_context import set_log_context
 from ductor_bot.utils.quiet_hours import check_quiet_hour
 
@@ -75,7 +75,7 @@ class _ScheduledJob:
     timezone: str
 
 
-class CronObserver(BaseTaskObserver):
+class CronObserver(BaseOneShotObserver):
     """Watches cron_jobs.json and schedules jobs in-process.
 
     On start: reads all jobs, calculates next run times via cronsim,
@@ -484,7 +484,7 @@ class CronObserver(BaseTaskObserver):
             await self._watcher.update_mtime()
             return
 
-        overrides = TaskOverrides(
+        overrides = RunOverrides(
             provider=job.provider if job else None,
             model=job.model if job else None,
             reasoning_effort=job.reasoning_effort if job else None,
