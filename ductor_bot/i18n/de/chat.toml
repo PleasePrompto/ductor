@@ -676,3 +676,7 @@ cleared = "🧹 Geleert. Der Handoff wurde archiviert und eine frische Sitzung g
 clear_confirm = "Damit endet die aktuelle Aufgabe: Der Handoff wird archiviert und die Sitzung startet neu. Das Archiv bleibt unter Archiv verfügbar."
 btn_clear_confirm = "🧹 Archivieren und neu starten"
 archive_failed = "⚠️ Der Handoff konnte nicht archiviert werden, daher wurde nichts geleert. Die Sitzung ist unverändert."
+
+[turn]
+btn_stop = "⏹ Stopp"
+stopped = "Gestoppt. Wartende Nachrichten laufen als Nächstes."

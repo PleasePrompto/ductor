@@ -300,7 +300,7 @@ class TestSequentialMiddleware:
 
             handler.assert_not_called()
             bot.send_message.assert_not_called()
-            assert not mw.has_pending(chat_id)
+            assert not mw.has_pending((chat_id, None))
             assert result is None
         finally:
             held.release()
@@ -593,7 +593,7 @@ class TestQueueManagement:
         mw = SequentialMiddleware()
         lock = mw.get_lock(1)
 
-        assert not mw.is_busy(1)
+        assert not mw.is_busy((1, None))
 
         acquired = asyncio.Event()
         release = asyncio.Event()
@@ -605,27 +605,27 @@ class TestQueueManagement:
 
         task = asyncio.create_task(hold_lock())
         await acquired.wait()
-        assert mw.is_busy(1)
+        assert mw.is_busy((1, None))
 
         release.set()
         await task
-        assert not mw.is_busy(1)
+        assert not mw.is_busy((1, None))
 
     async def test_has_pending_empty(self) -> None:
         from ductor_bot.messenger.telegram.middleware import SequentialMiddleware
 
         mw = SequentialMiddleware()
-        assert not mw.has_pending(1)
+        assert not mw.has_pending((1, None))
 
     async def test_cancel_entry_marks_cancelled(self) -> None:
         from ductor_bot.messenger.telegram.middleware import SequentialMiddleware, _QueueEntry
 
         mw = SequentialMiddleware()
         entry = _QueueEntry(entry_id=1, chat_id=10, message_id=100, text_preview="test")
-        mw._pending.setdefault(10, []).append(entry)
+        mw._pending.setdefault((10, None), []).append(entry)
 
         assert not entry.cancelled
-        result = await mw.cancel_entry(10, 1)
+        result = await mw.cancel_entry((10, None), 1)
         assert result is True
         assert entry.cancelled
 
@@ -633,7 +633,7 @@ class TestQueueManagement:
         from ductor_bot.messenger.telegram.middleware import SequentialMiddleware
 
         mw = SequentialMiddleware()
-        result = await mw.cancel_entry(10, 999)
+        result = await mw.cancel_entry((10, None), 999)
         assert result is False
 
     async def test_drain_pending_cancels_all(self) -> None:
@@ -644,9 +644,9 @@ class TestQueueManagement:
             _QueueEntry(entry_id=i, chat_id=10, message_id=100 + i, text_preview=f"msg{i}")
             for i in range(3)
         ]
-        mw._pending[10] = list(entries)
+        mw._pending[(10, None)] = list(entries)
 
-        count = await mw.drain_pending(10)
+        count = await mw.drain_pending((10, None))
         assert count == 3
         assert all(e.cancelled for e in entries)
 
@@ -656,9 +656,9 @@ class TestQueueManagement:
         mw = SequentialMiddleware()
         e1 = _QueueEntry(entry_id=1, chat_id=10, message_id=101, text_preview="a")
         e2 = _QueueEntry(entry_id=2, chat_id=10, message_id=102, text_preview="b", cancelled=True)
-        mw._pending[10] = [e1, e2]
+        mw._pending[(10, None)] = [e1, e2]
 
-        count = await mw.drain_pending(10)
+        count = await mw.drain_pending((10, None))
         assert count == 1
 
     async def test_cancelled_entry_skips_handler(self) -> None:
@@ -693,10 +693,10 @@ class TestQueueManagement:
         task2 = asyncio.create_task(mw(normal_handler, msg2, {}))
         await asyncio.sleep(0.01)
 
-        assert mw.has_pending(1)
-        entries = mw._pending.get(1, [])
+        assert mw.has_pending((1, None))
+        entries = mw._pending.get((1, None), [])
         assert len(entries) == 1
-        await mw.cancel_entry(1, entries[0].entry_id)
+        await mw.cancel_entry((1, None), entries[0].entry_id)
 
         release.set()
         await task1

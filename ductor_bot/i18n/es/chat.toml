@@ -676,3 +676,7 @@ cleared = "🧹 Limpiado. El handoff se archivó y se inició una sesión nueva.
 clear_confirm = "Esto termina la tarea actual: el handoff se archiva y la sesión empieza de cero. El archivo sigue disponible en Archivados."
 btn_clear_confirm = "🧹 Archivar y empezar de cero"
 archive_failed = "⚠️ No se pudo archivar el handoff, así que no se limpió nada. La sesión sigue igual."
+
+[turn]
+btn_stop = "⏹ Detener"
+stopped = "Detenido. Lo que esté en cola se ejecuta ahora."

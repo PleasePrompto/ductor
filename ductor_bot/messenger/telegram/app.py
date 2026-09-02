@@ -109,6 +109,7 @@ from ductor_bot.messenger.telegram.sender import SendRichOpts, send_rich
 from ductor_bot.messenger.telegram.sender import (
     send_files_from_text as _send_files_from_text,
 )
+from ductor_bot.messenger.telegram.stop_button import is_stop_callback
 from ductor_bot.messenger.telegram.topic import (
     TopicNameCache,
     get_session_key,
@@ -1576,8 +1577,12 @@ class TelegramBot:
         if data == SF_EDIT_APPLY_PREFIX:
             await self._apply_pending_edit(key, message_id)
             return True
+        if is_stop_callback(data):
+            await self._handle_stop(key, message_id, thread_id=thread_id)
+            return True
+
         if data.startswith(MQ_PREFIX):
-            await self._handle_queue_cancel(chat_id, data)
+            await self._handle_queue_cancel(chat_id, data, thread_id=thread_id)
             return True
 
         if data.startswith("upg:"):
@@ -1794,13 +1799,39 @@ class TelegramBot:
                 parse_mode=ParseMode.HTML,
             )
 
-    async def _handle_queue_cancel(self, chat_id: int, data: str) -> None:
+    async def _handle_stop(
+        self, key: SessionKey, message_id: int, *, thread_id: int | None = None
+    ) -> None:
+        """Ctrl+C for this topic: interrupt its run, leave every other alone.
+
+        The CLI records the interruption itself and the session stays
+        resumable, so anything queued behind this turn simply runs next —
+        which is what Ctrl+C does in a terminal.
+        """
+        stopped = self._orch.interrupt(key.chat_id, key.topic_id)
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.edit_message_reply_markup(
+                chat_id=key.chat_id, message_id=message_id, reply_markup=None
+            )
+        if not stopped:
+            return
+        with contextlib.suppress(TelegramAPIError):
+            await self._bot.send_message(
+                key.chat_id,
+                markdown_to_telegram_html(t("turn.stopped")),
+                message_thread_id=thread_id,
+                parse_mode=ParseMode.HTML,
+            )
+
+    async def _handle_queue_cancel(
+        self, chat_id: int, data: str, *, thread_id: int | None = None
+    ) -> None:
         """Handle a ``mq:<entry_id>`` callback to cancel a queued message."""
         try:
             entry_id = int(data[len(MQ_PREFIX) :])
         except (ValueError, IndexError):
             return
-        await self._sequential.cancel_entry(chat_id, entry_id)
+        await self._sequential.cancel_entry((chat_id, thread_id), entry_id)
 
     async def _mark_button_choice(self, chat_id: int, msg: Message, label: str) -> None:
         """Edit the bot message to append ``[USER ANSWER] label`` and remove the keyboard."""

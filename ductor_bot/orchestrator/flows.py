@@ -17,7 +17,7 @@ from ductor_bot.cli.timeout_controller import TimeoutController
 from ductor_bot.cli.types import AgentRequest, AgentResponse
 from ductor_bot.config import NULLISH_TEXT_VALUES, resolve_timeout
 from ductor_bot.handoff.paths import handoff_file
-from ductor_bot.handoff.prompts import delegation_brief, delta_suffix, injection_block
+from ductor_bot.handoff.prompts import delta_suffix, injection_block
 from ductor_bot.i18n import t
 from ductor_bot.infra.inflight import InflightTurn
 from ductor_bot.log_context import set_log_context
@@ -77,9 +77,25 @@ def _make_timeout_controller(orch: Orchestrator, kind: str) -> TimeoutController
     cfg = orch._config.timeouts
     if not cfg.warning_intervals and not cfg.extend_on_activity:
         return None
+    window = resolve_timeout(orch._config, kind)
+    if kind == "normal":
+        # Work that used to be handed to a background task now runs in the
+        # conversation's own turn, so a turn may legitimately last all night.
+        # The window becomes a silence budget rather than a duration cap: it
+        # renews for as long as the agent is producing output, and only bites
+        # once it has gone quiet. Duration is not the failure being guarded.
+        return TimeoutController(
+            TCConfig(
+                timeout_seconds=window,
+                warning_intervals=cfg.warning_intervals,
+                extend_on_activity=True,
+                activity_extension=window,
+                max_extensions=0,  # 0 = unlimited
+            ),
+        )
     return TimeoutController(
         TCConfig(
-            timeout_seconds=resolve_timeout(orch._config, kind),
+            timeout_seconds=window,
             warning_intervals=cfg.warning_intervals,
             extend_on_activity=cfg.extend_on_activity,
             activity_extension=cfg.activity_extension,
@@ -164,13 +180,6 @@ async def _prepare_normal(
     _log_turn(orch, key, text)
     delta = delta_suffix(handoff_file(key, folder, orch.paths))
     append_prompt = f"{append_prompt}\n\n{delta}" if append_prompt else delta
-
-    # Delegation rules ride the system channel on every turn rather than the
-    # user's message every fifteenth one. A suffix on a user message is stored
-    # in the transcript and replayed for the life of the session; the system
-    # prompt is re-sent instead of accumulated, and a stable prefix is cached.
-    brief = delegation_brief(str(orch.paths.workspace))
-    append_prompt = f"{append_prompt}\n\n{brief}"
 
     if is_new or orch.reinject.take(key):
         handoff = orch.handoffs.read(key, folder)
@@ -416,7 +425,7 @@ async def _maybe_recover_session(  # noqa: PLR0913
     if (
         _reg.was_aborted(key.chat_id)
         or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg.was_interrupted(key.chat_id)
+        or _reg.was_interrupted(key.chat_id, key.topic_id)
         or not _needs_session_recovery(response)
     ):
         return _RecoveryOutcome(
@@ -566,9 +575,9 @@ async def _finalize_turn(  # noqa: PLR0913
     if (
         _reg.was_aborted(key.chat_id)
         or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg.was_interrupted(key.chat_id)
+        or _reg.was_interrupted(key.chat_id, key.topic_id)
     ):
-        _reg.clear_interrupt(key.chat_id)
+        _reg.clear_interrupt(key.chat_id, key.topic_id)
         await _preserve_session_from_response(orch, session, response, reason="abort")
         logger.info("%s flow aborted/interrupted by user", flow_label)
         return OrchestratorResult(text="")
@@ -847,9 +856,9 @@ async def named_session_flow(
     if (
         _reg.was_aborted(key.chat_id)
         or _reg.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg.was_interrupted(key.chat_id)
+        or _reg.was_interrupted(key.chat_id, key.topic_id)
     ):
-        _reg.clear_interrupt(key.chat_id)
+        _reg.clear_interrupt(key.chat_id, key.topic_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
     if response.is_error:
@@ -927,9 +936,9 @@ async def named_session_streaming(
     if (
         _reg2.was_aborted(key.chat_id)
         or _reg2.was_aborted_topic(key.chat_id, key.topic_id)
-        or _reg2.was_interrupted(key.chat_id)
+        or _reg2.was_interrupted(key.chat_id, key.topic_id)
     ):
-        _reg2.clear_interrupt(key.chat_id)
+        _reg2.clear_interrupt(key.chat_id, key.topic_id)
         ns.status = "idle"
         return OrchestratorResult(text="")
     if response.is_error:

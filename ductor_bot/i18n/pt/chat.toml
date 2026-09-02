@@ -676,3 +676,7 @@ cleared = "🧹 Limpo. O handoff foi arquivado e uma sessão nova começou."
 clear_confirm = "Isto termina a tarefa atual: o handoff é arquivado e a sessão recomeça. O arquivo continua disponível em Arquivados."
 btn_clear_confirm = "🧹 Arquivar e recomeçar"
 archive_failed = "⚠️ Não foi possível arquivar o handoff, por isso nada foi limpo. A sessão está inalterada."
+
+[turn]
+btn_stop = "⏹ Parar"
+stopped = "Parado. O que estiver na fila é executado a seguir."

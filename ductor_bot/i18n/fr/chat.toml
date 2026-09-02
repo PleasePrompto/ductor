@@ -676,3 +676,7 @@ cleared = "🧹 Vidé. Le handoff a été archivé et une nouvelle session a dé
 clear_confirm = "Cela met fin à la tâche en cours : le handoff est archivé et la session repart de zéro. L'archive reste disponible sous Archives."
 btn_clear_confirm = "🧹 Archiver et repartir de zéro"
 archive_failed = "⚠️ Le handoff n'a pas pu être archivé, donc rien n'a été vidé. La session est inchangée."
+
+[turn]
+btn_stop = "⏹ Arrêter"
+stopped = "Arrêté. Ce qui est en file d'attente s'exécute ensuite."

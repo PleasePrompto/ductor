@@ -675,3 +675,7 @@ cleared = "🧹 Dibersihkan. Handoff diarsipkan dan sesi baru dimulai."
 clear_confirm = "Ini mengakhiri tugas saat ini: handoff diarsipkan dan sesi dimulai dari awal. Arsipnya tetap tersedia di Arsip."
 btn_clear_confirm = "🧹 Arsipkan dan mulai baru"
 archive_failed = "⚠️ Handoff tidak bisa diarsipkan, jadi tidak ada yang dibersihkan. Sesi tidak berubah."
+
+[turn]
+btn_stop = "⏹ Hentikan"
+stopped = "Dihentikan. Antrean berikutnya akan dijalankan."

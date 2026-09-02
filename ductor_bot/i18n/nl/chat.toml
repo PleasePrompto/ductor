@@ -676,3 +676,7 @@ cleared = "🧹 Gewist. De handoff is gearchiveerd en er is een nieuwe sessie ge
 clear_confirm = "Dit beëindigt de huidige taak: de handoff wordt gearchiveerd en de sessie begint opnieuw. Het archief blijft beschikbaar onder Archief."
 btn_clear_confirm = "🧹 Archiveren en opnieuw beginnen"
 archive_failed = "⚠️ De handoff kon niet worden gearchiveerd, dus er is niets gewist. De sessie is ongewijzigd."
+
+[turn]
+btn_stop = "⏹ Stoppen"
+stopped = "Gestopt. Wat in de wachtrij staat, volgt nu."

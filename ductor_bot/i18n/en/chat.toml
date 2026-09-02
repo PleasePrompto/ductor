@@ -677,3 +677,7 @@ cleared = "🧹 Cleared. The handoff was archived and a fresh session started."
 clear_confirm = "This ends the current task: the handoff is archived and the session starts fresh. The archive stays available under Archived."
 btn_clear_confirm = "🧹 Archive and start fresh"
 archive_failed = "⚠️ The handoff could not be archived, so nothing was cleared. The session is unchanged."
+
+[turn]
+btn_stop = "⏹ Stop"
+stopped = "Stopped. Anything queued runs next."
