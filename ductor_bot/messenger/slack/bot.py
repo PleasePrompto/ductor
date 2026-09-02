@@ -549,7 +549,7 @@ class SlackBot:
         del text
         orch = self._orchestrator
         if orch:
-            result = await orch.handle_message(key, "/new")
+            result = await orch.handle_message(key, "/clear")
             if result and result.text:
                 await self._send_rich(channel_id, result.text, thread_ts=thread_ts)
 

@@ -497,7 +497,7 @@ class TelegramBot:
         r.message(Command("restart", ignore_case=True))(self._on_restart)
         r.message(Command("new", ignore_case=True))(self._on_new)
         r.message(Command("session", ignore_case=True))(self._on_session)
-        r.message(Command("sessions", ignore_case=True))(self._on_sessions)
+        r.message(Command("named", ignore_case=True))(self._on_named)
         # "showfiles" stays as an unlisted alias: renaming a command people
         # already type should not break their muscle memory.
         r.message(Command("files", "showfiles", ignore_case=True))(self._on_files)
@@ -1192,7 +1192,7 @@ class TelegramBot:
         if direct is not None or self._orchestrator is None:
             return direct or False
 
-        if text_lower.startswith("/sessions"):
+        if text_lower.startswith("/named"):
             await handle_command(self._orchestrator, self._bot, message)
             return True
 
@@ -1417,8 +1417,8 @@ class TelegramBot:
                 SendRichOpts(reply_to_message_id=message.message_id, thread_id=thread_id),
             )
 
-    async def _on_sessions(self, message: Message) -> None:
-        """Handle /sessions: show session management UI."""
+    async def _on_named(self, message: Message) -> None:
+        """Handle /named: show named-session management UI."""
         if self._config.group_mention_only and not self._is_addressed(message):
             return
         await handle_command(self._orch, self._bot, message)
