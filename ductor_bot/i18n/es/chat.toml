@@ -348,12 +348,7 @@ Configura una API key real en `gemini_api_key` y reinicia `ductor`."""
 
 # -- Nueva sesión (handler) ---------------------------------------------------
 
-[new]
-topic_not_found = "Tema \"{name}\" no encontrado."
-topic_reset = "Nueva sesión para **{name}** ({provider})."
-
 # -- Específico del transporte ------------------------------------------------
-
 [telegram]
 group_rejected = "Este bot no está autorizado para este grupo."
 channel_not_whitelisted = "Este canal no está en la lista blanca, me voy."

@@ -100,14 +100,6 @@ class TopicNameCache:
         """Return the cached name or a fallback ``"Topic #N"``."""
         return self._names.get((chat_id, topic_id)) or f"Topic #{topic_id}"
 
-    def find_by_name(self, chat_id: int, name: str) -> int | None:
-        """Reverse lookup: return topic_id for *name* (case-insensitive) or ``None``."""
-        lower = name.lower()
-        for (cid, tid), cached_name in self._names.items():
-            if cid == chat_id and cached_name.lower() == lower:
-                return tid
-        return None
-
     def seed_from_sessions(self, sessions: list[SessionData]) -> int:
         """Populate the cache from persisted sessions that have ``topic_name``.
 

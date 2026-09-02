@@ -83,22 +83,6 @@ def timeout_error_text(model: str, timeout_seconds: float) -> str:
     )
 
 
-def new_session_text(provider: str) -> str:
-    """Build /new response for provider-local reset."""
-    provider_label = {
-        "claude": "Claude",
-        "codex": "Codex",
-        "gemini": "Gemini",
-        "antigravity": "Antigravity",
-        "grok": "Grok Build",
-    }.get(provider.lower(), provider)
-    return fmt(
-        t("session.reset_header"),
-        SEP,
-        t("session.reset_body", provider=provider_label),
-    )
-
-
 def stop_text(killed: bool, provider: str) -> str:
     """Build the /stop response."""
     body = t("stop.killed", provider=provider) if killed else t("stop.nothing")

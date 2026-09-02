@@ -500,7 +500,6 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/handoff` | Show this conversation's handoff |
 | `/folder` | Choose the project folder this conversation works in |
 | `/consult` | Schedule for the disposable Consult topic |
-| `/new` | Reset this topic's session; `/new @topicname` resets another topic's without entering it |
 | `/stop` | Stop current message and discard queued messages |
 | `/interrupt` | Interrupt current message, queued messages continue |
 | `/stop_all` | Kill everything — all messages, sessions, all agents |
@@ -524,9 +523,10 @@ This is **hot-reloadable** — change the language without restarting the bot.
 | `/restart` | Restart the bot process |
 | `/info` | Version + links |
 
-`/clear` is the one to reach for: it archives the handoff and starts a genuinely fresh
-session, which is what "start over" almost always means. `/new` remains for the narrower
-case of resetting a *different* topic's session without entering it (`/new @topicname`).
+`/clear` archives the handoff and starts a genuinely fresh session in the topic you are
+in. There is deliberately no way to reset *another* topic's session: `/new @topicname`
+used to do that, and a command that reaches into a conversation you are not in is the
+isolation this project exists to provide, undone by a convenience.
 
 On Slack, these same commands also work as normal message commands (for example `help`, `status`, or `model`) even though ductor does not register native Slack slash commands.
 

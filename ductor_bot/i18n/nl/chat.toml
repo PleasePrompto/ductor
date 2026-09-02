@@ -348,12 +348,7 @@ Stel een echte API-key in bij `gemini_api_key` en herstart `ductor`."""
 
 # -- Nieuwe sessie (handler) ------------------------------------------------------
 
-[new]
-topic_not_found = "Onderwerp \"{name}\" niet gevonden."
-topic_reset = "Nieuwe sessie voor **{name}** ({provider})."
-
 # -- Transportspecifiek ------------------------------------------------------------
-
 [telegram]
 group_rejected = "Deze bot is niet geautoriseerd voor deze groep."
 channel_not_whitelisted = "Dit kanaal staat niet op de whitelist, ik vertrek."

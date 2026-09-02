@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ductor_bot.text.response_format import classify_cli_error, new_session_text, session_error_text
+from ductor_bot.text.response_format import classify_cli_error, session_error_text
 
 
 class TestClassifyCliError:
@@ -82,20 +82,3 @@ class TestSessionErrorText:
         assert "Session Error" in text
         assert "Cause" not in text
 
-
-class TestNewSessionText:
-    def test_claude_label(self) -> None:
-        text = new_session_text("claude")
-        assert "Claude" in text
-
-    def test_codex_label(self) -> None:
-        text = new_session_text("codex")
-        assert "Codex" in text
-
-    def test_gemini_label(self) -> None:
-        text = new_session_text("gemini")
-        assert "Gemini" in text
-
-    def test_unknown_provider_passthrough(self) -> None:
-        text = new_session_text("custom")
-        assert "custom" in text

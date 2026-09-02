@@ -347,12 +347,7 @@ Atur API key yang valid di `gemini_api_key` dan restart `ductor`."""
 
 # -- New session (handler) -----------------------------------------------------
 
-[new]
-topic_not_found = "Topik \"{name}\" tidak ditemukan."
-topic_reset = "Sesi baru untuk **{name}** ({provider})."
-
 # -- Transport-specific --------------------------------------------------------
-
 [telegram]
 group_rejected = "Bot ini tidak diizinkan untuk grup ini."
 channel_not_whitelisted = "Saluran ini tidak ada di whitelist, saya keluar."

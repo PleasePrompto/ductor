@@ -70,7 +70,6 @@ from ductor_bot.messenger.telegram.handlers import (
     handle_abort_all,
     handle_command,
     handle_interrupt,
-    handle_new_session,
     prepend_reply_to_media,
     strip_mention,
 )
@@ -495,7 +494,6 @@ class TelegramBot:
         r.message(Command("stop_all", ignore_case=True))(self._on_stop_all)
         r.message(Command("stop", ignore_case=True))(self._on_stop)
         r.message(Command("restart", ignore_case=True))(self._on_restart)
-        r.message(Command("new", ignore_case=True))(self._on_new)
         r.message(Command("session", ignore_case=True))(self._on_session)
         r.message(Command("named", ignore_case=True))(self._on_named)
         # "showfiles" stays as an unlisted alias: renaming a command people
@@ -1234,13 +1232,6 @@ class TelegramBot:
         if self._config.group_mention_only and not self._is_addressed(message):
             return
         await handle_command(self._orch, self._bot, message)
-
-    async def _on_new(self, message: Message) -> None:
-        if self._is_for_others(message):
-            return
-        if self._config.group_mention_only and not self._is_addressed(message):
-            return
-        await handle_new_session(self._orch, self._bot, message, topic_names=self._topic_names)
 
     async def _on_forum_topic_created(self, message: Message) -> None:
         """Cache the name when a forum topic is created."""
