@@ -30,7 +30,7 @@ class CallbackResult:
     handled: bool = True
 
 
-async def route_callback(  # noqa: PLR0911
+async def route_callback(
     orch: Orchestrator,
     key: SessionKey,
     callback_data: str,
@@ -76,11 +76,6 @@ async def route_callback(  # noqa: PLR0911
         handle_skills_callback,
         is_skills_selector_callback,
     )
-    from ductor_bot.orchestrator.selectors.task_selector import (
-        handle_task_callback,
-        is_task_selector_callback,
-    )
-
     if is_skills_selector_callback(callback_data):
         resp = handle_skills_callback(orch, callback_data)
         return CallbackResult(text=resp.text, buttons=resp.buttons)
@@ -99,13 +94,6 @@ async def route_callback(  # noqa: PLR0911
 
     if is_session_selector_callback(callback_data):
         resp = await handle_session_callback(orch, key.chat_id, callback_data)
-        return CallbackResult(text=resp.text, buttons=resp.buttons)
-
-    if is_task_selector_callback(callback_data):
-        hub = orch.task_hub
-        if hub is None:
-            return CallbackResult(text="Task system not available.", buttons=None)
-        resp = await handle_task_callback(hub, key.chat_id, callback_data)
         return CallbackResult(text=resp.text, buttons=resp.buttons)
 
     # Transport-specific prefixes -- signal the caller to handle them.

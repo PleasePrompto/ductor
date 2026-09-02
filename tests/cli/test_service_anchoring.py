@@ -35,8 +35,8 @@ def _request() -> SimpleNamespace:
 
 def test_a_bound_conversation_gets_absolute_paths() -> None:
     service = _service(PROJECT)
-    out = service.anchor("Use tools/task_tools/create_task.py now", _request())
-    assert out == f"Use {WORKSPACE}/tools/task_tools/create_task.py now"
+    out = service.anchor("Use tools/agent_tools/send_message.py now", _request())
+    assert out == f"Use {WORKSPACE}/tools/agent_tools/send_message.py now"
 
 
 def test_memory_instructions_cannot_resolve_into_the_project() -> None:
@@ -50,13 +50,13 @@ def test_memory_instructions_cannot_resolve_into_the_project() -> None:
 def test_an_unbound_conversation_is_left_alone() -> None:
     """Relative paths are correct when cwd really is the workspace."""
     service = _service(None)
-    text = "Use tools/task_tools/create_task.py now"
+    text = "Use tools/agent_tools/send_message.py now"
     assert service.anchor(text, _request()) == text
 
 
 def test_a_binding_that_equals_the_workspace_changes_nothing() -> None:
     service = _service(WORKSPACE)
-    text = "Use tools/task_tools/create_task.py"
+    text = "Use tools/agent_tools/send_message.py"
     assert service.anchor(text, _request()) == text
 
 
@@ -64,7 +64,7 @@ def test_docker_mode_does_not_anchor() -> None:
     """Docker mode never applies the cwd override, so cwd is still the workspace."""
     service = _service(PROJECT)
     service._config.docker_container = "ductor-sandbox"
-    text = "Use tools/task_tools/create_task.py"
+    text = "Use tools/agent_tools/send_message.py"
     assert service.anchor(text, _request()) == text
 
 

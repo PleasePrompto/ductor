@@ -157,34 +157,12 @@ health_header = "**Multi-Agent Gesundheit:**"
 # -- Aufgaben ------------------------------------------------------------------
 
 [tasks]
-header = "**Hintergrund-Aufgaben**"
-disabled = "Aufgabensystem ist nicht aktiviert."
-empty = "Keine Hintergrund-Aufgaben."
-hint = "Aufgaben werden vom Agent für länger laufende Arbeit erstellt."
 too_many = "Zu viele Hintergrund-Aufgaben ({max} Maximum)"
 internal_error = "Interner Fehler (Logs prüfen)"
 
-cancelled_one = "{count} Aufgabe abgebrochen."
-cancelled_other = "{count} Aufgaben abgebrochen."
-no_running = "Keine laufenden Aufgaben."
-task_cancelled = "Aufgabe `{id}` abgebrochen."
-task_not_running = "Aufgabe `{id}` läuft nicht."
-cleaned_one = "{count} erledigte Aufgabe entfernt."
-cleaned_other = "{count} erledigte Aufgaben entfernt."
-nothing_to_clean = "Nichts aufzuräumen."
 
-running_header = "**Laufend**"
-waiting_header = "**Wartet auf Antwort**"
-finished_header = "**Fertig**"
 
-btn_cancel = "{name} abbrechen"
-btn_cancel_all = "Alle abbrechen"
-btn_refresh = "Aktualisieren"
-btn_delete_finished = "Erledigte löschen"
 
-summary_running = "Laufend: {count}"
-summary_waiting = "Wartend: {count}"
-summary_finished = "Fertig: {count}"
 
 # -- Sessions-Selektor --------------------------------------------------------
 

@@ -1,7 +1,7 @@
 """Workspace paths in prompt text must survive a working-directory override.
 
 The failure this prevents is silent. An agent running in a project directory is
-told its tools are at ``tools/task_tools/`` — which does not exist there — and
+told its tools are at ``tools/agent_tools/`` — which does not exist there — and
 goes looking for a workspace it was promised. Worse, an instruction to update
 ``memory_system/MAINMEMORY.md`` resolves *inside the user's repository*.
 
@@ -32,7 +32,7 @@ def test_the_memory_instruction_cannot_land_in_a_repo() -> None:
 
 def test_already_absolute_paths_are_untouched() -> None:
     """Idempotent: anchoring twice must not double the prefix."""
-    once = anchor_workspace_paths("run tools/task_tools/x.py", WS)
+    once = anchor_workspace_paths("run tools/agent_tools/x.py", WS)
     assert anchor_workspace_paths(once, WS) == once
     assert once.count(WS) == 1
 

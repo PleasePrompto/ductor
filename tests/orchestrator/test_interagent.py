@@ -221,54 +221,6 @@ class TestHandleInteragentMessage:
         assert request.chat_id == 12345
         assert request.chat_id != 777
 
-    async def test_task_delivery_keeps_recipient_anchor(
-        self, orch_ia: Orchestrator, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from ductor_bot.cli.base import CLIConfig
-        from ductor_bot.cli.executor import build_subprocess_env
-
-        await orch_ia.handle_interagent_message(
-            "main", "Create a task", source_chat_id=777, source_topic_id=10
-        )
-        request = orch_ia._cli_service.execute.call_args.args[0]
-        assert request.chat_id == 12345
-
-        monkeypatch.delenv("DUCTOR_CHAT_ID", raising=False)
-        monkeypatch.delenv("DUCTOR_TOPIC_ID", raising=False)
-        env = build_subprocess_env(
-            CLIConfig(
-                working_dir="/tmp/workspace",
-                chat_id=request.chat_id,
-                topic_id=request.topic_id,
-                transport=request.transport,
-            )
-        )
-        assert env is not None
-        monkeypatch.setenv("DUCTOR_CHAT_ID", env["DUCTOR_CHAT_ID"])
-
-        tool = _ROOT / "ductor_bot/_home_defaults/workspace/tools/task_tools/create_task.py"
-        spec = importlib.util.spec_from_file_location("create_task_tool", tool)
-        assert spec is not None
-        assert spec.loader is not None
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        captured: dict[str, object] = {}
-
-        def post_json(_url: str, body: dict[str, object], *, timeout: int) -> dict[str, object]:
-            assert timeout == 10
-            captured.update(body)
-            return {"success": True, "task_id": "task-1"}
-
-        monkeypatch.setattr(
-            mod,
-            "_load_shared",
-            lambda: (lambda _path: "http://example.invalid", post_json, lambda: "codex"),
-        )
-        monkeypatch.setattr(sys, "argv", ["create_task.py", "do work"])
-        mod.main()
-        assert captured["chat_id"] == 12345
-        assert "topic_id" not in captured
-
     async def test_prompt_contains_interagent_markers(self, orch_ia: Orchestrator) -> None:
         await orch_ia.handle_interagent_message("main", "Hello world")
         call_args = orch_ia._cli_service.execute.call_args

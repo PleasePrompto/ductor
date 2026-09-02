@@ -1,4 +1,4 @@
-"""Internal localhost HTTP API bridging CLI subprocesses to the InterAgentBus and TaskHub.
+"""Internal localhost HTTP API bridging CLI subprocesses to the InterAgentBus.
 
 CLI subprocesses (claude, codex, gemini, agy) run as separate OS processes and
 cannot access in-memory objects directly. This lightweight aiohttp server
@@ -21,7 +21,6 @@ from aiohttp import web
 if TYPE_CHECKING:
     from ductor_bot.multiagent.bus import InterAgentBus
     from ductor_bot.multiagent.health import AgentHealth
-    from ductor_bot.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +45,7 @@ _BIND_ALL_HOST = ".".join(["0"] * 4)
 
 
 class InternalAgentAPI:
-    """HTTP server for CLI → Bus / TaskHub communication.
+    """HTTP server for CLI → Bus communication.
 
     Binds to ``127.0.0.1`` by default.  When *docker_mode* is ``True`` it
     binds to ``0.0.0.0`` so that CLI processes running inside a Docker
@@ -67,7 +66,6 @@ class InternalAgentAPI:
         self._port = port
         self._bind_host = _BIND_ALL_HOST if docker_mode else "127.0.0.1"
         self._health_ref: dict[str, AgentHealth] | None = None
-        self._task_hub: TaskHub | None = None
         self._app = web.Application()
 
         # Inter-agent routes (only when bus is available)
@@ -78,22 +76,12 @@ class InternalAgentAPI:
         self._app.router.add_get("/interagent/health", self._handle_health)
 
         # Task routes (always registered)
-        self._app.router.add_post("/tasks/create", self._handle_task_create)
-        self._app.router.add_post("/tasks/resume", self._handle_task_resume)
-        self._app.router.add_post("/tasks/ask_parent", self._handle_task_ask_parent)
-        self._app.router.add_get("/tasks/list", self._handle_task_list)
-        self._app.router.add_post("/tasks/cancel", self._handle_task_cancel)
-        self._app.router.add_post("/tasks/delete", self._handle_task_delete)
 
         self._runner: web.AppRunner | None = None
 
     def set_health_ref(self, health: dict[str, AgentHealth]) -> None:
         """Set reference to supervisor health dict for the /health endpoint."""
         self._health_ref = health
-
-    def set_task_hub(self, hub: TaskHub) -> None:
-        """Set the TaskHub for handling /tasks/* endpoints."""
-        self._task_hub = hub
 
     @property
     def port(self) -> int:
@@ -248,237 +236,3 @@ class InternalAgentAPI:
                 "last_crash_error": health.last_crash_error or None,
             }
         return web.json_response({"agents": agents})
-
-    # -- Task endpoints ----------------------------------------------------------
-
-    async def _handle_task_create(self, request: web.Request) -> web.Response:
-        """POST /tasks/create — create a background task.
-
-        Expects JSON: ``{"from": "agent", "prompt": "...", "name": "...",
-        "provider": null, "model": null, "thinking": null}``
-        """
-        if self._task_hub is None:
-            return web.json_response(
-                {"success": False, "error": "Task system not available"},
-                status=503,
-            )
-
-        try:
-            data = await request.json()
-        except Exception:
-            return web.json_response(
-                {"success": False, "error": "Invalid JSON body"},
-                status=400,
-            )
-
-        prompt = data.get("prompt", "")
-        sender = data.get("from", "main")
-        if not prompt:
-            return web.json_response(
-                {"success": False, "error": "Missing 'prompt' field"},
-                status=400,
-            )
-
-        from ductor_bot.tasks.models import TaskSubmit, normalise_priority
-
-        submit = TaskSubmit(
-            chat_id=data.get("chat_id", 0),
-            prompt=prompt,
-            message_id=0,
-            thread_id=data.get("topic_id") or None,
-            parent_agent=sender,
-            name=data.get("name", ""),
-            provider_override=data.get("provider") or "",
-            model_override=data.get("model") or "",
-            thinking_override=data.get("thinking") or "",
-            priority=normalise_priority(data.get("priority")),
-        )
-
-        try:
-            task_id = self._task_hub.submit(submit)
-        except ValueError as exc:
-            return web.json_response({"success": False, "error": str(exc)})
-
-        return web.json_response({"success": True, "task_id": task_id})
-
-    async def _handle_task_resume(self, request: web.Request) -> web.Response:
-        """POST /tasks/resume — resume a completed task with a follow-up.
-
-        Expects JSON: ``{"task_id": "...", "prompt": "...", "from": "agent"}``
-        """
-        if self._task_hub is None:
-            return web.json_response(
-                {"success": False, "error": "Task system not available"},
-                status=503,
-            )
-
-        try:
-            data = await request.json()
-        except Exception:
-            return web.json_response(
-                {"success": False, "error": "Invalid JSON body"},
-                status=400,
-            )
-
-        task_id = data.get("task_id", "")
-        prompt = data.get("prompt", "")
-        sender = data.get("from", "")
-        if not task_id or not prompt:
-            return web.json_response(
-                {"success": False, "error": "Missing 'task_id' or 'prompt' field"},
-                status=400,
-            )
-
-        # Verify the requester owns this task
-        if sender:
-            entry = self._task_hub.registry.get(task_id)
-            if entry is not None and entry.parent_agent != sender:
-                return web.json_response(
-                    {"success": False, "error": "Not authorized to resume this task"},
-                    status=403,
-                )
-
-        try:
-            resumed_id = self._task_hub.resume(task_id, prompt, parent_agent=sender)
-        except ValueError as exc:
-            return web.json_response({"success": False, "error": str(exc)})
-
-        return web.json_response({"success": True, "task_id": resumed_id})
-
-    async def _handle_task_ask_parent(self, request: web.Request) -> web.Response:
-        """POST /tasks/ask_parent — task agent forwards a question to the parent.
-
-        Expects JSON: ``{"task_id": "...", "question": "..."}``
-        Returns immediately. The parent agent will resume the task with the answer.
-        """
-        if self._task_hub is None:
-            return web.json_response(
-                {"success": False, "error": "Task system not available"},
-                status=503,
-            )
-
-        try:
-            data = await request.json()
-        except Exception:
-            return web.json_response(
-                {"success": False, "error": "Invalid JSON body"},
-                status=400,
-            )
-
-        task_id = data.get("task_id", "")
-        question = data.get("question", "")
-        if not task_id or not question:
-            return web.json_response(
-                {"success": False, "error": "Missing 'task_id' or 'question' field"},
-                status=400,
-            )
-
-        result = await self._task_hub.forward_question(task_id, question)
-        is_error = result.startswith("Error:")
-        return web.json_response(
-            {
-                "success": not is_error,
-                "answer": result,
-                **({"error": result} if is_error else {}),
-            }
-        )
-
-    async def _handle_task_list(self, request: web.Request) -> web.Response:
-        """GET /tasks/list — list tasks, filtered by parent_agent if provided."""
-        if self._task_hub is None:
-            return web.json_response({"tasks": []})
-
-        parent_agent = request.query.get("from") or None
-        entries = self._task_hub.registry.list_all(parent_agent=parent_agent)
-        return web.json_response(
-            {
-                "tasks": [e.to_dict() for e in entries],
-            }
-        )
-
-    async def _handle_task_cancel(self, request: web.Request) -> web.Response:
-        """POST /tasks/cancel — cancel a running task."""
-        if self._task_hub is None:
-            return web.json_response(
-                {"success": False, "error": "Task system not available"},
-                status=503,
-            )
-
-        try:
-            data = await request.json()
-        except Exception:
-            return web.json_response(
-                {"success": False, "error": "Invalid JSON body"},
-                status=400,
-            )
-
-        task_id = data.get("task_id", "")
-        sender = data.get("from", "")
-        if not task_id:
-            return web.json_response(
-                {"success": False, "error": "Missing 'task_id' field"},
-                status=400,
-            )
-
-        # Verify the requester owns this task
-        if sender:
-            entry = self._task_hub.registry.get(task_id)
-            if entry is not None and entry.parent_agent != sender:
-                return web.json_response(
-                    {"success": False, "error": "Not authorized to cancel this task"},
-                    status=403,
-                )
-
-        cancelled = await self._task_hub.cancel(task_id)
-        logger.info(
-            "Task cancel via API id=%s from=%s success=%s",
-            task_id,
-            sender or "?",
-            cancelled,
-        )
-        return web.json_response({"success": cancelled})
-
-    async def _handle_task_delete(  # noqa: PLR0911
-        self, request: web.Request
-    ) -> web.Response:
-        """POST /tasks/delete — permanently delete a finished task (entry + folder)."""
-        if self._task_hub is None:
-            return web.json_response(
-                {"success": False, "error": "Task system not available"},
-                status=503,
-            )
-
-        try:
-            data = await request.json()
-        except Exception:
-            return web.json_response(
-                {"success": False, "error": "Invalid JSON body"},
-                status=400,
-            )
-
-        task_id = data.get("task_id", "")
-        sender = data.get("from", "")
-        if not task_id:
-            return web.json_response(
-                {"success": False, "error": "Missing 'task_id' field"},
-                status=400,
-            )
-
-        entry = self._task_hub.registry.get(task_id)
-        if entry is None:
-            return web.json_response(
-                {"success": False, "error": f"Task '{task_id}' not found"},
-                status=404,
-            )
-        if sender and entry.parent_agent != sender:
-            return web.json_response(
-                {"success": False, "error": "Not authorized to delete this task"},
-                status=403,
-            )
-
-        if not self._task_hub.registry.delete(task_id):
-            return web.json_response(
-                {"success": False, "error": "Task is still running or waiting"},
-                status=409,
-            )
-        return web.json_response({"success": True})

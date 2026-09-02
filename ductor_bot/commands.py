@@ -32,7 +32,6 @@ def get_bot_commands() -> list[tuple[str, str]]:
         ("memory", t_cmd("bot.memory")),
         # Automation & multi-agent
         ("session", t_cmd("bot.session")),
-        ("tasks", t_cmd("bot.tasks")),
         ("cron", t_cmd("bot.cron")),
         ("agent_commands", t_cmd("bot.agent_commands")),
         # Browse & info

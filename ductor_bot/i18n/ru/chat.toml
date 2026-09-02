@@ -157,34 +157,12 @@ health_header = "**Здоровье Multi-Agent:**"
 # -- Задачи --------------------------------------------------------------------
 
 [tasks]
-header = "**Фоновые задачи**"
-disabled = "Система задач не активирована."
-empty = "Фоновых задач нет."
-hint = "Задачи создаёт агент для длительной работы."
 too_many = "Слишком много фоновых задач (макс. {max})"
 internal_error = "Внутренняя ошибка (проверь логи)"
 
-cancelled_one = "Отменена {count} задача."
-cancelled_other = "Отменено {count} задач."
-no_running = "Нет работающих задач."
-task_cancelled = "Задача `{id}` отменена."
-task_not_running = "Задача `{id}` не работает."
-cleaned_one = "Удалена {count} завершённая задача."
-cleaned_other = "Удалено {count} завершённых задач."
-nothing_to_clean = "Нечего чистить."
 
-running_header = "**Работают**"
-waiting_header = "**Ожидают ответа**"
-finished_header = "**Завершены**"
 
-btn_cancel = "Отменить {name}"
-btn_cancel_all = "Отменить все"
-btn_refresh = "Обновить"
-btn_delete_finished = "Удалить завершённые"
 
-summary_running = "Работают: {count}"
-summary_waiting = "Ожидают: {count}"
-summary_finished = "Завершены: {count}"
 
 # -- Сессии --------------------------------------------------------------------
 

@@ -157,34 +157,12 @@ health_header = "**Santé multi-agent :**"
 # -- Tâches --------------------------------------------------------------------
 
 [tasks]
-header = "**Tâches en arrière-plan**"
-disabled = "Le système de tâches n'est pas activé."
-empty = "Aucune tâche en arrière-plan."
-hint = "Les tâches sont créées par l'agent pour les travaux de longue durée."
 too_many = "Trop de tâches en arrière-plan ({max} maximum)"
 internal_error = "Erreur interne (vérifier les logs)"
 
-cancelled_one = "{count} tâche annulée."
-cancelled_other = "{count} tâches annulées."
-no_running = "Aucune tâche en cours."
-task_cancelled = "Tâche `{id}` annulée."
-task_not_running = "La tâche `{id}` ne tourne pas."
-cleaned_one = "{count} tâche terminée supprimée."
-cleaned_other = "{count} tâches terminées supprimées."
-nothing_to_clean = "Rien à nettoyer."
 
-running_header = "**En cours**"
-waiting_header = "**En attente de réponse**"
-finished_header = "**Terminées**"
 
-btn_cancel = "Annuler {name}"
-btn_cancel_all = "Tout annuler"
-btn_refresh = "Actualiser"
-btn_delete_finished = "Supprimer terminées"
 
-summary_running = "En cours : {count}"
-summary_waiting = "En attente : {count}"
-summary_finished = "Terminées : {count}"
 
 # -- Sélecteur de sessions ----------------------------------------------------
 

@@ -32,7 +32,6 @@ from ductor_bot.orchestrator.selectors.models import Button, ButtonGrid
 from ductor_bot.orchestrator.selectors.persona_selector import persona_selector
 from ductor_bot.orchestrator.selectors.session_selector import session_selector_start
 from ductor_bot.orchestrator.selectors.skills_selector import skill_detail, skills_root
-from ductor_bot.orchestrator.selectors.task_selector import task_selector_start
 from ductor_bot.text.response_format import SEP, fmt
 from ductor_bot.workspace.loader import read_mainmemory
 
@@ -228,18 +227,6 @@ async def cmd_sessions(orch: Orchestrator, key: SessionKey, _text: str) -> Orche
     """Handle /sessions."""
     logger.info("Sessions requested")
     resp = await session_selector_start(orch, key.chat_id)
-    return OrchestratorResult(text=resp.text, buttons=resp.buttons)
-
-
-async def cmd_tasks(orch: Orchestrator, key: SessionKey, _text: str) -> OrchestratorResult:
-    """Handle /tasks."""
-    logger.info("Tasks requested")
-    hub = orch.task_hub
-    if hub is None:
-        return OrchestratorResult(
-            text=fmt(t("tasks.header"), SEP, t("tasks.disabled")),
-        )
-    resp = task_selector_start(hub, key.chat_id)
     return OrchestratorResult(text=resp.text, buttons=resp.buttons)
 
 
@@ -470,16 +457,7 @@ async def _build_status(orch: Orchestrator, key: SessionKey) -> str:
             f"{_model_line(runtime_model)}{_status_effort_suffix(orch, runtime_model, orch._config.reasoning_effort)}"
         )
 
-    bg_tasks = orch.active_background_tasks(key.chat_id)
     bg_block = ""
-    if bg_tasks:
-        import time
-
-        bg_lines = [t("status.bg_header", count=len(bg_tasks))]
-        for bg_t in bg_tasks:
-            age = time.monotonic() - bg_t.submitted_at
-            bg_lines.append(f"  `{bg_t.task_id}` {bg_t.prompt[:40]}... ({age:.0f}s)")
-        bg_block = "\n".join(bg_lines)
 
     auth = await asyncio.to_thread(check_all_auth, active_claude_account_dir(orch._config))
     auth_lines: list[str] = []

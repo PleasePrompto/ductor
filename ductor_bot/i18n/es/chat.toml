@@ -157,34 +157,12 @@ health_header = "**Salud multi-agente:**"
 # -- Tareas --------------------------------------------------------------------
 
 [tasks]
-header = "**Tareas en segundo plano**"
-disabled = "El sistema de tareas no está habilitado."
-empty = "No hay tareas en segundo plano."
-hint = "Las tareas son creadas por el agente para trabajos de larga duración."
 too_many = "Demasiadas tareas en segundo plano ({max} máximo)"
 internal_error = "Error interno (revisa los logs)"
 
-cancelled_one = "{count} tarea cancelada."
-cancelled_other = "{count} tareas canceladas."
-no_running = "No hay tareas en ejecución."
-task_cancelled = "Tarea `{id}` cancelada."
-task_not_running = "La tarea `{id}` no está en ejecución."
-cleaned_one = "{count} tarea finalizada eliminada."
-cleaned_other = "{count} tareas finalizadas eliminadas."
-nothing_to_clean = "Nada que limpiar."
 
-running_header = "**En ejecución**"
-waiting_header = "**Esperando respuesta**"
-finished_header = "**Finalizadas**"
 
-btn_cancel = "Cancelar {name}"
-btn_cancel_all = "Cancelar todas"
-btn_refresh = "Actualizar"
-btn_delete_finished = "Borrar finalizadas"
 
-summary_running = "En ejecución: {count}"
-summary_waiting = "En espera: {count}"
-summary_finished = "Finalizadas: {count}"
 
 # -- Selector de sesiones ------------------------------------------------------
 

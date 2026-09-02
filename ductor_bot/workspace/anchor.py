@@ -26,7 +26,6 @@ WORKSPACE_DIRS = (
     "cron_tasks",
     "user_tools",
     "output_to_user",
-    "task_tools",
     "media_tools",
     "cron_tools",
     "webhook_tools",

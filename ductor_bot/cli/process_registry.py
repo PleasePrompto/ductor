@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _SIGTERM_GRACE_SECONDS = 2.0
 _PRESERVED_LABEL_PREFIXES: tuple[str, ...] = ("task:", "task_result:", "ns:")
-# Lifecycle for these subprocesses is owned by /tasks, /sessions, or TaskHub.cancel().
+# Lifecycle for these subprocesses is owned by /sessions and the named-session flow.
 
 
 @dataclass(slots=True)
@@ -113,7 +113,7 @@ class ProcessRegistry:
         Used by ``/stop`` so a stop in one topic does not affect another
         topic in the same chat. ``topic_id=None`` matches processes
         registered without a topic (e.g. private chats). Labels owned by
-        /tasks, /sessions, or TaskHub.cancel() are preserved.
+        /sessions and the named-session flow are preserved.
         """
         async with self._kill_lock:
             entries = self._processes.get(chat_id, [])

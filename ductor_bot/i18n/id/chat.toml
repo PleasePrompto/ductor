@@ -156,34 +156,12 @@ health_header = "**Kesehatan Multi-Agen:**"
 # -- Tasks ---------------------------------------------------------------------
 
 [tasks]
-header = "**Tugas Latar**"
-disabled = "Sistem tugas tidak diaktifkan."
-empty = "Tidak ada tugas latar."
-hint = "Tugas dibuat oleh agen untuk pekerjaan yang membutuhkan waktu lama."
 too_many = "Terlalu banyak tugas latar ({max} maks)"
 internal_error = "Kesalahan internal (periksa log)"
 
-cancelled_one = "Membatalkan {count} tugas."
-cancelled_other = "Membatalkan {count} tugas."
-no_running = "Tidak ada tugas yang berjalan."
-task_cancelled = "Tugas `{id}` dibatalkan."
-task_not_running = "Tugas `{id}` tidak berjalan."
-cleaned_one = "Menghapus {count} tugas yang selesai."
-cleaned_other = "Menghapus {count} tugas yang selesai."
-nothing_to_clean = "Tidak ada yang perlu dibersihkan."
 
-running_header = "**Berjalan**"
-waiting_header = "**Menunggu jawaban**"
-finished_header = "**Selesai**"
 
-btn_cancel = "Batalkan {name}"
-btn_cancel_all = "Batalkan Semua"
-btn_refresh = "Segarkan"
-btn_delete_finished = "Hapus yang Selesai"
 
-summary_running = "Berjalan: {count}"
-summary_waiting = "Menunggu: {count}"
-summary_finished = "Selesai: {count}"
 
 # -- Sessions selector ---------------------------------------------------------
 

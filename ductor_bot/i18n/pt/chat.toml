@@ -157,34 +157,12 @@ health_header = "**Saúde do Multi-Agent:**"
 # -- Tarefas -------------------------------------------------------------------
 
 [tasks]
-header = "**Tarefas em Segundo Plano**"
-disabled = "Sistema de tarefas não está habilitado."
-empty = "Nenhuma tarefa em segundo plano."
-hint = "Tarefas são criadas pelo agente para trabalhos de longa duração."
 too_many = "Muitas tarefas em segundo plano ({max} máximo)"
 internal_error = "Erro interno (verifique os logs)"
 
-cancelled_one = "{count} tarefa cancelada."
-cancelled_other = "{count} tarefas canceladas."
-no_running = "Nenhuma tarefa rodando."
-task_cancelled = "Tarefa `{id}` cancelada."
-task_not_running = "Tarefa `{id}` não está rodando."
-cleaned_one = "{count} tarefa concluída removida."
-cleaned_other = "{count} tarefas concluídas removidas."
-nothing_to_clean = "Nada para limpar."
 
-running_header = "**Rodando**"
-waiting_header = "**Aguardando resposta**"
-finished_header = "**Concluídas**"
 
-btn_cancel = "Cancelar {name}"
-btn_cancel_all = "Cancelar Todas"
-btn_refresh = "Atualizar"
-btn_delete_finished = "Excluir Concluídas"
 
-summary_running = "Rodando: {count}"
-summary_waiting = "Aguardando: {count}"
-summary_finished = "Concluídas: {count}"
 
 # -- Seletor de sessões --------------------------------------------------------
 

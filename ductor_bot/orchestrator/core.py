@@ -48,7 +48,6 @@ from ductor_bot.orchestrator.commands import (
     cmd_sessions,
     cmd_skills,
     cmd_status,
-    cmd_tasks,
     cmd_upgrade,
 )
 from ductor_bot.orchestrator.directives import parse_directives
@@ -84,7 +83,6 @@ if TYPE_CHECKING:
     from ductor_bot.config import ModelRegistry
     from ductor_bot.multiagent.supervisor import AgentSupervisor
     from ductor_bot.session.named import NamedSession
-    from ductor_bot.tasks.hub import TaskHub
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +229,6 @@ class Orchestrator:
         self._hook_registry = MessageHookRegistry()
         self._hook_registry.register(MAINMEMORY_REMINDER)
         self._supervisor: AgentSupervisor | None = None  # Set by AgentSupervisor after creation
-        self._task_hub: TaskHub | None = None  # Set by supervisor or __main__.py
         self._command_registry = CommandRegistry()
         self._register_commands()
 
@@ -303,10 +300,6 @@ class Orchestrator:
         """Public access to resolved workspace paths."""
         return self._paths
 
-    @property
-    def task_hub(self) -> TaskHub | None:
-        """Public access to the task hub (None when tasks are disabled)."""
-        return self._task_hub
 
     @property
     def config(self) -> AgentConfig:
@@ -351,11 +344,6 @@ class Orchestrator:
     @supervisor.setter
     def supervisor(self, value: AgentSupervisor | None) -> None:
         self._supervisor = value
-
-    def set_task_hub(self, hub: TaskHub) -> None:
-        """Inject the task hub (called by supervisor or startup wiring)."""
-        self._task_hub = hub
-        hub.start_maintenance()
 
     @classmethod
     async def create(
@@ -526,7 +514,6 @@ class Orchestrator:
         reg.register_async("/diagnose", cmd_diagnose)
         reg.register_async("/upgrade", cmd_upgrade)
         reg.register_async("/named", cmd_sessions)
-        reg.register_async("/tasks", cmd_tasks)
 
     def register_multiagent_commands(self) -> None:
         """Register /agents, /agent_start, /agent_stop, /agent_restart commands.
