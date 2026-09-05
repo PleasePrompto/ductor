@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
@@ -62,6 +64,18 @@ def test_make_cli_with_provider_override(tmp_path: Path) -> None:
 
     call_args = mock_create.call_args[0][0]
     assert call_args.provider == "codex"
+
+
+def test_make_cli_rejects_combined_provider_and_model(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path)
+    with pytest.raises(ValueError, match="separate fields"):
+        svc._make_cli(
+            AgentRequest(
+                prompt="test",
+                provider_override="codex/gpt-5.6-luna",
+                chat_id=1,
+            )
+        )
 
 
 def test_make_cli_does_not_auto_fallback_provider(tmp_path: Path) -> None:

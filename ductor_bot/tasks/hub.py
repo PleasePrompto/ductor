@@ -6,10 +6,13 @@ import asyncio
 import contextlib
 import logging
 import time
+import traceback
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from ductor_bot.cli.factory import validate_provider
 from ductor_bot.cli.types import AgentRequest
+from ductor_bot.errors import redact_error_text, safe_exception_message
 from ductor_bot.tasks.models import (
     TaskEntry,
     TaskInFlight,
@@ -222,6 +225,12 @@ class TaskHub:
             if resolved:
                 submit.chat_id = resolved
 
+        # Validate before creating the durable entry or spawning an asyncio
+        # task.  A value such as ``codex/gpt-5.6-luna`` must never reach the
+        # factory, where it could otherwise be mistaken for Claude.
+        if submit.provider_override:
+            validate_provider(submit.provider_override)
+
         # #79: interactive tasks bypass the per-chat concurrency cap so
         # direct user follow-ups stay responsive under heavy batch load.
         # Active count excludes already-running interactive tasks for the
@@ -289,6 +298,7 @@ class TaskHub:
         if not entry.provider:
             msg = f"Task '{task_id}' has no provider recorded"
             raise ValueError(msg)
+        validate_provider(entry.provider)
 
         # #158: the persisted status can lag behind the actual execution
         # (e.g. a stale "waiting"/"done" while the subprocess still runs).
@@ -551,11 +561,11 @@ class TaskHub:
     ) -> None:
         """Execute task as CLI subprocess."""
         cli = self._cli_services.get(entry.parent_agent) or self._cli_service
-        assert cli is not None
 
         t0 = time.monotonic()
         final_delivery_started = False
         try:
+            cli = _require_cli_service(cli, entry.provider)
             timeout = self._config.timeout_seconds
             request = await self._prepare_request(entry, prompt, cli, resume_session)
             response = await cli.execute(request)
@@ -575,7 +585,11 @@ class TaskHub:
                 completed_at=time.time(),
                 elapsed_seconds=elapsed,
                 error=error,
-                result_preview=(response.result or "")[:_RESULT_PREVIEW_LEN],
+                result_preview=(
+                    redact_error_text(response.result or "", max_length=_RESULT_PREVIEW_LEN)
+                    if status == "failed"
+                    else (response.result or "")[:_RESULT_PREVIEW_LEN]
+                ),
                 num_turns=total_turns,
             )
 
@@ -656,16 +670,32 @@ class TaskHub:
                 )
             raise
 
-        except Exception:
-            logger.exception("Task failed id=%s name='%s'", entry.task_id, entry.name)
+        except Exception as exc:
             elapsed = time.monotonic() - t0
-            error_msg = "Internal error (check logs)"
+            error_msg = _format_task_exception(exc)
+            # Keep the full technical traceback in the log, but redact common
+            # credential forms before writing it.  The user-facing error is a
+            # bounded/sanitized summary, never the raw exception traceback.
+            technical_traceback = redact_error_text(traceback.format_exc(), max_length=8000)
+            # Deliberately use ``log`` instead of ``exception``: the traceback
+            # above is already sanitized, while exc_info would log the raw
+            # exception and could leak a credential echoed by a provider.
+            logger.log(
+                logging.ERROR,
+                "Task failed id=%s name='%s' error=%s\n%s",
+                entry.task_id,
+                entry.name,
+                error_msg,
+                technical_traceback,
+            )
             self._registry.update_status(
                 entry.task_id,
                 "failed",
                 completed_at=time.time(),
                 elapsed_seconds=elapsed,
                 error=error_msg,
+                result_preview="",
+                last_question="",
             )
             with contextlib.suppress(Exception):
                 await self._deliver(
@@ -680,7 +710,9 @@ class TaskHub:
                         elapsed_seconds=elapsed,
                         provider=entry.provider,
                         model=entry.model,
+                        session_id=entry.session_id,
                         error=error_msg,
+                        task_folder=str(self._registry.task_folder(entry.task_id)),
                         original_prompt=entry.original_prompt,
                         thread_id=entry.thread_id,
                     )
@@ -726,10 +758,29 @@ def _classify_task_response(
     if getattr(response, "is_error", False):
         if getattr(response, "returncode", None) in _CANCEL_RETURNCODES:
             return "cancelled", ""
-        return "failed", getattr(response, "result", None) or "CLI error"
+        error = redact_error_text(getattr(response, "result", None) or "")
+        return "failed", error or "CLI error"
     if has_pending_question:
         return "waiting", ""
     return "done", ""
+
+
+def _format_task_exception(exc: BaseException) -> str:
+    """Create a user-safe, actionable task error without exposing traceback data."""
+    message = safe_exception_message(exc)
+    if isinstance(exc, FileNotFoundError) or message.startswith("No CLI service available"):
+        return f"CLI unavailable: {message}"
+    if isinstance(exc, ValueError):
+        return message
+    return f"Task execution failed: {message}"
+
+
+def _require_cli_service(cli: CLIService | None, provider: str) -> CLIService:
+    """Return the configured task CLI or raise an actionable runtime error."""
+    if cli is None:
+        msg = f"No CLI service available for task provider '{provider or 'default'}'"
+        raise RuntimeError(msg)
+    return cli
 
 
 def _append_taskmemory(result_text: str, taskmemory_path: Path) -> str:

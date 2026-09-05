@@ -269,6 +269,36 @@ class TestHandleInteragentMessage:
         assert captured["chat_id"] == 12345
         assert "topic_id" not in captured
 
+    def test_create_task_rejects_combined_provider_before_api_call(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        tool = _ROOT / "ductor_bot/_home_defaults/workspace/tools/task_tools/create_task.py"
+        spec = importlib.util.spec_from_file_location("create_task_validation_tool", tool)
+        assert spec is not None
+        assert spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        def post_json(*_args: object, **_kwargs: object) -> dict[str, object]:
+            pytest.fail("invalid provider must be rejected before the API call")
+
+        monkeypatch.setattr(
+            mod,
+            "_load_shared",
+            lambda: (lambda _path: "http://example.invalid", post_json, lambda: "codex"),
+        )
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["create_task.py", "--provider", "codex/gpt-5.6-luna", "do work"],
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            mod.main()
+
+        assert exc_info.value.code == 1
+        assert "separate fields" in capsys.readouterr().err
+
     async def test_prompt_contains_interagent_markers(self, orch_ia: Orchestrator) -> None:
         await orch_ia.handle_interagent_message("main", "Hello world")
         call_args = orch_ia._cli_service.execute.call_args

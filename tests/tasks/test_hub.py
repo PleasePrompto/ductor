@@ -110,6 +110,57 @@ class TestSubmit:
 
         await hub.shutdown()
 
+    async def test_keeps_codex_provider_and_model_separate(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        captured: list[object] = []
+        cli = _make_cli_service()
+        response = cli.execute.return_value
+
+        async def _execute(request: object) -> object:
+            captured.append(request)
+            return response
+
+        cli.execute = AsyncMock(side_effect=_execute)
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+
+        submit = _submit()
+        submit.provider_override = "codex"
+        submit.model_override = "gpt-5.6-luna"
+        task_id = hub.submit(submit)
+        await asyncio.sleep(0.1)
+
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.provider == "codex"
+        assert entry.model == "gpt-5.6-luna"
+        assert captured
+        assert captured[0].provider_override == "codex"
+        assert captured[0].model_override == "gpt-5.6-luna"
+
+        await hub.shutdown()
+
+    async def test_rejects_combined_provider_before_creating_task(
+        self, registry: TaskRegistry, tmp_path: Path
+    ) -> None:
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=_make_cli_service(),
+            config=_make_config(),
+        )
+        submit = _submit()
+        submit.provider_override = "codex/gpt-5.6-luna"
+
+        with pytest.raises(ValueError, match="separate fields"):
+            hub.submit(submit)
+        assert registry.list_all() == []
+
 
 class TestRunAndDeliver:
     async def test_delivers_success_result(self, registry: TaskRegistry, tmp_path: Path) -> None:
@@ -188,6 +239,84 @@ class TestRunAndDeliver:
         assert len(delivered) == 1
         assert delivered[0].status == "failed"
         assert "rate limit" in delivered[0].error.lower()
+
+        entry = registry.get(delivered[0].task_id)
+        assert entry is not None
+        assert entry.status == "failed"
+
+        await hub.shutdown()
+
+    async def test_missing_cli_is_explicit_failed_notification(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level("ERROR", logger="ductor_bot.tasks.hub")
+        cli = _make_cli_service()
+        cli.execute = AsyncMock(
+            side_effect=FileNotFoundError(
+                "claude CLI not found on PATH. Install via: npm install -g @anthropic-ai/claude-code"
+            )
+        )
+        delivered: list[TaskResult] = []
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.1)
+
+        assert len(delivered) == 1
+        assert delivered[0].status == "failed"
+        assert delivered[0].error.startswith("CLI unavailable:")
+        assert "claude CLI not found on PATH" in delivered[0].error
+        assert "Internal error" not in delivered[0].error
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert entry.status == "failed"
+        assert entry.session_id == ""
+        assert "FileNotFoundError" in caplog.text
+
+        with pytest.raises(ValueError, match="no resumable session"):
+            hub.resume(task_id, "try again")
+
+        await hub.shutdown()
+
+    async def test_failed_error_and_traceback_redact_secret(
+        self,
+        registry: TaskRegistry,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level("ERROR", logger="ductor_bot.tasks.hub")
+        cli = _make_cli_service()
+        secret = "super-secret-value"
+        cli.execute = AsyncMock(side_effect=RuntimeError(f"provider api_key={secret}"))
+        delivered: list[TaskResult] = []
+        hub = TaskHub(
+            registry,
+            MagicMock(workspace=tmp_path),
+            cli_service=cli,
+            config=_make_config(),
+        )
+        hub.set_result_handler("main", AsyncMock(side_effect=delivered.append))
+
+        task_id = hub.submit(_submit())
+        await asyncio.sleep(0.1)
+
+        assert delivered[0].status == "failed"
+        assert secret not in delivered[0].error
+        entry = registry.get(task_id)
+        assert entry is not None
+        assert secret not in entry.error
+        assert secret not in entry.result_preview
+        assert secret not in caplog.text
+        assert "RuntimeError" in caplog.text
 
         await hub.shutdown()
 

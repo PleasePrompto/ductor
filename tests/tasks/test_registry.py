@@ -57,6 +57,11 @@ class TestCreate:
         )
         assert len(reg2.list_all()) == 2
 
+    def test_rejects_combined_provider_and_model(self, registry: TaskRegistry) -> None:
+        with pytest.raises(ValueError, match="separate fields"):
+            registry.create(_submit(), "codex/gpt-5.6-luna", "")
+        assert registry.list_all() == []
+
 
 class TestGet:
     def test_get_existing(self, registry: TaskRegistry) -> None:

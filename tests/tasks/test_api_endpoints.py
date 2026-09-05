@@ -58,6 +58,38 @@ class TestTaskCreate:
         data = await resp.json()
         assert data["success"] is False
 
+    async def test_rejects_combined_provider_and_model(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+        resp = await api_client.post(
+            "/tasks/create",
+            json={
+                "from": "main",
+                "prompt": "run the task",
+                "provider": "codex/gpt-5.6-luna",
+            },
+        )
+        assert resp.status == 400
+        data = await resp.json()
+        assert data["success"] is False
+        assert "separate fields" in data["error"]
+        hub.submit.assert_not_called()
+
+    async def test_preserves_codex_provider_and_model_fields(self, api_client: TestClient) -> None:
+        hub = api_client.app["_test_hub"]
+        resp = await api_client.post(
+            "/tasks/create",
+            json={
+                "from": "main",
+                "prompt": "run the task",
+                "provider": "codex",
+                "model": "gpt-5.6-luna",
+            },
+        )
+        assert resp.status == 200
+        submit = hub.submit.call_args.args[0]
+        assert submit.provider_override == "codex"
+        assert submit.model_override == "gpt-5.6-luna"
+
     async def test_invalid_json(self, api_client: TestClient) -> None:
         resp = await api_client.post("/tasks/create", data=b"not json")
         assert resp.status == 400

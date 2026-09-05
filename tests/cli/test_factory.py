@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from ductor_bot.cli.base import CLIConfig
 from ductor_bot.cli.claude_provider import ClaudeCodeCLI
 from ductor_bot.cli.codex_provider import CodexCLI
@@ -12,7 +14,8 @@ from ductor_bot.cli.gemini_provider import GeminiCLI
 
 
 def test_create_cli_returns_claude_by_default() -> None:
-    cli = create_cli(CLIConfig(provider="claude"))
+    with patch("ductor_bot.cli.claude_provider.which", return_value="/usr/bin/claude"):
+        cli = create_cli(CLIConfig(provider="claude"))
     assert isinstance(cli, ClaudeCodeCLI)
 
 
@@ -30,6 +33,11 @@ def test_create_cli_returns_gemini() -> None:
     assert isinstance(cli, GeminiCLI)
 
 
-def test_create_cli_unknown_provider_returns_claude() -> None:
-    cli = create_cli(CLIConfig(provider="unknown"))
-    assert isinstance(cli, ClaudeCodeCLI)
+def test_create_cli_rejects_unknown_provider() -> None:
+    with pytest.raises(ValueError, match="Unsupported provider"):
+        create_cli(CLIConfig(provider="unknown"))
+
+
+def test_create_cli_rejects_provider_model_combined_value() -> None:
+    with pytest.raises(ValueError, match="separate fields"):
+        create_cli(CLIConfig(provider="codex/gpt-5.6-luna"))
