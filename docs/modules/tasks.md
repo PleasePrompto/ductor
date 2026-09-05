@@ -52,6 +52,9 @@ Startup/maintenance behavior:
 `submit(TaskSubmit)`:
 
 - resolves chat ID from `parent_agent` mapping when missing
+- validates an explicit provider against the supported provider allowlist
+  (`claude`, `codex`, `gemini`, `antigravity`, `grok`); provider and model are
+  separate fields (for example `provider="codex"`, `model="gpt-5.6-luna"`)
 - creates registry entry and folder
 - appends mandatory task rules suffix
 - normalizes `priority` to `interactive|background|batch`
@@ -68,12 +71,16 @@ Startup/maintenance behavior:
   - `waiting` (question asked)
   - `failed`
   - `cancelled`
+- reports provider/CLI construction failures as actionable failed-task errors;
+  the technical traceback is retained in redacted logs, while user-facing
+  errors are bounded and sanitized
 
 Resume behavior:
 
 - allowed from `done|failed|cancelled|waiting`
 - requires stored `session_id` and provider
 - keeps same `task_id` and folder
+- a failed task without a stored session is not resumable
 
 Cancellation behavior:
 

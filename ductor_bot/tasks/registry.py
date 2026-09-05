@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ductor_bot.cli.factory import validate_provider
 from ductor_bot.infra.json_store import atomic_json_save, load_json
 from ductor_bot.tasks.models import TaskEntry, TaskSubmit, normalise_priority
 
@@ -109,6 +110,11 @@ class TaskRegistry:
         *tasks_dir* overrides the default tasks directory (for per-agent isolation).
         *priority* is coerced via ``normalise_priority`` (unknown ⇒ background).
         """
+        # Empty provider is retained for backward compatibility with tasks
+        # that inherit their parent default.  Any explicit value must be a
+        # provider name, never a combined ``provider/model`` string.
+        if provider:
+            validate_provider(provider)
         task_id = secrets.token_hex(4)
         resolved_dir = tasks_dir or self._tasks_dir
         entry = TaskEntry(

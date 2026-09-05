@@ -131,6 +131,11 @@ class DuctorPaths:
         return self.ductor_home / "inflight_turns.json"
 
     @property
+    def cron_followups_path(self) -> Path:
+        """Durable context for the next answer to an interactive cron result."""
+        return self.ductor_home / "cron_followups.json"
+
+    @property
     def env_file(self) -> Path:
         """User-managed ``.env`` for external API secrets."""
         return self.ductor_home / ".env"

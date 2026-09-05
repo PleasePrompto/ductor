@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ductor_bot.bus.cron_followup import canonical_transport, is_interactive_cron_result
 from ductor_bot.bus.envelope import DeliveryMode, Envelope, LockMode, Origin
 
 if TYPE_CHECKING:
@@ -63,22 +64,26 @@ def from_cron_result(  # noqa: PLR0913
     When *chat_id* is non-zero the envelope is unicast to that chat/topic.
     Otherwise it broadcasts to all users (legacy behaviour).
     """
+    transport_id = canonical_transport(transport)
     if chat_id:
+        metadata: dict[str, object] = {"title": title}
+        if is_interactive_cron_result(result):
+            metadata["interactive"] = True
         return Envelope(
             origin=Origin.CRON,
             chat_id=chat_id,
             topic_id=topic_id,
-            transport=transport,
+            transport=transport_id,
             result_text=result,
             status=status,
             delivery=DeliveryMode.UNICAST,
             lock_mode=LockMode.NONE,
-            metadata={"title": title},
+            metadata=metadata,
         )
     return Envelope(
         origin=Origin.CRON,
         chat_id=0,
-        transport=transport,
+        transport=transport_id,
         result_text=result,
         status=status,
         delivery=DeliveryMode.BROADCAST,

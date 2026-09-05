@@ -10,7 +10,7 @@ Usage:
 
 Options:
     --name NAME        Human-readable task name (e.g. "Flugsuche Paris")
-    --provider PROV    Override provider (claude, codex, gemini, antigravity)
+    --provider PROV    Override provider (claude, codex, gemini, antigravity, grok)
     --model MODEL      Override model (opus, sonnet, flash, etc.)
     --thinking LEVEL   Reasoning effort for codex (low, medium, high)
     --priority LEVEL   Scheduling priority (interactive|background|batch)
@@ -38,6 +38,21 @@ def _load_shared() -> tuple[object, object, object]:
 
 
 _VALID_PRIORITIES = ("interactive", "background", "batch")
+_VALID_PROVIDERS = ("antigravity", "claude", "codex", "gemini", "grok")
+
+
+def _validate_provider(provider: str) -> None:
+    """Reject ambiguous or unsupported provider overrides before the API call."""
+    if "/" in provider or "\\" in provider:
+        raise ValueError(
+            f"Invalid provider '{provider}': provider and model must be separate fields "
+            "(for example --provider codex --model gpt-5.6-luna)"
+        )
+    if provider not in _VALID_PROVIDERS:
+        raise ValueError(
+            f"Unsupported provider '{provider}'. Supported providers: "
+            + ", ".join(_VALID_PROVIDERS)
+        )
 
 
 def main() -> None:
@@ -83,6 +98,13 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    if provider:
+        try:
+            _validate_provider(provider)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
 
     prompt = args[0]
     sender = detect_agent_name()

@@ -23,7 +23,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_TRANSPORT_ALIASES = {"telegram": "tg", "matrix": "mx"}
+_TRANSPORT_ALIASES = {
+    "telegram": "tg",
+    "matrix": "mx",
+    "slack": "sl",
+    "websocket": "api",
+    "websocket_api": "api",
+}
 
 
 def _transport_id(value: str) -> str:
@@ -46,13 +52,37 @@ async def _inject_prompt(  # noqa: PLR0913
     topic_id: int | None = None,
     transport: str = "tg",
 ) -> str:
-    """Execute *prompt* in the current active session and update session state.
+    """Execute *prompt* in the current session and update session state.
 
     Backs ``Orchestrator.inject_prompt`` (the ``SessionInjector`` protocol).
+
+    A task question can arrive after a process restart, before the first user
+    turn, or after the session file was repaired.  In those cases there is no
+    active session to return from ``get_active``.  It is still important to
+    persist the provider session created by this injection: the user's answer
+    is the next turn in that same conversation.  Previously the response was
+    executed without a ``SessionData`` object, so its new session id was
+    discarded and the answer started a fresh conversation.
     """
-    key = SessionKey(transport=transport, chat_id=chat_id, topic_id=topic_id)
+    # SessionKey uses short canonical transport ids.  Task/bus callers may
+    # provide the long transport name (e.g. ``telegram``), which otherwise
+    # creates a different storage key from foreground Telegram messages.
+    transport_id = _transport_id(transport)
+    key = SessionKey(transport=transport_id, chat_id=chat_id, topic_id=topic_id)
     active = await orch._sessions.get_active(key)
-    resume_id = active.session_id if active else None
+
+    if active is None:
+        # Resolve the normal runtime target so a task question received before
+        # any foreground message still gets the configured provider/model.
+        model_name, provider_name = orch.resolve_runtime_target(orch._config.model)
+        active, _is_new = await orch._sessions.resolve_session(
+            key,
+            provider=provider_name,
+            model=model_name,
+            reasoning_effort=orch._config.reasoning_effort,
+        )
+
+    resume_id = active.session_id or None
 
     files_block = await build_appended_files_block(
         orch.paths, orch._config.append_system_prompt_files
@@ -62,7 +92,7 @@ async def _inject_prompt(  # noqa: PLR0913
         append_system_prompt=files_block,
         chat_id=chat_id,
         topic_id=topic_id,
-        transport=transport,
+        transport=transport_id,
         process_label=process_label,
         provider_override=active.provider if active else None,
         model_override=active.model if active else None,
@@ -73,8 +103,21 @@ async def _inject_prompt(  # noqa: PLR0913
 
     response = await orch._cli_service.execute(request)
 
+    # Always persist the response.  This is deliberately unconditional after
+    # resolving/creating ``active`` above; it is the hand-off that makes the
+    # following user answer resume the injected task-question turn.
     if active and response:
         await _update_session(orch, active, response)
+        task_hub = getattr(orch, "_task_hub", None)
+        if process_label.startswith("task_question:") and task_hub is not None:
+            task_hub.bind_pending_question_session(
+                chat_id,
+                topic_id,
+                session_id=active.session_id,
+                provider=active.provider,
+                model=active.model,
+                reasoning_effort=active.reasoning_effort,
+            )
 
     return response.result if response else ""
 

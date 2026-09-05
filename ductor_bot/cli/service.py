@@ -13,7 +13,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from ductor_bot.cli.base import CLIConfig
-from ductor_bot.cli.factory import create_cli
+from ductor_bot.cli.factory import create_cli, validate_provider
 from ductor_bot.cli.stream_events import (
     AssistantTextDelta,
     CompactBoundaryEvent,
@@ -355,9 +355,11 @@ class CLIService:
     def resolve_provider(self, request: AgentRequest) -> tuple[str, str]:
         """Return ``(provider, model)`` that would be used for *request*."""
         if request.provider_override:
-            return request.provider_override, request.model_override or ""
+            provider = validate_provider(request.provider_override)
+            return provider, request.model_override or ""
         model = request.model_override or self._config.default_model
-        return self._models.provider_for(model), model
+        provider = validate_provider(self._models.provider_for(model))
+        return provider, model
 
     def _make_cli(self, request: AgentRequest) -> BaseCLI:
         """Create a BaseCLI instance for the given request."""

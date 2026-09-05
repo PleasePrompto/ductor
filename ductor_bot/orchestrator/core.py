@@ -12,6 +12,7 @@ from ductor_bot.background import (
     BackgroundSubmit,
     BackgroundTask,
 )
+from ductor_bot.bus.cron_followup import CronFollowupStore
 from ductor_bot.cli.process_registry import ProcessRegistry
 from ductor_bot.cli.service import CLIService, CLIServiceConfig
 from ductor_bot.cli.stream_events import ToolUseEvent
@@ -141,6 +142,7 @@ class Orchestrator:
         self._docker: DockerManager | None = None
         self._providers = ProviderManager(config)
         self._sessions = SessionManager(paths.sessions_path, config)
+        self._cron_followups = CronFollowupStore(paths.cron_followups_path)
         self._named_sessions = NamedSessionRegistry(paths.named_sessions_path)
         self._process_registry = ProcessRegistry()
         self._lock_pool: LockPool | None = None
@@ -557,6 +559,7 @@ class Orchestrator:
         """Wire all observer result callbacks to the message bus."""
         self._observers.wire_to_bus(bus, wake_handler=wake_handler)
         bus.set_injector(self)
+        bus.set_cron_followup_store(self._cron_followups)
         self._lock_pool = bus.lock_pool
         # Share the bus lock pool with MemoryFlusher so silent flush / compact
         # turns serialize against concurrent user turns on the same SessionKey.

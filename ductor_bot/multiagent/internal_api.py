@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from ductor_bot.cli.factory import validate_provider
+
 if TYPE_CHECKING:
     from ductor_bot.multiagent.bus import InterAgentBus
     from ductor_bot.multiagent.health import AgentHealth
@@ -251,7 +253,7 @@ class InternalAgentAPI:
 
     # -- Task endpoints ----------------------------------------------------------
 
-    async def _handle_task_create(self, request: web.Request) -> web.Response:
+    async def _handle_task_create(self, request: web.Request) -> web.Response:  # noqa: PLR0911
         """POST /tasks/create — create a background task.
 
         Expects JSON: ``{"from": "agent", "prompt": "...", "name": "...",
@@ -273,11 +275,27 @@ class InternalAgentAPI:
 
         prompt = data.get("prompt", "")
         sender = data.get("from", "main")
-        if not prompt:
+        if not isinstance(prompt, str) or not prompt:
             return web.json_response(
                 {"success": False, "error": "Missing 'prompt' field"},
                 status=400,
             )
+
+        provider = data.get("provider") or ""
+        model = data.get("model") or ""
+        if not isinstance(provider, str) or not isinstance(model, str):
+            return web.json_response(
+                {
+                    "success": False,
+                    "error": "'provider' and 'model' must be strings",
+                },
+                status=400,
+            )
+        if provider:
+            try:
+                validate_provider(provider)
+            except ValueError as exc:
+                return web.json_response({"success": False, "error": str(exc)}, status=400)
 
         from ductor_bot.tasks.models import TaskSubmit, normalise_priority
 
@@ -288,8 +306,8 @@ class InternalAgentAPI:
             thread_id=data.get("topic_id") or None,
             parent_agent=sender,
             name=data.get("name", ""),
-            provider_override=data.get("provider") or "",
-            model_override=data.get("model") or "",
+            provider_override=provider,
+            model_override=model,
             thinking_override=data.get("thinking") or "",
             priority=normalise_priority(data.get("priority")),
         )
@@ -297,7 +315,7 @@ class InternalAgentAPI:
         try:
             task_id = self._task_hub.submit(submit)
         except ValueError as exc:
-            return web.json_response({"success": False, "error": str(exc)})
+            return web.json_response({"success": False, "error": str(exc)}, status=400)
 
         return web.json_response({"success": True, "task_id": task_id})
 
