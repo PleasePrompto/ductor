@@ -1,0 +1,228 @@
+# 中文向导文案（Rich 格式，引导安装时显示在终端）。
+
+[common]
+cancelled = "[dim]已取消设置。[/dim]"
+subtitle = "ductor.dev"
+
+[cli_backends]
+title = "CLI 后端"
+header = "[bold]检测到的 AI 后端：[/bold]\n"
+claude = "  Claude Code CLI   {status}"
+codex = "  OpenAI Codex CLI  {status}"
+gemini = "  Google Gemini CLI {status}"
+antigravity = "  Antigravity CLI   {status}"
+grok = "  xAI Grok CLI      {status}"
+no_auth = """\
+\n[bold red]至少要有一个 CLI 已安装并完成认证。[/bold red]\n
+  Claude: [dim]https://docs.anthropic.com/en/docs/claude-code[/dim]
+  Codex:  [dim]https://github.com/openai/codex[/dim]
+  Gemini: [dim]https://github.com/google-gemini/gemini-cli[/dim]"""
+claude_check_failed = "[yellow]Claude 认证检查出错：{error}。已跳过。[/yellow]"
+codex_check_failed = "[yellow]Codex 认证检查出错：{error}。已跳过。[/yellow]"
+gemini_check_failed = "[yellow]Gemini 认证检查出错：{error}。已跳过。[/yellow]"
+antigravity_check_failed = "[yellow]Antigravity 认证检查出错：{error}。已跳过。[/yellow]"
+grok_check_failed = "[yellow]Grok 认证检查出错：{error}。已跳过。[/yellow]"
+
+[disclaimer]
+title = "[bold yellow]免责声明[/bold yellow]"
+body = """\
+[bold]请先读完再继续。[/bold]\n
+ductor 会把 [bold]Anthropic Claude CLI[/bold] 和 \
+[bold]OpenAI Codex CLI[/bold] 当作 AI 智能体后端。\n
+机器人处于 [bold yellow]全权限、无需确认[/bold yellow] 模式： \
+智能体可以读取、写入、删除文件，执行命令， \
+也可以直接操作你的系统。\n
+虽然有一些防护，仍可能出现 [bold red]意外操作[/bold red] \
+—— 包括数据丢失、文件被改动，或执行非预期命令。\n
+[bold green]强烈建议在 Docker 容器中运行 ductor[/bold green]， \
+与宿主机隔离。"""
+confirm = "我了解风险并希望继续。"
+
+[transport]
+title = "[bold]消息通道[/bold]"
+body = """\
+[bold]选择消息通道：[/bold]\n
+  [bold cyan]Telegram[/bold cyan]  — 需要 @BotFather 发放的机器人 Token
+  [bold cyan]Matrix[/bold cyan]    — 需要 homeserver 上的 Matrix 账号（例如 Element）
+  [bold cyan]Slack[/bold cyan]     — 需要 Slack 机器人/应用 Token，以及 Slack 附加组件"""
+prompt = "选择消息通道："
+
+[telegram.token]
+title = "[bold]Telegram 机器人 Token[/bold]"
+body = """\
+[bold]如何获取 Telegram 机器人 Token：[/bold]\n
+  1. 打开 Telegram，搜索 [bold cyan]@BotFather[/bold cyan]
+  2. 发送 [bold]/newbot[/bold] 并按提示操作
+  3. 为机器人选择名称和用户名
+  4. BotFather 会回复你的 Token\n
+[dim]Token 格式：1234567890:ABCdefGHIjklMNOpqrsTUVwxyz[/dim]"""
+prompt = "粘贴你的机器人 Token："
+error = "[red]Token 格式无效。应为：数字:字母数字（例如 123456:ABC-xyz）[/red]"
+
+[telegram.user_id]
+title = "[bold]Telegram 用户 ID[/bold]"
+body = """\
+[bold]如何查找你的 Telegram 用户 ID：[/bold]\n
+  1. 打开 Telegram，搜索 [bold cyan]@userinfobot[/bold cyan]
+  2. 向该机器人发送 [bold]/start[/bold]
+  3. 它会回复你的数字用户 ID\n
+[dim]机器人只会接受来自该用户 ID 的消息。[/dim]"""
+prompt = "输入你的数字用户 ID："
+error_nan = "[red]请输入有效数字。[/red]"
+error_negative = "[red]用户 ID 必须为正数。[/red]"
+
+[matrix.homeserver]
+title = "[bold]Matrix Homeserver[/bold]"
+body = """\
+[bold]输入 Matrix homeserver URL。[/bold]\n
+  这是机器人账号所在的服务器。\n
+[dim]示例：https://matrix.example.com[/dim]"""
+prompt = "Homeserver URL："
+error = "[red]必须是 HTTPS URL（例如 https://matrix.example.com）[/red]"
+
+[matrix.user_id]
+title = "[bold]Matrix 机器人用户 ID[/bold]"
+body = """\
+[bold]输入机器人的 Matrix 用户 ID。[/bold]\n
+  请在 homeserver 上为机器人创建专用账号。\n
+[dim]格式：@botname:homeserver.domain[/dim]"""
+prompt = "机器人用户 ID："
+error = "[red]格式无效。应为：@localpart:domain（例如 @mybot:matrix.org）[/red]"
+
+[matrix.password]
+title = "[bold]Matrix 密码[/bold]"
+body = """\
+[bold]输入机器人账号的密码。[/bold]\n
+  仅用于首次登录。登录成功后会保存 access
+  token，之后不再需要密码。"""
+prompt = "密码："
+error = "[red]密码不能为空。[/red]"
+
+[matrix.allowed_users]
+title = "[bold]允许的用户[/bold]"
+body = """\
+[bold]谁可以和这个机器人对话？[/bold]\n
+  输入你的 Matrix 用户 ID。只有白名单用户
+  的消息会被处理。\n
+[dim]格式：@username:homeserver.domain[/dim]"""
+prompt = "你的 Matrix 用户 ID："
+error = "[red]格式无效。应为：@user:domain（例如 @nik:matrix.org）[/red]"
+
+[slack.bot_token]
+title = "[bold]Slack 机器人 Token[/bold]"
+body = """\
+[bold]输入 Slack 机器人 Token。[/bold]\n
+  从 Slack 应用中复制 [bold cyan]Bot User OAuth Token[/bold cyan]。\n
+[dim]格式：xoxb-...[/dim]"""
+prompt = "机器人 Token："
+error = "[red]无效的机器人 Token。应以 xoxb- 开头。[/red]"
+
+[slack.app_token]
+title = "[bold]Slack 应用 Token[/bold]"
+body = """\
+[bold]输入 Slack 应用级 Token。[/bold]\n
+  在 Slack 应用中启用 Socket Mode，并创建带有
+  [bold cyan]connections:write[/bold cyan] 权限的应用 Token。\n
+[dim]格式：xapp-...[/dim]"""
+prompt = "应用 Token："
+error = "[red]无效的应用 Token。应以 xapp- 开头。[/red]"
+
+[slack.allowed_channels]
+title = "[bold]允许的频道[/bold]"
+body = """\
+[bold]机器人应接受哪些 Slack 频道的消息？[/bold]\n
+  输入一个或多个频道 ID，用逗号或空格分隔。\n
+  留空则允许机器人被邀请进入的任意频道。\n
+[dim]示例：C0123456789, G0123456789[/dim]"""
+prompt = "允许的频道 ID（可选）："
+error = "[red]无效的 Slack 频道 ID。请使用逗号/空格分隔的 C... 或 G... ID。[/red]"
+
+[slack.allowed_users]
+title = "[bold]允许的用户[/bold]"
+body = """\
+[bold]哪些 Slack 用户可以和机器人对话？[/bold]\n
+  输入一个或多个 Slack 用户 ID，用逗号或空格分隔。\n
+[dim]示例：U0123456789[/dim]"""
+prompt = "允许的用户 ID："
+error = "[red]无效的 Slack 用户 ID。请使用逗号/空格分隔的一个或多个 U... ID。[/red]"
+
+[docker]
+title = "[bold]Docker 沙箱[/bold]"
+found_body = """\
+[bold green]已在系统上检测到 Docker。[/bold green]\n
+在 Docker 中运行 ductor，可与宿主机隔离。
+出于安全考虑，建议启用。"""
+found_prompt = "启用 Docker 沙箱？（推荐）"
+not_found_body = """\
+[bold yellow]系统上未找到 Docker。[/bold yellow]\n
+建议安装 Docker，以便在隔离容器中运行机器人。
+之后也可以在配置中启用 Docker 沙箱。\n
+[dim]https://docs.docker.com/get-docker/[/dim]"""
+
+[docker.extras]
+title = "[bold]可用的 Docker 附加组件[/bold]"
+col_package = "软件包"
+col_description = "用途"
+col_size = "大小"
+prompt = "选择附加组件（空格切换，回车确认）："
+hint = """\
+[dim]这些软件包是可选的，会增加镜像构建时间。
+之后可用 [cyan]ductor docker extras-add / extras-remove[/cyan] 更改。[/dim]"""
+auto_deps = "[dim]自动添加的依赖：{names}[/dim]"
+
+[timezone]
+title = "[bold]时区[/bold]"
+body = """\
+时区用于定时任务调度、心跳静默时段，
+以及每日会话重置。"""
+prompt = "选择时区："
+manual_prompt = "输入 IANA 时区（例如 Asia/Shanghai）："
+error = "[red]未知时区：{tz}[/red]"
+
+[service]
+title = "[bold]后台服务[/bold]"
+body = """\
+[bold]将 ductor 安装为后台服务？[/bold]\n
+这会创建一个 {mechanism}，用于：\n
+  - 在 {trigger} 时启动 ductor
+  - 崩溃后自动重启
+  - 在后台持续运行\n
+[dim]适合 VPS 或长期在线的环境。[/dim]"""
+prompt = "安装为后台服务？（VPS 推荐）"
+
+[complete]
+title = "[bold green]就绪[/bold green]"
+header = "[bold green]设置完成！[/bold green]"
+files_header = "[bold]你的 ductor 文件：[/bold]"
+home = "  主目录：     [cyan]{path}[/cyan]"
+config = "  配置：       [cyan]{path}[/cyan]"
+workspace = "  工作区：     [cyan]{path}[/cyan]"
+logs = "  日志：       [cyan]{path}[/cyan]"
+installing_service = "正在安装服务..."
+starting_bot = "正在启动机器人..."
+
+[reset]
+title = "[bold yellow]检测到已有配置[/bold yellow]"
+body = """\
+[bold yellow]你已经有一套配置完成的环境。[/bold yellow]\n
+再次运行引导将执行 [bold red]完全重置[/bold red]：\n
+  [dim]{home}[/dim] 将被全部删除。
+  所有会话、配置、记忆和定时任务都会丢失。"""
+
+[reset.docker]
+title = "[bold]Docker 清理[/bold]"
+body = """\
+[bold]当前配置已启用 Docker 沙箱。[/bold]\n
+  容器：[cyan]{container}[/cyan]
+  镜像：[cyan]{image}[/cyan]"""
+prompt = "删除 Docker 容器和镜像？"
+removing = "[dim]正在移除 Docker 资源...[/dim]"
+done = "[green]Docker 清理完成。[/green]"
+
+[reset.confirm]
+prompt = "删除全部内容并重新开始？"
+deleted = "[dim]工作区已删除。[/dim]"
+warning = "[yellow]警告：无法完全删除 {home}。请手动删除。[/yellow]"
+
+[language]
+prompt = "选择语言 / Select language:"

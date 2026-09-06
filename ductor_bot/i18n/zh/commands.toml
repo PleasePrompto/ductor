@@ -1,0 +1,28 @@
+# 中文机器人命令描述（Telegram 移动端建议 ≤22 个字符）。
+
+[bot]
+new = "开始新对话"
+reset = "重置当前对话"
+stop = "停止并清空队列"
+interrupt = "打断当前，保留队列"
+model = "查看/切换模型"
+effort = "设置推理强度"
+status = "会话信息"
+memory = "查看主记忆"
+session = "后台会话"
+tasks = "后台任务"
+cron = "管理定时任务"
+agent_commands = "多智能体系统"
+showfiles = "浏览文件"
+info = "文档与关于"
+help = "全部命令"
+diagnose = "系统诊断"
+upgrade = "检查更新"
+restart = "重启机器人"
+
+[multiagent]
+agents = "列出所有智能体"
+agent_start = "启动子智能体"
+agent_stop = "停止子智能体"
+agent_restart = "重启子智能体"
+stop_all = "全部停止"

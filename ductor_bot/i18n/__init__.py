@@ -31,6 +31,7 @@ LANGUAGES: dict[str, str] = {
     "id": "Bahasa Indonesia",
     "pt": "Português",
     "ru": "Русский",
+    "zh": "简体中文",
 }
 
 

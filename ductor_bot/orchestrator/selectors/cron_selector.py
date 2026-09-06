@@ -94,18 +94,18 @@ async def _toggle_job(
     if not changed:
         return await _build_page(orch, page=page, note=t("cron.list_changed"))
     await _reschedule_now(orch)
-    state = "enabled" if new_enabled else "disabled"
+    state = t("cron.state_enabled") if new_enabled else t("cron.state_disabled")
     note = t("cron.toggled", title=job.title, state=state)
     return await _build_page(orch, page=page, note=note)
 
 
 def _last_run_label(job: CronJob) -> str:
-    """Render the "last: <status>" suffix incl. a delivery-failure hint (#160)."""
+    """Render the last-run suffix, including a delivery-failure hint (#160)."""
     if not job.last_run_status:
         return ""
-    label = f" | last: {job.last_run_status}"
+    label = t("cron.last_run", status=job.last_run_status)
     if job.last_delivery_status == "failed":
-        label += " (delivery failed)"
+        label += t("cron.delivery_failed")
     return label
 
 
