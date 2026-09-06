@@ -194,7 +194,7 @@ Main chat:  "Ask codex-agent to write tests for the API"
 ## Features
 
 - **Multi-transport** — run Telegram, Matrix, and Slack simultaneously, or pick any one
-- **Multi-language** — UI in English, Deutsch, Nederlands, Français, Русский, Español, Português
+- **Multi-language** — UI in English, Deutsch, Nederlands, Français, Русский, Español, Português, Bahasa Indonesia, 简体中文
 - **Real-time streaming** — live message edits (Telegram) or segment-based output (Matrix)
 - **Telegram reasoning + tool UX controls** — optional reasoning stream, live tool progress, and separate thinking indicator controls
 - **Quoted-reply context** — replying to a message (Telegram) carries the cited text into the agent prompt, so follow-ups like "expand on this" keep their reference
@@ -360,6 +360,8 @@ ductor's UI (commands, status messages, onboarding) is available in multiple lan
 | `ru` | Русский |
 | `es` | Español |
 | `pt` | Português |
+| `id` | Bahasa Indonesia |
+| `zh` | 简体中文 |
 
 Set the language in `config.json`:
 

@@ -1,0 +1,465 @@
+# 中文聊天文案（Markdown，发送到 Telegram/Matrix/API）。
+
+# -- Session management -------------------------------------------------------
+
+[session]
+error_header = "**会话错误**"
+error_body = """\
+[{model}] 发生错误。
+会话已保留 —— 再发一条消息即可重试。
+若问题持续，使用 /new 开始新会话。"""
+error_cause = "**原因：** {hint}"
+error_detail = "**详情：** `{detail}`"
+error_auth = "认证失败。请重新登录 CLI（例如 `codex auth`），或检查 API Key。"
+error_rate = "已达速率限制。请稍后再试。"
+error_context = "上下文长度已超限。使用 /new 开始新会话。"
+
+reset_header = "**会话已重置**"
+reset_body = """\
+仅重置了本聊天中 {provider} 的会话。
+其他提供商的会话已保留。
+发送消息即可继续。"""
+
+age_warning = "[会话已持续 {age}。可用 /new 重新开始。]"
+
+# #84: Tool-only turns (e.g. silent memory updates) surface this neutral
+# status line instead of a blank message the user would never see.
+empty_turn = "_(智能体已在后台静默更新记忆 — 再发一条消息即可继续。)_"
+
+recovered = "_无法恢复上一会话，已自动开始新会话。_"
+recovery_failed = "会话恢复失败。请再试一次，或使用 /new 开始新会话。"
+sigkill = "执行被中断。请重新发送同一请求。"
+
+not_found = "找不到会话 '{name}'。"
+ended = "会话 '{name}' 已结束。使用 /session 开始新会话。"
+still_running = "会话 '{name}' 仍在处理。请等待，或使用 /stop 取消。"
+
+# -- Stop/interrupt ------------------------------------------------------------
+
+[stop]
+header = "**智能体已停止**"
+killed = "{provider} 已停止，队列中的消息已全部丢弃。"
+nothing = "当前没有正在运行的任务。"
+
+[interrupt]
+done = "已打断 {count} 个进程。"
+nothing = "没有活动进程。"
+
+[abort_all]
+done = "已停止所有智能体上的 {count} 个进程。"
+nothing = "所有智能体上都没有活动进程。"
+
+# -- Timeout -------------------------------------------------------------------
+
+[timeout]
+error_header = "**超时**"
+error_body = """\
+[{model}] CLI 在 {minutes} 分钟后被终止。
+会话已保留 —— 再发一条消息可从中断处继续。
+使用 /new 开始新会话。"""
+
+result_header = "**超时**"
+result_body = """\
+智能体在 {elapsed}s 后超时（上限：{configured}s）。
+请缩短提问，或拆成更小的步骤。"""
+
+warning_minutes = "{mins} 分钟后超时"
+warning_seconds = "{secs}s 后超时"
+extended = "超时已延长（+{secs}s，剩余 {remaining}）"
+
+generic = "智能体超时。请重试。"
+
+# -- Startup / lifecycle -------------------------------------------------------
+
+[startup]
+first_start_header = "**机器人已启动**"
+first_start_body = "首次启动 — 已就绪。"
+reboot_header = "**机器人已启动**"
+reboot_body = "检测到系统重启 — 已重新上线。"
+
+restart_default = "重启完成。"
+restart_header = "**正在重启**"
+restart_body = "机器人即将关闭，稍后会自动回来。"
+
+upgrade_complete = "**升级完成** `{old}` -> `{new}`"
+
+matrix_restart = "**机器人已重启**（{reason}）"
+matrix_update = "**有可用更新：** `{version}`\n使用 `/upgrade` 升级。"
+matrix_upgraded_restarting = "已从 {old} 升级到 {new}。正在重启..."
+
+[recovery]
+named_header = "**自动恢复**"
+named_body = "正在恢复后台会话 **{session}**\n`{preview}`"
+interrupted_header = "**任务被中断**"
+interrupted_body = "重启时有任务被中断。\n`{preview}`\n请重新发送以继续。"
+
+# -- Memory --------------------------------------------------------------------
+
+[memory]
+header = "**主记忆**"
+empty = "记忆为空。智能体会在对话过程中逐步建立。"
+empty_tip = "*提示：让智能体「记住」某件事即可开始。*"
+filled_tip = "*提示：智能体会自动读取并更新这份记忆。*"
+
+# -- Status --------------------------------------------------------------------
+
+[status]
+header = "**状态**"
+no_session = "没有活动会话。"
+model_line = "模型：{model}"
+model_line_configured = "模型：{model}（配置：{configured}）"
+effort_line = "推理强度：{effort}"
+topic_line = "主题：{topic}"
+session_line = "会话：`{sid}`"
+messages_line = "消息数：{count}"
+tokens_line = "Token：{tokens}"
+cost_line = "费用：${cost}"
+bg_header = "后台任务：{count} 个运行中"
+auth_header = "认证："
+agents_header = "智能体："
+
+# -- Technical footer ----------------------------------------------------------
+
+[footer]
+model = "模型：{name}"
+tokens = "Token：{total}（入：{input}，出：{output}）"
+cost = "费用：${cost}"
+time = "耗时：{secs}s"
+
+# -- Upgrade -------------------------------------------------------------------
+
+[upgrade]
+dev_header = "**当前为源码运行**"
+dev_body = "从源码安装不支持自动升级。\n请在项目目录执行 `git pull` 更新。"
+pypi_unreachable = "无法连接 PyPI 检查更新。请稍后再试。"
+up_to_date_header = "**已是最新版本**"
+up_to_date_body = "已安装：`{current}`\n最新：`{latest}`\n\n你正在使用最新版本。"
+available_header = "**有可用更新**"
+available_body = "已安装：`{current}`\n新版本：`{latest}`\n\n现在升级？"
+btn_changelog = "更新日志 v{version}"
+btn_yes = "是，立即升级"
+btn_not_now = "暂不"
+
+# -- Diagnose ------------------------------------------------------------------
+
+[diagnose]
+header = "**系统诊断**"
+version_line = "版本：`{version}`"
+configured_line = "配置：{provider} / {model}"
+effective_line = "实际运行：{provider} / {model}"
+log_header = "最近日志（最后 50 行）："
+no_log = "未找到日志文件。"
+codex_cache_not_init = "Codex 模型缓存：观察器未初始化"
+codex_cache_not_loaded = "Codex 模型缓存：未加载"
+codex_cache_info = "Codex 模型缓存：\n  上次更新：{updated}\n  已缓存模型：{count}\n  默认模型：{default}"
+health_header = "**多智能体健康状态：**"
+
+# -- Tasks ---------------------------------------------------------------------
+
+[tasks]
+header = "**后台任务**"
+disabled = "任务系统未启用。"
+empty = "没有后台任务。"
+hint = "智能体会为长时间任务创建这些条目。"
+too_many = "后台任务过多（最多 {max} 个）"
+internal_error = "内部错误（请查看日志）"
+
+cancelled_one = "已取消 {count} 个任务。"
+cancelled_other = "已取消 {count} 个任务。"
+no_running = "没有正在运行的任务。"
+task_cancelled = "任务 `{id}` 已取消。"
+task_not_running = "任务 `{id}` 未在运行。"
+cleaned_one = "已移除 {count} 个已完成任务。"
+cleaned_other = "已移除 {count} 个已完成任务。"
+nothing_to_clean = "没有可清理的内容。"
+
+running_header = "**运行中**"
+waiting_header = "**等待回复**"
+finished_header = "**已完成**"
+
+btn_cancel = "取消 {name}"
+btn_cancel_all = "全部取消"
+btn_refresh = "刷新"
+btn_delete_finished = "删除已完成"
+
+summary_running = "运行中：{count}"
+summary_waiting = "等待中：{count}"
+summary_finished = "已完成：{count}"
+
+# -- Sessions selector ---------------------------------------------------------
+
+[sessions]
+header = "**会话**"
+empty = "没有活动会话。"
+start_hint = "使用 `/session <提示>` 开始一个会话。"
+followup_hint = "跟进：`@<name> <消息>`"
+active_count = "活动：{count}"
+btn_end = "结束 {name}"
+btn_refresh = "刷新"
+btn_end_all = "全部结束"
+topics_header = "主题："
+named_header = "命名会话："
+named_empty = "没有活动会话。\n  使用 `/session <提示>` 开始一个会话。"
+
+ended_all_one = "已结束全部 {count} 个会话。"
+ended_all_none = "没有活动会话。"
+ended_one = "会话 '{name}' 已结束。"
+ended_not_found = "找不到会话 '{name}'。"
+unknown_action = "未知操作。"
+
+# -- Model selector ------------------------------------------------------------
+
+[model]
+header = "**模型选择**"
+current = "当前：{model}"
+current_with_effort = "当前：{model}（{effort}）"
+configured_default = "配置中的默认模型：{configured}"
+
+switched = "**模型已切换。**"
+model_line = "模型：{model}"
+model_change = "模型：{old} -> {new}"
+provider_change = "提供商：{old} -> {new}"
+reasoning_line = "推理强度：{effort}"
+effort_updated = "推理强度已设为 {effort}。"
+already_running = "已经在使用 {model}。未做更改。"
+
+resume_hint = """\
+正在恢复会话 `{sid}`。
+此提供商会话中已发送 {count} {label}。
+当前模型：`{model}`。
+使用 /new 开始新会话。"""
+resume_msg_one = "条消息"
+resume_msg_other = "条消息"
+
+no_auth = "未找到已认证的提供商。\n请运行 `claude auth`、`codex auth`，或在 `gemini` 中完成登录。"
+pick_provider = "选择提供商："
+select_claude = "选择 Claude 模型："
+select_gemini = "选择 Gemini 模型："
+select_codex = "选择 Codex 模型："
+select_antigravity = "选择 Antigravity 模型："
+select_grok = "选择 Grok Build 模型："
+no_codex = "没有可用的 Codex 模型。"
+no_gemini = "未能从本地 Gemini CLI 文件发现模型。"
+thinking_level = "{model} 的思考级别："
+unknown_action = "未知操作。"
+btn_back = "<< 返回"
+switched_while_busy = "**模型已切换。** 当前进程仍在运行，新模型将从下一条消息开始生效。"
+
+# -- Cron selector -------------------------------------------------------------
+
+[cron]
+header = "**定时任务**"
+empty = "未配置定时任务。"
+empty_hint = "*可以告诉智能体：「每天上午 9 点做一次备份检查」*"
+job_line = "{number}. **{title}**（{status}）{last_run}\n   `{schedule}`"
+status_active = "启用"
+status_paused = "暂停"
+btn_disable = "{number}. 禁用"
+btn_enable = "{number}. 启用"
+btn_prev = "<< 上一页"
+btn_refresh = "刷新"
+btn_next = "下一页 >>"
+btn_all_on = "全部开启"
+btn_all_off = "全部关闭"
+info_active = "{active}/{total} 启用"
+info_page = "第 {current}/{total} 页"
+all_enabled = "已启用全部定时任务。"
+all_disabled = "已禁用全部定时任务。"
+already_enabled = "所有定时任务均已启用。"
+already_disabled = "所有定时任务均已禁用。"
+toggled = "「{title}」{state}。"
+state_enabled = "已启用"
+state_disabled = "已禁用"
+last_run = " | 上次：{status}"
+delivery_failed = "（投递失败）"
+list_changed = "定时任务列表已变化，请重试。"
+unknown_action = "未知操作。已刷新定时任务列表。"
+
+# -- Welcome (Telegram) -------------------------------------------------------
+
+[welcome]
+header = "**欢迎使用 ductor.dev{name}！**"
+tagline = """\
+随时部署，随手自动化。
+Claude Code、Codex 与 Gemini —— 直接在 Telegram 里用。"""
+hint_model = "/model — 切换模型"
+hint_info = "/info — 文档与链接"
+hint_help = "/help — 全部命令"
+
+no_auth = "尚未登录任何 CLI。请运行 `claude auth`、`codex auth`，或在 `gemini` 中完成登录。"
+auth_line = "{providers} 已认证。\n模型：**{model}**"
+
+btn_know = "先来认识一下！"
+btn_system = "看看这台机器！"
+btn_who = "你是谁？我是谁？"
+
+prompt_know = """\
+嘿，我刚装好 ductor.dev，希望你先了解我。 \
+请询问合作所需的信息：我的名字、在做什么、正在推进的项目、沟通偏好。 \
+把了解到的内容写入记忆。"""
+prompt_system = """\
+看看你运行所在的系统。 \
+检查操作系统、已安装工具、项目目录，以及任何你觉得有用的信息。 \
+给我一份简短摘要。"""
+prompt_who = """\
+开始吧！先介绍你自己 —— 你是谁，能帮我做什么？ \
+然后问问我是谁、需要什么帮助。"""
+
+# -- Info ----------------------------------------------------------------------
+
+[info]
+header = "**ductor.dev**"
+version = "版本：`{version}`"
+telegram_description = "在 Telegram 上使用 AI 编程智能体（Claude、Codex、Gemini）。\n命名会话、持久记忆、定时任务、Webhook、实时流式输出。"
+matrix_description = "在 Matrix 上使用 AI 编程智能体（Claude、Codex、Gemini）。\n命名会话、持久记忆、定时任务、Webhook、实时流式输出。"
+slack_description = "在 Slack 上使用 AI 编程智能体（Claude、Codex、Gemini）。\n命名会话、持久记忆、定时任务、Webhook、实时流式输出。"
+
+# -- Help (categories) --------------------------------------------------------
+
+[help]
+header = "**命令参考**"
+cat_daily = "日常使用"
+cat_automation = "自动化"
+cat_multiagent = "多智能体"
+cat_browse = "浏览与信息"
+cat_maintenance = "维护"
+footer = "发送任意消息即可开始与智能体协作。"
+matrix_footer = "使用 `!` 或 `/` 前缀。发送任意消息即可开始。"
+slack_footer = "使用 `help` 或 `/help`。发送其他消息即可开始。"
+
+# -- Multi-agent ---------------------------------------------------------------
+
+[agents]
+header = "**智能体**"
+empty = "没有智能体。"
+not_active = "多智能体模式未启用。"
+usage_stop = "用法：/agent_stop <名称>"
+usage_start = "用法：/agent_start <名称>"
+usage_restart = "用法：/agent_restart <名称>"
+cannot_stop_main = "无法停止主智能体。"
+not_running = "智能体 '{name}' 未在运行。"
+stopped = "智能体 '{name}' 已停止。"
+
+system_header = "**多智能体系统**"
+telegram_explanation = """\
+多智能体系统可以运行额外的机器人作为子智能体 —— \
+各自拥有 Telegram Token、工作区和用户列表。 \
+所有智能体共享同一进程，并可通过智能体总线互相通信。"""
+matrix_explanation = """\
+多智能体系统可以运行额外的机器人作为子智能体 —— \
+各自拥有工作区和用户列表。 \
+所有智能体共享同一进程，并可通过智能体总线互相通信。"""
+commands_header = "**命令**"
+setup_header = "**设置**"
+setup_instruction = "让智能体创建一个新的子智能体，或编辑 ductor 主目录中的 `agents.json`。"
+
+# -- Errors (generic) ---------------------------------------------------------
+
+[error]
+generic = "错误：{detail}"
+check_logs = "错误：详情请查看日志。"
+
+# -- Gemini warning ------------------------------------------------------------
+
+[gemini]
+missing_key = """\
+Gemini 已设为 API Key 认证模式，但 `~/.ductor/config/config.json` \
+里的 `gemini_api_key` 为 `"null"` 或空。
+原因：ductor 以外部进程调用 Gemini CLI 时， \
+Gemini CLI 不会把内部填入的 API Key 暴露给调用方。
+请在 `gemini_api_key` 中填入真实 Key，然后重启 `ductor`。"""
+
+# -- New session (handler) -----------------------------------------------------
+
+[new]
+topic_not_found = "找不到主题 \"{name}\"。"
+topic_reset = "已为 **{name}** 开始新会话（{provider}）。"
+
+# -- Transport-specific --------------------------------------------------------
+
+[telegram]
+group_rejected = "这个机器人无权在本群使用。"
+channel_not_whitelisted = "此频道不在白名单中，已退出。"
+where_header = "**聊天一览**"
+where_no_tracker = "暂时无法列出聊天。"
+where_empty = "还没有聊天活动记录。"
+leave_usage_header = "**用法**"
+leave_usage = "`/leave <group_id>`"
+leave_invalid_id = "无效的群 ID。"
+leave_failed = "退出失败：{error}"
+left_group = "已退出群 <code>{group_id}</code>。"
+
+[matrix]
+room_rejected = "此机器人无权在该房间使用。"
+
+# -- Session help (transport-specific) -----------------------------------------
+
+[session_help]
+header = "**后台会话**"
+telegram_explanation = """\
+后台会话可并行执行任务，不会阻塞主聊天。 \
+每个会话有独立名称并单独运行 —— \
+可以同时运行多个会话。"""
+usage_header = "**用法**"
+followup_header = "**跟进**"
+followup_line = "`@session-name <消息>` — 向正在运行的会话发送后续消息"
+commands_header = "**命令**"
+telegram_sessions_cmd = "`/sessions` — 查看并管理所有后台会话"
+telegram_stop_cmd = "`/stop` — 取消正在运行的会话"
+matrix_session_cmd = "`!session <提示>` — 开始后台会话"
+matrix_sessions_cmd = "`!sessions` — 查看并管理所有会话"
+matrix_stop_cmd = "`!stop` — 取消正在运行的会话"
+default_provider = "`/session <提示>` — 默认提供商"
+claude_single = "`/session <提示>` — 在 Claude 上运行"
+claude_model = "`/session @opus <提示>` — 指定模型"
+codex_single = "`/session <提示>` — 在 Codex 上运行"
+grok_single = "`/session <提示>` — 在 Grok Build 上运行"
+gemini_single = "`/session <提示>` — 在 Gemini 上运行"
+gemini_model = "`/session @flash <提示>` — 指定模型"
+grok_model = "`/session @grok-4.5 <提示>` — 指定模型"
+claude_multi = "`/session @opus <提示>` — Claude（opus）"
+codex_multi = "`/session @codex <提示>` — Codex"
+grok_multi = "`/session @grok <提示>` — Grok Build"
+gemini_multi = "`/session @flash <提示>` — Gemini（flash）"
+explicit = "`/session @provider model <提示>` — 明确指定提供商和模型"
+
+# -- File browser --------------------------------------------------------------
+
+[file_browser]
+header = "**文件浏览器**"
+directory_not_found = "找不到目录。"
+empty = "（空）"
+btn_back = "<< 返回"
+btn_request_files = "从此文件夹发送文件"
+file_request_prompt = "列出 {dir}/ 中的所有文件，并按我的要求发送。请使用 file tags 发送文件。"
+
+# Matrix variant
+matrix_header = "**工作区文件**"
+matrix_hint = "_使用 `!showfiles <dir>` 列出指定目录。_"
+matrix_dir_not_found = "找不到目录 `{subdir}`。"
+matrix_permission_denied = "（权限被拒绝）"
+matrix_file_count = "{count} 个文件"
+matrix_no_dirs = "（未找到工作区目录）"
+
+# -- Upgrade handler (Telegram) ------------------------------------------------
+
+[upgrade_handler]
+btn_changelog = "更新日志 v{version}"
+btn_upgrade_now = "立即升级"
+btn_later = "稍后"
+skipped = "已跳过升级。"
+already_in_progress = "升级已在进行中。请稍候。"
+in_progress = "正在升级到 {version}..."
+verification_failed = "自动重试后仍无法验证新安装版本（仍为 {version}）。{details}"
+restarting = "机器人正在重启..."
+no_changelog = "找不到 v{version} 的更新日志。"
+changelog_header = "**更新日志 v{version}**"
+
+# -- Multi-agent notifications -------------------------------------------------
+
+[multiagent]
+async_task_received = "📥 **收到异步任务**，来自 `{sender}`\n会话：`{session}` · 任务 ID：`{task_id}`\n\n_{preview}_"
+
+[effort]
+select = "为 {model} 选择推理强度："
+unsupported = "`{provider}` 不支持设置推理强度。"

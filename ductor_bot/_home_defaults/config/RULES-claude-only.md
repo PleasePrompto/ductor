@@ -84,7 +84,7 @@ Parameters are inserted before the `--` separator in commands.
 
 ### Language
 
-- `language`: UI language for bot messages — `en`, `de`, `nl`, `fr`, `ru`, `es`, `pt`
+- `language`: UI language for bot messages — `en`, `de`, `nl`, `fr`, `ru`, `es`, `pt`, `id`, `zh`
 - Hot-reloadable: change without restart.
 
 ### Image Processing
